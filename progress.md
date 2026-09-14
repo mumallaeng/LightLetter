@@ -7,7 +7,7 @@
 >
 > 기준일: **2026-09-14**
 >
-> 현재 상태: **BFSK 기반 광통신 구조 확정 / 128-point FFT RX 구조 v1.1 반영 / TX-RX 인터페이스 재정의**
+> 현재 상태: **BFSK 기반 광통신 구조 확정 / TX-1 CRC-8 Vivado/XSim PASS / TX-2 Frame Generator 개발 대기**
 
 ---
 
@@ -848,7 +848,7 @@ FSYNC_HZ          = 25_000
 
 F0_BIN            = 8
 F1_BIN            = 16
-FSYNC_BIN         = 20
+FSYNC_BIN          = 20
 
 FFT_BLOCK_SAMPLES = 128
 SYMBOL_SAMPLES    = 256
@@ -1007,9 +1007,12 @@ Packet Time
 
 ## TX-1 CRC
 
-- [ ] `crc8.v`
-- [ ] `tb_crc8.v`
-- [ ] `00 / 41 → C0` PASS
+- [x] `crc8.v`
+- [x] `tb_crc8.v`
+- [x] `00 / 41 → C0` PASS
+- [x] Vivado/XSim 검증
+- [x] Vivado Project (`tb_xpr/tb_crc8/tb_crc8.xpr`) 반영
+- Commit: `266eeca` (`refactor: organize CRC-8 TX files and add Vivado project`)
 
 ## TX-2 Frame Generator
 
@@ -1281,6 +1284,13 @@ RX FFT Interface        : 128-bin Magnitude Stream
 RX Symbol Decision      : 2 FFT Block Magnitude Sum
 RX Invalid Policy       : Packet Abort
 RX Output               : Buffer + UART
+
+TX-1 CRC-8              : PASS
+CRC RTL                  : rtl/common/crc8.v
+CRC Testbench            : sim/tx/tb_crc8.v
+CRC Test Vector          : 00 / 41 -> C0 PASS
+CRC Verification         : Vivado/XSim
+CRC Commit               : 266eeca
 ```
 
 ---
@@ -1290,14 +1300,14 @@ RX Output               : Buffer + UART
 TX:
 
 ```text
-1. crc8.v
-2. tb_crc8.v
-3. CRC 00/41/C0 PASS
-4. tx_frame_generator.v
-5. bfsk_mapper.v
-6. bfsk_carrier_gen.v
-7. Symbol 1.6 ms 적용
-8. tx_fsm.v
+1. tx_frame_generator.v
+2. tb_tx_frame_generator.v
+3. SFD / Frame ID / DATA / CRC / MSB First 검증
+4. bfsk_mapper.v
+5. bfsk_carrier_gen.v
+6. Symbol 1.6 ms 적용
+7. tx_fsm.v
+8. optical_tx_top.v
 ```
 
 RX FFT:
@@ -1375,7 +1385,47 @@ PASS되지 않은 항목은 완료 처리하지 않는다.
 
 ---
 
+# 41. 2026-09-14 Progress
+
+## 완료
+
+- [x] TX-1 CRC-8 RTL 구현 및 검증 완료
+  - File: `rtl/common/crc8.v`
+  - Testbench: `sim/tx/tb_crc8.v`
+  - Vivado Project: `tb_xpr/tb_crc8/tb_crc8.xpr`
+  - Tool: Vivado 2020.2 / XSim
+  - Test Vector: `Frame ID=8'h00`, `DATA=8'h41`
+  - Expected CRC: `8'hC0`
+  - Result: **PASS**
+  - Commit: `266eeca` (`refactor: organize CRC-8 TX files and add Vivado project`)
+
+- [x] GitHub / Notion 진행상황 관리 연결 완료
+  - Repository: `Critical-mankind/BFSK_Tx`
+  - Branch: `main`
+  - Notion Testbench 결과 페이지에 CRC 검증 이미지 기록
+
+## 변경된 설계 결정
+
+- 변경 없음. CRC 규격은 기존 확정값 유지.
+  - POLY: `8'h07`
+  - INIT: `8'h00`
+  - XOROUT: `8'h00`
+  - REFIN/REFOUT: `false`
+  - Bit Order: MSB First
+
+## 실패 / 이슈
+
+- 현재 기록된 TX-1 CRC 관련 미해결 이슈 없음.
+
+## 다음 작업
+
+1. `tx_frame_generator.v` 구현
+2. `tb_tx_frame_generator.v` 작성 및 SFD/Frame ID/DATA/CRC/MSB First 검증
+3. Frame Generator PASS 후 `bfsk_mapper.v` 진행
+
+---
+
 **Last Updated:** 2026-09-14  
-**Document Version:** v1.1  
+**Document Version:** v1.2  
 **Communication:** BFSK + 128-point FFT Frequency Detection  
 **Physical Link:** Wireless Optical Only
