@@ -5,9 +5,9 @@
 > 이 파일은 프로젝트 전체 진행상황과 통신 규격을 관리하는 기준 문서이다.
 > 설계 변경, PASS/FAIL, 인터페이스 변경, 주파수 변경이 발생하면 이 파일을 우선 갱신한다.
 >
-> 기준일: **2026-09-14**
+> 기준일: **2026-09-15**
 >
-> 현재 상태: **BFSK 기반 광통신 구조 확정 / TX-1 CRC-8 Vivado/XSim PASS / TX-2 Frame Generator 개발 대기**
+> 현재 상태: **BFSK 기반 광통신 구조 확정 / TX-1 CRC-8 PASS / TX-2 Frame Generator Vivado/XSim PASS / TX-3 BFSK Mapper 개발 대기**
 
 ---
 
@@ -848,7 +848,7 @@ FSYNC_HZ          = 25_000
 
 F0_BIN            = 8
 F1_BIN            = 16
-FSYNC_BIN          = 20
+FSYNC_BIN         = 20
 
 FFT_BLOCK_SAMPLES = 128
 SYMBOL_SAMPLES    = 256
@@ -1016,12 +1016,21 @@ Packet Time
 
 ## TX-2 Frame Generator
 
-- [ ] `tx_frame_generator.v`
-- [ ] SFD
-- [ ] Frame ID
-- [ ] DATA
-- [ ] CRC
-- [ ] MSB First
+- [x] `tx_frame_generator.v`
+- [x] `tb_tx_frame_generator.v`
+- [x] SFD = `8'hD5`
+- [x] Frame ID 8 bit
+- [x] DATA 8 bit
+- [x] CRC-8 8 bit
+- [x] MSB First
+- [x] 32-bit Frame 전송
+- [x] `frame_start` / `frame_done` Pulse 검증
+- [x] `valid/ready` Backpressure 검증
+- [x] Vivado 2020.2 / XSim 검증
+- [x] Vivado Project (`tb_xpr/tb_tx_frame_generator/tb_tx_frame_generator.xpr`) 반영
+- Test Vector #1: `Frame ID=00`, `DATA=41` → `D50041C0` PASS
+- Test Vector #2: `Frame ID=12`, `DATA=34` → `D51234F1` PASS (Backpressure)
+- Commit: `abdd1cf` (`feat: add verified TX frame generator and update CRC comments`)
 
 ## TX-3 BFSK Mapper
 
@@ -1286,11 +1295,22 @@ RX Invalid Policy       : Packet Abort
 RX Output               : Buffer + UART
 
 TX-1 CRC-8              : PASS
-CRC RTL                  : rtl/common/crc8.v
+CRC RTL                  : rtl/tx/crc8.v
 CRC Testbench            : sim/tx/tb_crc8.v
 CRC Test Vector          : 00 / 41 -> C0 PASS
 CRC Verification         : Vivado/XSim
 CRC Commit               : 266eeca
+
+TX-2 Frame Generator      : PASS
+Frame Generator RTL       : rtl/tx/tx_frame_generator.v
+Frame Generator TB        : sim/tx/tb_tx_frame_generator.v
+Frame Format              : SFD + Frame ID + DATA + CRC-8 (32 bit)
+Test Vector #1            : D50041C0 PASS
+Test Vector #2            : D51234F1 PASS (Backpressure)
+Handshake                 : valid/ready Backpressure PASS
+Frame Pulse               : frame_start / frame_done PASS
+Verification              : Vivado 2020.2 / XSim
+Frame Generator Commit    : abdd1cf
 ```
 
 ---
@@ -1300,11 +1320,11 @@ CRC Commit               : 266eeca
 TX:
 
 ```text
-1. tx_frame_generator.v
-2. tb_tx_frame_generator.v
-3. SFD / Frame ID / DATA / CRC / MSB First 검증
-4. bfsk_mapper.v
-5. bfsk_carrier_gen.v
+1. bfsk_mapper.v
+2. tb_bfsk_mapper.v
+3. IDLE / BIT0 / BIT1 / SYNC Mapping 검증
+4. bfsk_carrier_gen.v
+5. 10 / 20 / 25 kHz Carrier 검증
 6. Symbol 1.6 ms 적용
 7. tx_fsm.v
 8. optical_tx_top.v
@@ -1390,7 +1410,7 @@ PASS되지 않은 항목은 완료 처리하지 않는다.
 ## 완료
 
 - [x] TX-1 CRC-8 RTL 구현 및 검증 완료
-  - File: `rtl/common/crc8.v`
+  - File: `rtl/tx/crc8.v`
   - Testbench: `sim/tx/tb_crc8.v`
   - Vivado Project: `tb_xpr/tb_crc8/tb_crc8.xpr`
   - Tool: Vivado 2020.2 / XSim
@@ -1425,7 +1445,47 @@ PASS되지 않은 항목은 완료 처리하지 않는다.
 
 ---
 
-**Last Updated:** 2026-09-14  
-**Document Version:** v1.2  
+# 42. 2026-09-15 Progress
+
+## 완료
+
+- [x] TX-2 Frame Generator RTL 구현 및 검증 완료
+  - File: `rtl/tx/tx_frame_generator.v`
+  - Testbench: `sim/tx/tb_tx_frame_generator.v`
+  - Vivado Project: `tb_xpr/tb_tx_frame_generator/tb_tx_frame_generator.xpr`
+  - Tool: Vivado 2020.2 / XSim
+  - Frame Format: `SFD(8) + Frame ID(8) + DATA(8) + CRC-8(8)`
+  - Bit Order: MSB First
+  - Test #1: `Frame ID=8'h00`, `DATA=8'h41` → `32'hD50041C0` PASS
+  - Test #2: `Frame ID=8'h12`, `DATA=8'h34` → `32'hD51234F1` PASS
+  - Backpressure: `tx_bit_valid && tx_bit_ready` Stall/Resume PASS
+  - Pulse: `frame_start=1회`, `frame_done=1회` PASS
+  - Result: **PASS**
+  - Commit: `abdd1cf` (`feat: add verified TX frame generator and update CRC comments`)
+
+- [x] CRC RTL 파일 위치 정리
+  - 기존 문서 경로: `rtl/common/crc8.v`
+  - 현재 저장소 경로: `rtl/tx/crc8.v`
+
+## 변경된 설계 결정
+
+- Frame Generator는 CRC를 먼저 계산한 뒤 완성된 32-bit Frame을 MSB First로 직렬 출력한다.
+- `tx_bit_valid && tx_bit_ready`가 성립할 때만 비트가 진행되며, `ready=0`에서는 현재 비트를 유지한다.
+- 기존 Frame Format / CRC / SFD 규격 변경 없음.
+
+## 실패 / 이슈
+
+- 현재 기록된 TX-2 Frame Generator 관련 미해결 이슈 없음.
+
+## 다음 작업
+
+1. `bfsk_mapper.v` 구현
+2. `tb_bfsk_mapper.v` 작성 및 IDLE / BIT0 / BIT1 / SYNC Mapping 검증
+3. Mapper PASS 후 `bfsk_carrier_gen.v` 진행
+
+---
+
+**Last Updated:** 2026-09-15  
+**Document Version:** v1.3  
 **Communication:** BFSK + 128-point FFT Frequency Detection  
 **Physical Link:** Wireless Optical Only
