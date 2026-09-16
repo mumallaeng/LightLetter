@@ -102,3 +102,10 @@ ip/*_1.0/example_designs/
 *.tar
 *.tar.gz
 *.tgz
+
+# Python bytecode cache (matches at any depth)
+__pycache__/
+
+# tb/ Python testbench and training environment
+tb/.venv/
+tb/results/
