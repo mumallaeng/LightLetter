@@ -5,9 +5,9 @@
 > 이 파일은 프로젝트 전체 진행상황과 통신 규격을 관리하는 기준 문서이다.
 > 설계 변경, PASS/FAIL, 인터페이스 변경, 주파수 변경이 발생하면 이 파일을 우선 갱신한다.
 >
-> 기준일: **2026-09-15**
+> 기준일: **2026-09-16**
 >
-> 현재 상태: **BFSK 기반 광통신 구조 확정 / TX-1 CRC-8 PASS / TX-2 Frame Generator Vivado/XSim PASS / TX-3 BFSK Mapper 개발 대기**
+> 현재 상태: **BFSK 기반 광통신 구조 확정 / TX-1 CRC-8 PASS / TX-2 Frame Generator PASS / TX-3 BFSK Mapper Vivado/XSim PASS / TX-4 Carrier Generator 개발 대기**
 
 ---
 
@@ -406,6 +406,21 @@ char_valid && char_ready
 | `tx_bit_ready` | IN | 1 | Mapper 수신 가능 |
 | `frame_start` | OUT | 1 | TX Frame 시작 |
 | `frame_done` | OUT | 1 | Frame 송신 완료 |
+
+## TX FSM → BFSK Mapper
+
+| Signal | Dir | Width | 설명 |
+|---|:---:|---:|---|
+| `sync_valid` | IN | 1 | TX FSM의 SYNC Symbol 요청 |
+| `sync_ready` | OUT | 1 | Mapper가 SYNC 요청을 받을 수 있음 |
+
+Handshake:
+
+```text
+sync_valid && sync_ready
+```
+
+SYNC와 DATA 요청이 동시에 들어오면 **SYNC가 우선**한다.
 
 ## BFSK Mapper → Carrier Generator
 
@@ -1034,11 +1049,21 @@ Packet Time
 
 ## TX-3 BFSK Mapper
 
-- [ ] `bfsk_mapper.v`
-- [ ] IDLE
-- [ ] BIT0
-- [ ] BIT1
-- [ ] SYNC
+- [x] `bfsk_mapper.v`
+- [x] `tb_bfsk_mapper.v`
+- [x] IDLE
+- [x] BIT0
+- [x] BIT1
+- [x] SYNC
+- [x] `symbol_start` 1-Clock Pulse
+- [x] `symbol_done` 전까지 Symbol 유지
+- [x] `symbol_done` 후 IDLE 복귀
+- [x] `sync_valid` / `sync_ready` Handshake
+- [x] SYNC / DATA 동시 요청 시 SYNC 우선
+- [x] Vivado 2020.2 / XSim 검증
+- [x] Vivado Project (`tb_xpr/tb_bfsk_mapper/tb_bfsk_mapper.xpr`) 반영
+- Commit: `eb25eed` (`feat: verify BFSK mapper and add SYNC handshake interface`)
+- XPR Commit: `33bd050` (`add new xpr folder`)
 
 ## TX-4 Carrier Generator
 
@@ -1311,6 +1336,17 @@ Handshake                 : valid/ready Backpressure PASS
 Frame Pulse               : frame_start / frame_done PASS
 Verification              : Vivado 2020.2 / XSim
 Frame Generator Commit    : abdd1cf
+
+TX-3 BFSK Mapper           : PASS
+BFSK Mapper RTL            : rtl/tx/bfsk_mapper.v
+BFSK Mapper TB             : sim/tx/tb_bfsk_mapper.v
+Mapping                    : IDLE / BIT0 / BIT1 / SYNC PASS
+SYNC Handshake             : sync_valid / sync_ready PASS
+SYNC Priority              : SYNC > DATA PASS
+Symbol Control             : symbol_start / symbol_done PASS
+Verification               : Vivado 2020.2 / XSim
+BFSK Mapper Commit         : eb25eed
+BFSK Mapper XPR            : tb_xpr/tb_bfsk_mapper/tb_bfsk_mapper.xpr
 ```
 
 ---
@@ -1320,13 +1356,13 @@ Frame Generator Commit    : abdd1cf
 TX:
 
 ```text
-1. bfsk_mapper.v
-2. tb_bfsk_mapper.v
-3. IDLE / BIT0 / BIT1 / SYNC Mapping 검증
-4. bfsk_carrier_gen.v
-5. 10 / 20 / 25 kHz Carrier 검증
-6. Symbol 1.6 ms 적용
-7. tx_fsm.v
+1. bfsk_carrier_gen.v
+2. tb_bfsk_carrier_gen.v
+3. 10 / 20 / 25 kHz Carrier 검증
+4. Symbol 1.6 ms 적용
+5. IDLE = No Carrier 검증
+6. tx_fsm.v
+7. PREAMBLE SYNC x4 연동
 8. optical_tx_top.v
 ```
 
@@ -1485,7 +1521,55 @@ PASS되지 않은 항목은 완료 처리하지 않는다.
 
 ---
 
-**Last Updated:** 2026-09-15  
-**Document Version:** v1.3  
+# 43. 2026-09-16 Progress
+
+## 완료
+
+- [x] TX-3 BFSK Mapper RTL 구현 및 검증 완료
+  - File: `rtl/tx/bfsk_mapper.v`
+  - Testbench: `sim/tx/tb_bfsk_mapper.v`
+  - Vivado Project: `tb_xpr/tb_bfsk_mapper/tb_bfsk_mapper.xpr`
+  - Tool: Vivado 2020.2 / XSim
+  - Mapping: `IDLE / BIT0 / BIT1 / SYNC`
+  - `tx_bit=0 -> BIT0`: PASS
+  - `tx_bit=1 -> BIT1`: PASS
+  - `sync_valid -> SYNC`: PASS
+  - `symbol_start` 1-Clock Pulse: PASS
+  - `symbol_done` 전까지 `symbol_type/symbol_valid` 유지: PASS
+  - `symbol_done` 후 IDLE 복귀: PASS
+  - SYNC / DATA 동시 요청 시 SYNC 우선: PASS
+  - Result: **PASS**
+  - Commit: `eb25eed` (`feat: verify BFSK mapper and add SYNC handshake interface`)
+  - XPR Commit: `33bd050` (`add new xpr folder`)
+
+- [x] TX 인터페이스 명세 파일 저장소 반영 확인
+  - File: `docs/BFSK_TX_Interface_Spec_Verilog.xlsx`
+  - Commit: `9780ac5` (`chore: clean unused RX directories and add TX interface spec`)
+
+## 변경된 설계 결정
+
+- TX FSM -> BFSK Mapper에 SYNC 요청 Handshake 추가
+  - `sync_valid`: TX FSM -> Mapper SYNC 요청
+  - `sync_ready`: Mapper -> TX FSM 요청 수락 가능
+- Mapper가 IDLE일 때만 `sync_ready=1`.
+- `tx_bit_ready = (~active) && (~sync_valid)`로 정의하여 SYNC 요청이 있으면 DATA 수락을 차단한다.
+- SYNC와 DATA가 동시에 요청되면 SYNC를 우선 처리한다.
+- Mapper가 Symbol을 수락하면 `symbol_start`를 1-Clock Pulse로 발생시키고, `symbol_done`까지 `symbol_type/symbol_valid`를 유지한다.
+
+## 실패 / 이슈
+
+- 현재 기록된 TX-3 BFSK Mapper 관련 미해결 이슈 없음.
+
+## 다음 작업
+
+1. `bfsk_carrier_gen.v` 구현
+2. `tb_bfsk_carrier_gen.v` 작성
+3. 10 / 20 / 25 kHz Carrier + IDLE No Carrier 검증
+4. Symbol 1.6 ms 검증 후 `tx_fsm.v` 진행
+
+---
+
+**Last Updated:** 2026-09-16  
+**Document Version:** v1.4  
 **Communication:** BFSK + 128-point FFT Frequency Detection  
 **Physical Link:** Wireless Optical Only
