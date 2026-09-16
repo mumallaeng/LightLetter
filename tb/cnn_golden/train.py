@@ -1,12 +1,12 @@
-"""확정 모델(C2-P1-S1-F3, FC 676->256->64->36) 학습 스크립트.
+"""Training script for the confirmed model (C2-P1-S1-F3, FC 676->256->64->36).
 
-실행 (LightLetter/tb에서):
-    .venv/bin/python -u -m cnn_golden.train --cache results/260913-full-data \
+Run (from LightLetter/tb):
+    .venv/bin/python -u -m cnn_golden.train --data-root results/emnist \
       --output results/<run-name> --device mps
 
-같은 명령을 다시 실행하면 완료 모델은 건너뛰고 미완료면 마지막 저장 epoch부터 재개한다.
-동일 출력 경로에서 두 학습 프로세스를 동시에 실행하면 안 된다. 소스·환경·조건 manifest가
-다르면 재사용을 거부한다.
+Re-running the same command skips a completed model and resumes an incomplete one
+from its last saved epoch. Never run two training processes against the same output
+path at once. A manifest mismatch (different source/environment/settings) is refused.
 """
 import argparse
 import hashlib
@@ -19,7 +19,7 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 
-from .full_data import load_cache
+from .data import load_split
 from .model import Net
 
 DATASET = 'ByClass-Uppercase-Digits'
@@ -30,7 +30,7 @@ LR = .001
 
 
 def batch(x, ids, device):
-    # 원본 uint8 픽셀(0~255)을 학습 입력 float(0~1)로 바꿔 GPU에 올린다.
+    # Converts raw uint8 pixels (0-255) to a float (0-1) training input on the device.
     return torch.from_numpy(np.asarray(x[ids, None], dtype=np.float32) / 255.).to(device)
 
 
@@ -50,7 +50,8 @@ def atomic_json(path, value):
 
 
 def scores(labels, predictions):
-    # confusion 행=정답, 열=예측. balanced accuracy는 36개 class별 recall 평균이다.
+    # Confusion matrix rows are ground truth, columns are predictions. Balanced accuracy
+    # is the mean per-class recall over all 36 classes.
     cm = np.bincount(labels * 36 + predictions, minlength=36 * 36).reshape(36, 36)
     return dict(accuracy=float(np.mean(labels == predictions)),
                 digit_accuracy=float(np.mean(labels[labels < 10] == predictions[labels < 10])),
@@ -61,7 +62,8 @@ def scores(labels, predictions):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--cache', type=Path, required=True)
+    parser.add_argument('--data-root', type=Path, required=True,
+                        help='Directory torchvision downloads/caches raw EMNIST files into.')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--device', choices=['mps', 'cuda'], default='mps')
     parser.add_argument('--conv-init', choices=['default', 'center_identity'], default='center_identity')
@@ -81,8 +83,10 @@ def main():
         raise ValueError('Existing experiment protocol differs; use a new output directory')
     atomic_json(manifest_path, manifest)
 
-    x, y, train_source = load_cache(args.cache, DATASET, 'train')
-    tx, ty, test_source = load_cache(args.cache, DATASET, 'test')
+    x, y = load_split(args.data_root, 'train')
+    tx, ty = load_split(args.data_root, 'test')
+    data_source = dict(loader='torchvision.datasets.EMNIST', split='byclass',
+                       root=str(args.data_root))
     counts = np.bincount(y, minlength=36)
     if np.any(counts == 0):
         raise ValueError('Training data is missing a class')
@@ -105,15 +109,15 @@ def main():
     checkpoint = out / 'last.pt'
     previous = json.loads(result_path.read_text()) if result_path.exists() else {}
     if checkpoint.exists():
-        # 중간에 멈춘 경우 모델뿐 아니라 Adam 상태와 완료 epoch도 이어받는다.
+        # A resumed run restores the model, the Adam state, and the completed epochs.
         saved = torch.load(checkpoint, map_location=args.device, weights_only=False)
         net.load_state_dict(saved['model'])
         optimizer.load_state_dict(saved['optimizer'])
         history = saved['history']
     start = time.monotonic()
     record = dict(status='TRAINING', inventory=net.inventory(),
-                  training_images=len(y), test_images=len(ty), train_source=train_source,
-                  test_source=test_source, history=history, device=args.device,
+                  training_images=len(y), test_images=len(ty), data_source=data_source,
+                  history=history, device=args.device,
                   conv_init=args.conv_init, letter_loss_weight=letter_weight,
                   first_batch_conv_gradient_l1=previous.get('first_batch_conv_gradient_l1'))
     atomic_json(result_path, record)
@@ -129,7 +133,7 @@ def main():
             loss = F.cross_entropy(net(batch(x, ids, args.device)), target, weight=class_weights)
             loss.backward()
             if epoch == 0 and offset == 0:
-                # 첫 batch부터 Conv 기울기가 전부 0이면 즉시 중단한다.
+                # Abort immediately if every Conv layer's first-batch gradient is zero.
                 norms = [float(layer.weight.grad.abs().sum().detach().cpu())
                          if layer.weight.grad is not None else 0. for layer in net.convs]
                 record['first_batch_conv_gradient_l1'] = norms
@@ -143,7 +147,7 @@ def main():
             raise RuntimeError('Nonfinite training loss')
         history.append(dict(epoch=epoch + 1, loss=loss_value,
                             session_seconds=round(time.monotonic() - start, 2)))
-        # 마지막 optimizer 갱신 이후의 weight scale을 저장한다. test 입력은 사용하지 않는다.
+        # Snapshot the weight scale as of the last optimizer step. Test inputs are never used here.
         for layer, quant in zip([*net.convs, *net.fcs], net.weight_quant):
             quant(layer.weight)
         temporary = out / 'last.tmp'
@@ -153,7 +157,7 @@ def main():
         atomic_json(result_path, record)
         print(DATASET, history[-1], flush=True)
 
-    # 동일한 마지막-epoch 가중치로 QAT 모사 ON/OFF를 각각 평가한다.
+    # Evaluate the same final-epoch weights with QAT simulation on and off.
     quantized = predict(net, tx, args.device)
     net.quantization(False)
     floating = predict(net, tx, args.device)

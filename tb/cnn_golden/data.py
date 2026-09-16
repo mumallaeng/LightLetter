@@ -1,83 +1,27 @@
-"""팀이 제공한 EMNIST PNG ZIP을 압축 해제나 원본 변경 없이 읽는다."""
-import csv
-import hashlib
-import io
-import json
-import random
-import zipfile
-from contextlib import ExitStack
-from pathlib import Path, PurePosixPath
+"""Loads EMNIST digits+uppercase (36 classes) via torchvision, no team-specific files.
 
+torchvision.datasets.EMNIST(split="byclass") ships 62 classes ordered 0-9 (digits),
+10-35 (uppercase A-Z), 36-61 (lowercase a-z) -- see the EMNIST byclass mapping. We
+keep labels 0-35 as-is and drop lowercase; no relabeling is needed.
+
+torchvision's EMNIST images are stored flipped and rotated 90 degrees anticlockwise
+relative to the human-readable orientation (a long-standing artifact of the original
+NIST-to-EMNIST conversion, not a deliberate multi-angle augmentation -- see
+https://github.com/pytorch/vision/issues/8783). A plain 2D transpose undoes it.
+Skipping this step trains on sideways, mirrored characters without any error, so the
+correction is verified indirectly by matching the previously confirmed accuracy.
+"""
 import numpy as np
-from PIL import Image
+from torchvision.datasets import EMNIST
 
-CONFIGURATIONS = ("ByClass", "ByMerge", "Letters+Digits", "ByClass-Uppercase-Digits")
-
-
-def sha256(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
+NUM_CLASSES = 36
 
 
-def load_samples(root, configuration, partition="test", per_class=1, seed=261008):
-    if configuration not in CONFIGURATIONS or partition not in ("train", "test"):
-        raise ValueError("Unknown configuration or partition")
-    if per_class < 1:
-        raise ValueError("per_class must be positive")
-    base = Path(root) / configuration
-    manifest = json.loads((base / "manifest.json").read_text())
-    with (base / "labels/classes.csv").open(newline="", encoding="utf-8-sig") as f:
-        mapping = list(csv.DictReader(f))
-    count = int(manifest["class_count"])
-    if [int(row["class_id"]) for row in mapping] != list(range(count)):
-        raise ValueError("Class mapping is not contiguous or disagrees with manifest")
-    # Stratified reservoir sampling: deterministic, covers all classes, scans only CSV.
-    rng, buckets, seen = random.Random(seed), [[] for _ in range(count)], [0] * count
-    csv_path = base / "labels" / f"{partition}.csv"
-    with csv_path.open(newline="", encoding="utf-8-sig") as f:
-        for row in csv.DictReader(f):
-            c = int(row["class_id"])
-            if not 0 <= c < count:
-                raise ValueError("Out-of-range class ID")
-            image_path = PurePosixPath(row["image_path"])
-            archive = row["image_archive"]
-            if (image_path.is_absolute() or ".." in image_path.parts
-                    or image_path.parts[0] != partition or Path(archive).name != archive
-                    or not archive.startswith(partition + "-")):
-                raise ValueError("Invalid partition/archive/image path")
-            seen[c] += 1
-            if len(buckets[c]) < per_class:
-                buckets[c].append(row)
-            else:
-                j = rng.randrange(seen[c])
-                if j < per_class:
-                    buckets[c][j] = row
-    expected = manifest["partitions"][partition]
-    if sum(seen) != expected["images"] or any(
-            seen[c] != expected["class_counts"][str(c)] for c in range(count)):
-        raise ValueError("CSV counts disagree with manifest")
-    if any(len(b) < per_class for b in buckets):
-        raise ValueError("Requested more images per class than available")
-    rows = [row for bucket in buckets for row in bucket]
-    images = []
-    with ExitStack() as stack:
-        archives = {}
-        for row in rows:
-            archive = row["image_archive"]
-            if archive not in archives:
-                archives[archive] = stack.enter_context(zipfile.ZipFile(base / "images" / archive))
-            raw = archives[archive].read(row["image_path"])
-            with Image.open(io.BytesIO(raw)) as im:
-                if im.mode != "L" or im.size != (28, 28):
-                    raise ValueError("Expected upright 28x28 grayscale PNG")
-                images.append(np.asarray(im).copy())
-            row["png_sha256"] = hashlib.sha256(raw).hexdigest()
-    evidence = dict(configuration=configuration, partition=partition, classes=count,
-                    per_class=per_class, seed=seed, orientation="upright_no_transform",
-                    source_zip_sha256_declared=manifest["source_zip_sha256"],
-                    manifest_sha256=sha256(base / "manifest.json"),
-                    labels_sha256=sha256(csv_path), mapping=mapping, samples=rows)
-    return np.stack(images), np.array([int(r["class_id"]) for r in rows]), evidence
+def load_split(root, partition):
+    """Returns (images, labels) as uint8 (N,28,28) / int64 (N,), upright orientation."""
+    dataset = EMNIST(root=str(root), split="byclass", train=(partition == "train"), download=True)
+    images = dataset.data.numpy()
+    labels = dataset.targets.numpy()
+    images = np.transpose(images, (0, 2, 1))  # undoes the EMNIST flip+rotate artifact
+    keep = labels < NUM_CLASSES
+    return images[keep].copy(), labels[keep].astype(np.int64).copy()

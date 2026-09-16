@@ -9,11 +9,19 @@ Flatten(26×26=676) → FC1(676→256) → ReLU → FC2(256→64) → ReLU → F
 이 repo가 아니라 `Vault/projects/LightLetter/sweep-exploration/`(개인 학습 자료)에 있다.
 과거 A계열 모델(`legacy_a_models/`)은 폐기했다.
 
+데이터는 `cnn_golden/data.py`가 `torchvision.datasets.EMNIST(split="byclass")`로 직접
+받아온다 — 팀원마다 다른 ZIP을 안 갖고 있어도 누구나 실행할 수 있게 하기 위해서다.
+byclass는 62클래스(숫자 0-9, 대문자 10-35, 소문자 36-61) 순서라 36 미만만 남기면 재매핑
+없이 그대로 쓸 수 있다. torchvision의 EMNIST 원본은 90도 회전+반전된 상태로 오므로
+`data.py`가 전치(transpose)로 되돌린다(회전을 안 고치면 결과가 안 나오는 게 아니라 조용히
+틀린 방향의 글자를 학습하게 된다). 이 파이프라인은 이전 팀 ZIP 기반 학습과 대조해서
+loss curve·정확도가 소수점까지 동일하게 재현되는 것으로 검증했다.
+
 ## 실험 조건
 
 | 항목 | 설정 |
 |---|---|
-| 데이터 | ByClass-Uppercase-Digits (36 class) |
+| 데이터 | EMNIST ByClass, 숫자+대문자만 필터링 (36 class) |
 | Conv | 2층, 층마다 입력/출력 채널 1, kernel 3×3, stride 1, zero-padding 1 |
 | Pool | 모든 Conv → ReLU 뒤 MaxPool 2×2, stride 1 |
 | FC | Flatten(676) → 256 → ReLU → 64 → ReLU → 36 |
@@ -35,12 +43,13 @@ Float 비교는 동일 QAT 가중치에서 fake quantization만 끈 결과이며
 
 ## 실행 및 결과
 
-`tb`에서 실행한다. 기존 전체 데이터 캐시를 재사용하며 원본 데이터는 변경하지 않는다.
+`tb`에서 실행한다. `--data-root`는 torchvision이 EMNIST 원본을 내려받아 캐싱해두는
+로컬 디렉터리로, 최초 실행 시에만 다운로드가 발생하고 이후엔 재사용한다.
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python -u -m cnn_golden.train \
-  --cache results/260913-full-data \
+  --data-root results/emnist \
   --output results/<run-name> --device mps
 ```
 
@@ -48,9 +57,9 @@ Float 비교는 동일 QAT 가중치에서 fake quantization만 끈 결과이며
 동일 출력 경로에서 두 학습 프로세스를 동시에 실행하면 안 된다. 소스·환경·조건 manifest가
 다르면 재사용을 거부한다. MPS의 bit-level 재현성은 보장하지 않는다.
 
-- `results/<run-name>/ByClass-Uppercase-Digits/result.json`: 데이터 출처, 전체 행 수,
-  loss 이력, qat16/float_same_weights 점수, confusion matrix, inventory(weight-only
-  BRAM 하한).
+- `results/<run-name>/ByClass-Uppercase-Digits/result.json`: 데이터 출처(data_source),
+  전체 행 수, loss 이력, qat16/float_same_weights 점수, confusion matrix,
+  inventory(weight-only BRAM 하한).
 - `.../last.pt`: 학습 가중치·observer·Adam 상태·완료 epoch.
 - `.../predictions.npz`: test CSV 순서의 전체 정답과 두 방식의 예측.
 

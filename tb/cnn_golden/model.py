@@ -1,12 +1,13 @@
-"""확정 모델: C2-P1-S1, FC 676->256->64->36, INT16 QAT.
+"""Confirmed model: C2-P1-S1, FC 676->256->64->36, INT16 QAT.
 
-Conv 2층(3x3, zero-padding 1, stride 1, 출력 채널 1) -> 각 Conv 뒤 ReLU -> MaxPool(2x2,
-stride 1) -> Flatten(26x26=676) -> FC1(676->256) -> ReLU -> FC2(256->64) -> ReLU ->
-FC3(64->36). 16개 구조를 비교한 스윕과 FC 폭 비교 실험에서 골라낸 단일 확정 구성을
-하드코딩한다. 스윕 이력·다른 폭 비교 코드는 Vault/projects/LightLetter/sweep-exploration/에
-있다(이 repo에는 없음).
+Conv x2 (3x3, zero-padding 1, stride 1, 1 output channel) -> ReLU -> MaxPool(2x2,
+stride 1) after each Conv -> Flatten(26x26=676) -> FC1(676->256) -> ReLU ->
+FC2(256->64) -> ReLU -> FC3(64->36). This hardcodes the single configuration chosen
+after sweeping 16 structures and comparing FC widths. The sweep history and width
+comparison code live in Vault/projects/LightLetter/sweep-exploration/, not this repo.
 
-INT16 경계는 모사하지만 MAC은 부동소수점으로 계산하므로 RTL의 비트 단위 결과는 아니다.
+This simulates INT16 boundaries, but MACs are computed in floating point, so results
+are not bit-exact with RTL.
 """
 import math
 
@@ -21,11 +22,12 @@ FC_WIDTHS = [256, 64, 36]
 
 
 class Quant16(nn.Module):
-    """대칭 signed INT16 범위의 가짜 양자화를 적용한다.
+    """Fake-quantizes into the symmetric signed INT16 range.
 
-    scale은 2의 거듭제곱, 반올림은 짝수 쪽, 포화 구간의 역전파는 STE를 사용한다.
-    활성값 관측기는 학습 데이터의 누적 최댓값을 쓰고 가중치는 갱신 때마다 다시 관측한다.
-    GPU 연산만 사용하며 CPU 학습으로 자동 전환하지 않는다.
+    The scale is a power of two, rounding is round-to-even, and the saturated region's
+    backward pass uses a straight-through estimator. The activation observer tracks the
+    running max over training data; the weight observer is re-measured on every update.
+    GPU only -- this never falls back to CPU training.
     """
     def __init__(self, weight=False):
         super().__init__()
@@ -51,14 +53,14 @@ class Quant16(nn.Module):
 
 
 class Net(nn.Module):
-    """확정 스펙(C2-P1-S1-F3, FC 676->256->64->36)을 하드코딩한 모델."""
+    """Hardcodes the confirmed spec: C2-P1-S1-F3, FC 676->256->64->36."""
 
     def __init__(self, conv_init='center_identity'):
         super().__init__()
-        # '층당 필터 1개'를 출력 채널 1개로 구현했다. 입력도 grayscale 1채널이다.
+        # "1 filter per layer" is implemented as 1 output channel; the input is 1-channel grayscale.
         self.convs = nn.ModuleList([nn.Conv2d(1, 1, 3, padding=PADDING) for _ in range(CONV_LAYERS)])
         if conv_init == 'center_identity':
-            # 단일 출력 채널이 초기 음수 bias로 모두 꺼지는 현상을 방지한다.
+            # Prevents the single output channel from dying behind an initial negative bias.
             with torch.no_grad():
                 for conv in self.convs:
                     conv.weight.zero_()
@@ -69,9 +71,9 @@ class Net(nn.Module):
         size = 28
         self.sizes = []
         for _ in self.convs:
-            # 3x3/stride 1 Conv 후 한 변 길이: size-2+2*padding.
+            # Side length after a 3x3/stride-1 Conv: size-2+2*padding.
             size = size - 2 + 2 * PADDING
-            # 2x2 MaxPool 후 한 변 길이. stride 1은 floor 규칙을 쓴다.
+            # Side length after a 2x2 MaxPool; stride 1 uses the floor rule.
             size = (size - 2) // POOL_STRIDE + 1
             if size < 1:
                 raise ValueError('Empty spatial output')
@@ -99,7 +101,7 @@ class Net(nn.Module):
             x = F.linear(x, self.weight_quant[i](fc.weight), fc.bias)
             if j < len(self.fcs) - 1:
                 x = F.relu(x)
-            # 마지막 FC에는 ReLU를 두지 않는다. 36개 logit의 최대 index가 class ID다.
+            # No ReLU on the last FC. The argmax over the 36 logits is the class ID.
             x = self.activation_quant[i](x)
         return x
 
