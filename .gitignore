@@ -25,3 +25,12 @@
 Thumbs.db
 .vscode/
 .idea/
+
+# Vivado per-project generated directories
+*.cache/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.sim/
+*.gen/
+*.srcs/
