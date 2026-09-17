@@ -25,6 +25,19 @@ module rx_symbol_detector #(
     reg [1:0] block_code_reg;
     reg       block_code_valid_reg;
 
+    // 두 번째 Power 대비 20% 이하의 차이는 INVALID로 처리한다.
+    // 10 * 최대값 > 12 * 나머지 값 두 개를 모두 만족해야 유효하다.
+    // 곱셈 결과가 넘치지 않도록 MAG_W + 4비트로 확장한다.
+    wire [MAG_W+3:0] p8  = {4'b0000, bin8_power};
+    wire [MAG_W+3:0] p16 = {4'b0000, bin16_power};
+    wire [MAG_W+3:0] p20 = {4'b0000, bin20_power};
+    wire [MAG_W+3:0] p8_x10  = (p8 << 3) + (p8 << 1);
+    wire [MAG_W+3:0] p16_x10 = (p16 << 3) + (p16 << 1);
+    wire [MAG_W+3:0] p20_x10 = (p20 << 3) + (p20 << 1);
+    wire [MAG_W+3:0] p8_x12  = (p8 << 3) + (p8 << 2);
+    wire [MAG_W+3:0] p16_x12 = (p16 << 3) + (p16 << 2);
+    wire [MAG_W+3:0] p20_x12 = (p20 << 3) + (p20 << 2);
+
     assign block_code       = block_code_reg;
     assign block_code_valid = block_code_valid_reg;
 
@@ -38,20 +51,20 @@ module rx_symbol_detector #(
             block_code_valid_reg <= 1'b0;
 
             if (fft_block_done) begin
-                if ((bin8_power > bin16_power) &&
-                    (bin8_power > bin20_power)) begin
+                if ((p8_x10 > p16_x12) &&
+                    (p8_x10 > p20_x12)) begin
                     block_code_reg <= CODE_BIT0;
                 end
-                else if ((bin16_power > bin8_power) &&
-                         (bin16_power > bin20_power)) begin
+                else if ((p16_x10 > p8_x12) &&
+                         (p16_x10 > p20_x12)) begin
                     block_code_reg <= CODE_BIT1;
                 end
-                else if ((bin20_power > bin8_power) &&
-                         (bin20_power > bin16_power)) begin
+                else if ((p20_x10 > p8_x12) &&
+                         (p20_x10 > p16_x12)) begin
                     block_code_reg <= CODE_SYNC;
                 end
                 else begin
-                    // 최대 Power가 동률이면 주파수를 확정하지 않는다.
+                    // 동률, 모두 0 또는 우세 차이가 20% 이하이면 INVALID.
                     block_code_reg <= CODE_INVALID;
                 end
 
