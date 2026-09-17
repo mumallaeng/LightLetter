@@ -6,7 +6,7 @@
 > 현재 저장소의 실제 파일과 검증 결과를 우선 기준으로 한다.
 >
 > **Last Updated:** 2026-09-17  
-> **Document Version:** v1.9
+> **Document Version:** v2.0
 
 ---
 
@@ -25,6 +25,7 @@ rtl/tx/bfsk_carrier_gen.v
 rtl/tx/tx_fsm.v
 rtl/tx/optical_tx_top.v
 rtl/tx/axi_lite_tx_wrapper.v
+rtl/tx/optical_tx_axi_top.v
 ```
 
 현재 검증 완료 Testbench:
@@ -37,6 +38,7 @@ sim/tx/tb_bfsk_carrier_gen.v
 sim/tx/tb_tx_fsm.v
 sim/tx/tb_optical_tx_top.v
 sim/tx/tb_axi_lite_tx_wrapper.v
+sim/tx/tb_optical_tx_axi_top.v
 ```
 
 최근 구현 Commit:
@@ -46,6 +48,7 @@ TX-4 Carrier Generator = 5886ce1
 TX-5 TX FSM            = 92ece97
 TX-6 Optical TX Top    = cd0f5b5
 TX-7 AXI4-Lite Wrapper = 334e7f1
+TX-8 AXI + Optical Top = 4e7bc82
 ```
 
 > `rx_symbol_sync`, `rx_frame_decoder` 등 RX 구현 모듈은 현재 `BFSK_Tx` 저장소의 구현 파일이 아니므로 구현 완료 항목으로 관리하지 않는다.
@@ -56,29 +59,20 @@ TX-7 AXI4-Lite Wrapper = 334e7f1
 # 1. 현재 TX 구조
 
 ```text
-Zynq PS
-  ↓ AXI4-Lite
-axi_lite_tx_wrapper
+Zynq PS / AXI4-Lite Master
   ↓
-char_id / char_valid / char_ready / tx_busy
-  ↓
-optical_tx_top
+optical_tx_axi_top
   │
-  ├─ tx_fsm
-  │    ├─ PREAMBLE SYNC ×4
-  │    ├─ frame_gen_start
-  │    └─ 최종 frame_done 대기
-  │
-  ├─ tx_frame_generator
-  │    ├─ crc8
-  │    └─ frame_gen_done
-  │         = 마지막 Frame Bit의 Mapper 전달 완료
-  │
-  ├─ bfsk_mapper
-  │
-  └─ bfsk_carrier_gen
-       └─ symbol_done
-            = 현재 Optical Symbol 출력 완료
+  ├─ axi_lite_tx_wrapper
+  │    ↓
+  │    char_id / char_valid / char_ready / tx_busy
+  │    ↓
+  └─ optical_tx_top
+       │
+       ├─ tx_fsm
+       ├─ tx_frame_generator / crc8
+       ├─ bfsk_mapper
+       └─ bfsk_carrier_gen
   ↓
 optical_tx / tx_enable
 ```
@@ -88,9 +82,17 @@ optical_tx / tx_enable
 ```text
 - optical_tx_top의 char_id / char_valid / char_ready / tx_busy 인터페이스는 유지한다.
 - AXI4-Lite Slave Wrapper는 optical_tx_top 외부에 둔다.
+- TX-8에서는 axi_lite_tx_wrapper + optical_tx_top을 optical_tx_axi_top으로 통합한다.
+- AXI Clock과 TX Clock은 동일 Clock Domain으로 사용한다.
 - Zynq PS에서 CNN 결과를 AXI4-Lite Register Write로 전달한다.
 - Wrapper가 char_valid 1-Clock Pulse를 생성한다.
-- optical_tx_top 내부 TX-1~TX-6 구조는 유지한다.
+```
+
+Reset 연결:
+
+```text
+s_axi_aresetn = AXI4-Lite active-low Reset
+optical_tx_top.rst = ~s_axi_aresetn
 ```
 
 TX-6 완료 시점 정의:
@@ -137,7 +139,7 @@ F1_HZ             = 20000
 FSYNC_HZ          = 25000
 F0_BIN            = 8
 F1_BIN            = 16
-FSYNC_BIN         = 20
+FSYNC_BIN          = 20
 FFT_BLOCK_SAMPLES = 128
 SYMBOL_SAMPLES    = 256
 PREAMBLE_SYMBOLS  = 4
@@ -290,7 +292,33 @@ char_ready = 0
 → START Ignore
 ```
 
-## 4.3 Frame Generator → BFSK Mapper
+## 4.3 TX-8 AXI + Optical TX Top
+
+RTL:
+
+```text
+rtl/tx/optical_tx_axi_top.v
+```
+
+외부 인터페이스:
+
+```text
+AXI4-Lite Slave Interface
++ optical_tx
++ tx_enable
+```
+
+통합 구조:
+
+```text
+AXI4-Lite
+→ axi_lite_tx_wrapper
+→ char_id / char_valid / char_ready / tx_busy
+→ optical_tx_top
+→ optical_tx / tx_enable
+```
+
+## 4.4 Frame Generator → BFSK Mapper
 
 ```text
 tx_bit
@@ -299,7 +327,7 @@ tx_bit_ready
 Handshake = tx_bit_valid && tx_bit_ready
 ```
 
-## 4.4 TX FSM → BFSK Mapper
+## 4.5 TX FSM → BFSK Mapper
 
 ```text
 sync_valid
@@ -308,7 +336,7 @@ Handshake = sync_valid && sync_ready
 Priority = SYNC > DATA
 ```
 
-## 4.5 BFSK Mapper → Carrier Generator
+## 4.6 BFSK Mapper → Carrier Generator
 
 ```text
 symbol_type[1:0]
@@ -326,7 +354,7 @@ Symbol Encoding:
 11 = SYNC
 ```
 
-## 4.6 Carrier Generator → Optical Driver
+## 4.7 Carrier Generator → Optical Driver
 
 ```text
 optical_tx
@@ -346,6 +374,7 @@ tx_enable
 | TX-5 | TX FSM | PASS 15/0 | SYNC ×4, Frame Start, Frame ID Roll-over | `92ece97` |
 | TX-6 | Optical TX Top | PASS 18/0 | `D50041C0`, 816 Rising Edge, 최종 Optical 완료 | `cd0f5b5` |
 | TX-7 | AXI4-Lite Wrapper | PASS 17/0 | Register R/W, START, READY/BUSY, AW First, W First | `334e7f1` |
+| TX-8 | AXI4-Lite + Optical TX Integration | TB 구현 완료 / 결과 확인 대기 | AXI→Wrapper→Optical TX end-to-end, 3 Frame, AW/W 순서, Status | `4e7bc82` |
 
 ## TX-6 Optical TX Top 핵심 보정
 
@@ -440,6 +469,95 @@ PASS = 17 / FAIL = 0
 
 ---
 
+## TX-8 AXI4-Lite + Optical TX Integration — TB 구현 완료 / 결과 확인 대기
+
+파일:
+
+```text
+RTL: rtl/tx/optical_tx_axi_top.v
+TB : sim/tx/tb_optical_tx_axi_top.v
+XPR: tb_xpr/tb_optical_tx_axi_top/tb_optical_tx_axi_top.xpr
+```
+
+구현 Commit:
+
+```text
+4e7bc82
+feat: integrate AXI4-Lite with optical TX and verify end-to-end
+```
+
+통합 구조:
+
+```text
+Zynq PS / AXI4-Lite Master
+→ axi_lite_tx_wrapper
+→ char_id / char_valid / char_ready / tx_busy
+→ optical_tx_top
+→ optical_tx / tx_enable
+```
+
+Reset 연결:
+
+```text
+s_axi_aresetn = AXI active-low Reset
+optical_tx_top.rst = ~s_axi_aresetn
+```
+
+Clock Domain:
+
+```text
+AXI Clock = TX Clock = s_axi_aclk
+동일 Clock Domain으로 통합
+```
+
+TB 검증 항목:
+
+```text
+Reset 후 STATUS READY
+AXI Write DATA=0x41 + START
+READY / BUSY Status 변화
+SYNC Symbol ×4
+Data Symbol 32개
+Frame D50041C0 복원
+Optical Rising Edge 816
+Busy 중 START Ignore
+Frame ID 00 → 01
+두 번째 Character AW First 전체 송신
+세 번째 Character W First 전체 송신
+연속 송신 Frame ID 증가
+AXI Read / Write Response OKAY
+```
+
+Simulation 가속:
+
+```text
+System Clock = 100 MHz 유지
+TB 전용으로 FS / BFSK 주파수를 100배 Scaling
+
+FS_HZ  = 16 MHz
+F0_HZ  = 1 MHz
+F1_HZ  = 2 MHz
+FSYNC   = 2.5 MHz
+Symbol  = 16 us
+
+주파수 비율은 유지되므로 Symbol당 Rising Edge는 동일:
+BIT0 = 16
+BIT1 = 32
+SYNC = 40
+```
+
+실제 10 / 20 / 25 kHz 및 Symbol 1.6 ms Timing은 TX-4 / TX-6에서 이미 검증 완료하였다.
+
+검증 상태:
+
+```text
+RTL / TB / XPR Git 반영 완료
+Vivado/XSim 최종 PASS/FAIL 숫자는 현재 Git에서 확인되지 않음
+따라서 progress.md에서는 TX-8을 아직 최종 PASS 처리하지 않음
+```
+
+---
+
 # 6. 설계 / 인터페이스 변경 이력
 
 | 날짜 | 영역 | 변경 전 | 변경 후 | 이유 / 결과 |
@@ -458,49 +576,63 @@ PASS = 17 / FAIL = 0
 | 2026-09-17 | 개발 순서 | TX-7 Hardware | TX-7 AXI Wrapper → TX-8 통합 → TX-9 Hardware | PS 연동 우선 |
 | 2026-09-17 | TX-7 Wrapper | 미구현 | `axi_lite_tx_wrapper.v` | PASS=17 / FAIL=0 / `334e7f1` |
 | 2026-09-17 | AXI Register Map | 미확정 | `0x00 DATA`, `0x04 CTRL`, `0x08 STATUS` | Character / START / READY / BUSY 접근 |
-| 2026-09-17 | AXI Write 순서 | AW/W 동시 전제 가능성 | AW/W 독립 Pending 처리 | AW First / W First PASS |
-| 2026-09-17 | START 정책 | 미확정 | `char_ready=1`일 때만 `char_valid` Pulse | Busy 중 START Ignore PASS |
-| 2026-09-17 | TX-7 TB `axi_write` | AW/W Handshake 순차 대기 | AW/W 동시 수락을 한 번에 처리 | 완료된 W Handshake를 놓치는 TB 정지 문제 해결 |
+| 2026-09-17 | AXI Write 순서 | AW/W 동시 전제 가능성 | AW와 W 독립 Pending 처리 | AW First / W First 모두 PASS |
+| 2026-09-17 | START 정책 | 미확정 | `char_ready=1`일 때만 `char_valid` 1-Clock Pulse | Busy 중 START Ignore PASS |
+| 2026-09-17 | TX-7 TB `axi_write` | AW와 W Handshake를 순차 대기 | AW/W 동시 수락을 한 번에 처리 | 이미 완료된 W Handshake를 놓치는 TB 정지 문제 해결 |
+| 2026-09-17 | TX-8 Integration Top | Wrapper / Optical Top 개별 검증 | `optical_tx_axi_top.v`로 AXI4-Lite + Optical TX 통합 | Commit `4e7bc82`, TB/XPR 반영 |
+| 2026-09-17 | Reset 연결 | AXI active-low / TX active-high 분리 | `tx_rst = ~s_axi_aresetn` | 단일 외부 Reset으로 Wrapper + TX Core 통합 |
+| 2026-09-17 | TX-8 Simulation | 실제 1.6 ms Symbol | TB에서 FS/BFSK 주파수 100× Scaling | End-to-end Simulation 시간 단축, Symbol당 Edge 수 유지 |
 
 ---
 
-# 7. 다음 작업
-
-## TX-8 AXI4-Lite + Optical TX 전체 통합 Simulation
-
-통합 구조:
+# 7. 현재 단계 요약
 
 ```text
-AXI4-Lite Master TB
-→ axi_lite_tx_wrapper
-→ char_id / char_valid / char_ready / tx_busy
-→ optical_tx_top
-→ tx_fsm
-→ tx_frame_generator / crc8
-→ bfsk_mapper
-→ bfsk_carrier_gen
-→ optical_tx
+TX-1 CRC-8               PASS
+TX-2 Frame Generator     PASS
+TX-3 BFSK Mapper         PASS
+TX-4 Carrier Generator   PASS
+TX-5 TX FSM              PASS
+TX-6 Optical TX Top      PASS
+TX-7 AXI4-Lite Wrapper   PASS
+TX-8 AXI + Optical Top   TB 구현 완료 / XSim 결과 확인 대기
+TX-9 Hardware            대기
 ```
 
-통합 검증 목표:
+---
+
+# 8. 다음 작업
+
+## TX-8 Vivado / XSim 결과 확정
+
+현재 TX-8 RTL / TB / XPR 구현은 Git 반영 완료하였다.
+
+남은 확인:
 
 ```text
-1. AXI Write 0x00 TX_DATA로 Character 입력
-2. AXI Write 0x04 TX_CTRL.START로 송신 시작
-3. TX_STATUS READY/BUSY 변화 확인
-4. Preamble SYNC ×4
-5. Data Symbol 32개
-6. D50041C0 복원
-7. Optical Carrier Rising Edge = 816
-8. 최종 frame_done 이후 BUSY Clear / READY 복귀
-9. optical_tx = 0 / tx_enable = 0
-10. AW First / W First 조건에서도 전체 송신 정상
-11. Busy 중 START Ignore 유지
-12. AXI Response OKAY
-13. 연속 Character 전송 시 Frame ID 증가 확인
+OPTICAL TX AXI TOP TEST RESULT
+PASS = ?
+FAIL = ?
 ```
 
-TX-8 PASS 후 Hardware 단계로 이동한다.
+최종 PASS 근거가 확인되면 아래 항목을 공식 완료 처리한다.
+
+```text
+AXI DATA / START → TX 전체 송신
+READY / BUSY Status 변화
+SYNC ×4
+32 Data Symbol
+D50041C0 복원
+Optical Rising Edge 816
+Busy 중 START Ignore
+AW First / W First 전체 송신
+연속 Frame ID 증가
+AXI Response OKAY
+```
+
+TX-8 PASS 후 TX-9 Hardware 단계로 이동한다.
+
+---
 
 ## TX-9 Hardware Verification
 
@@ -508,14 +640,15 @@ TX-8 PASS 후 Hardware 단계로 이동한다.
 1. Zynq PS에서 AXI4-Lite Register Write
    - 0x00 TX_DATA
    - 0x04 TX_CTRL.START
-   - 0x08 TX_STATUS
+   - 0x08 TX_STATUS 확인
 2. XDC 작성
+   - Clock / Reset / optical_tx
 3. Zybo PMOD에 optical_tx 연결
-4. Oscilloscope 검증
+4. Oscilloscope Hardware 검증
    - SYNC 25 kHz
    - BIT0 10 kHz
    - BIT1 20 kHz
-   - Symbol 1.6 ms
+   - Symbol Time 1.6 ms
    - Preamble SYNC ×4
    - Frame 종료 후 IDLE
 5. 2N7000 Driver 연결
@@ -525,50 +658,47 @@ TX-8 PASS 후 Hardware 단계로 이동한다.
 Interface Excel:
 
 ```text
-TX-7 실제 RTL / Register Map이 확정되었으므로
-문서 정리 단계에서 아래 내용을 추가한다.
-
-- AXI4-Lite Slave 외부 Port
-- 0x00 TX_DATA
-- 0x04 TX_CTRL.START
-- 0x08 TX_STATUS.READY/BUSY
-- Wrapper ↔ optical_tx_top char_id / valid / ready / busy
+TX-7 Register Map + TX-8 외부 AXI4-Lite Top Port를
+문서 정리 단계에서 최신 RTL 기준으로 일괄 반영한다.
 ```
 
 ---
 
-# 8. Git / 문서 동기화 상태
+# 9. Git / 문서 동기화 상태
 
-TX-7 구현 파일 Git 반영 완료:
+TX-8 구현 / TB 파일은 Git 원격 반영 완료:
 
 ```text
-rtl/tx/axi_lite_tx_wrapper.v
-sim/tx/tb_axi_lite_tx_wrapper.v
-tb_xpr/tb_axi_lite_tx_wrapper/tb_axi_lite_tx_wrapper.xpr
+rtl/tx/optical_tx_axi_top.v
+sim/tx/tb_optical_tx_axi_top.v
+tb_xpr/tb_optical_tx_axi_top/tb_optical_tx_axi_top.xpr
 ```
 
 구현 Commit:
 
 ```text
-334e7f1
-feat: add and verify AXI4-Lite TX wrapper
+4e7bc82
+feat: integrate AXI4-Lite with optical TX and verify end-to-end
 ```
 
-검증 결과:
+확인된 구조:
 
 ```text
-PASS = 17
-FAIL = 0
+AXI4-Lite
+→ axi_lite_tx_wrapper
+→ optical_tx_top
+→ optical_tx / tx_enable
 ```
 
-진행상황 운영 지침:
+현재 검증 문서 상태:
 
 ```text
-docs/progress_지침.md
-Commit = 08bb3f1
+TX-8 RTL / TB / XPR = 확인 완료
+TX-8 PASS / FAIL 숫자 = Git에서 확인되지 않음
+TX-8 최종 PASS 처리 = 보류
 ```
 
-이번 동기화 대상:
+이번 문서 동기화 대상:
 
 ```text
 progress.md
@@ -576,19 +706,17 @@ Notion Progress
 Notion Testbench 결과
 ```
 
-Interface Excel은 이번 단계에서 수정하지 않는다.
-TX-7 실제 Port / Register Map은 문서 정리 채팅에서 반영한다.
+Interface Excel은 이번 단계에서 직접 수정하지 않는다.
 
 ---
 
-# 9. 업데이트 규칙
+# 10. 업데이트 규칙
 
 - RTL은 Verilog `.v` 기준으로 관리한다.
 - 설명 주석은 한글을 기본으로 한다.
 - PASS되지 않은 항목은 완료 처리하지 않는다.
 - 기존 PASS RTL/TB는 Regression 용도로 유지한다.
 - 실제 저장소에 없는 모듈을 구현 완료 항목으로 기록하지 않는다.
-- 인터페이스 변경은 `progress.md`에 즉시 기록한다.
-- Interface Excel은 문서 정리 단계에서 최신 RTL 기준으로 일괄 동기화한다.
+- 인터페이스 변경은 `progress.md`에 즉시 기록한다. Interface Excel은 문서 정리 단계에서 최신 RTL 기준으로 일괄 동기화한다.
 - `FS_HZ`, `FFT_N`, `SYMBOL_SAMPLES`, `F0/F1/FSYNC` 변경 시 공통 규격을 함께 갱신한다.
 - Hardware 검증 전 Simulation PASS를 먼저 확보한다.
