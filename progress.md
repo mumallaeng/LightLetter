@@ -6,7 +6,7 @@
 > 현재 저장소의 실제 파일과 검증 결과를 우선 기준으로 한다.
 >
 > **Last Updated:** 2026-09-17  
-> **Document Version:** v1.5
+> **Document Version:** v1.6
 
 ---
 
@@ -45,6 +45,20 @@ TX-4 구현 Commit:
 5886ce1
 ```
 
+현재 Git 원격에서 확인된 TX-5 구현 / 검증 파일:
+
+```text
+rtl/tx/tx_fsm.v
+sim/tx/tb_tx_fsm.v
+tb_xpr/tb_TX_FSM/tb_TX_FSM.xpr
+```
+
+TX-5 구현 Commit:
+
+```text
+92ece97
+```
+
 > `rx_symbol_sync`, `rx_frame_decoder` 등 RX 구현 모듈은 현재 `BFSK_Tx` 저장소의 구현 파일이 아니므로
 > 본 문서에서 구현 완료 항목으로 관리하지 않는다.
 > FFT/RX 관련 값은 TX와 맞춰야 하는 **공통 통신 규격 기준값**으로만 기록한다.
@@ -56,31 +70,40 @@ TX-4 구현 Commit:
 ```text
 Character ID
     ↓
+tx_fsm
+    ├─ char_valid / char_ready
+    ├─ PREAMBLE SYNC ×4
+    │    └─ sync_valid / sync_ready
+    └─ frame_gen_start
+          ↓
 tx_frame_generator
+    ├─ frame_id / latched_char_id
     ├─ crc8
-    ↓
-tx_bit / tx_bit_valid / tx_bit_ready
-    ↓
+    └─ tx_bit / tx_bit_valid / tx_bit_ready
+          ↓
 bfsk_mapper
     ├─ DATA: tx_bit
-    └─ PREAMBLE SYNC: sync_valid / sync_ready
-    ↓
+    └─ PREAMBLE: sync_valid
+          ↓
 symbol_type / symbol_valid / symbol_start
-    ↓
+          ↓
 bfsk_carrier_gen
-    ↓
-optical_tx / tx_enable
-    ↓
+    ├─ symbol_done
+    └─ optical_tx / tx_enable
+          ↓
 2N7000 / LED / Laser
 ```
 
-추후 TX FSM이 추가되면:
+TX FSM 역할:
 
 ```text
-TX FSM
- ├─ PREAMBLE SYNC ×4 제어
- ├─ sync_valid / sync_ready
- └─ Frame Generator Start 제어
+IDLE
+→ Character Latch
+→ SYNC Symbol ×4 완료 대기
+→ Frame Generator Start
+→ Frame Done 대기
+→ Frame ID +1
+→ IDLE
 ```
 
 ---
@@ -180,7 +203,44 @@ Frame    = 32'hD50041C0
 
 # 4. TX Interface
 
-## 4.1 Frame Generator → BFSK Mapper
+## 4.1 CNN / Upstream → TX FSM
+
+| Signal | Dir 기준 | Width | 설명 |
+|---|:---:|---:|---|
+| `char_id` | Upstream → TX FSM | 8 | 전송할 Character ID |
+| `char_valid` | Upstream → TX FSM | 1 | Character ID 유효 |
+| `char_ready` | TX FSM → Upstream | 1 | 새 Character 수락 가능 |
+| `tx_busy` | TX FSM → Upstream | 1 | TX 전체 송신 진행 중 |
+
+Handshake:
+
+```text
+char_valid && char_ready
+```
+
+TX FSM은 Handshake 시 `char_id`를 `latched_char_id`에 저장한다.
+
+---
+
+## 4.2 TX FSM → Frame Generator
+
+| Signal | Dir 기준 | Width | 설명 |
+|---|:---:|---:|---|
+| `latched_char_id` | TX FSM → Frame Gen | 8 | 현재 전송할 Character DATA |
+| `frame_id` | TX FSM → Frame Gen | 8 | 현재 Frame ID |
+| `frame_gen_start` | TX FSM → Frame Gen | 1 | Frame Generator Start 1-Clock Pulse |
+| `frame_done` | Frame Gen → TX FSM | 1 | 32-bit Frame 전송 완료 Pulse |
+
+Frame ID 정책:
+
+```text
+Frame 완료 시 +1
+8'hFF 다음 8'h00 Roll-over
+```
+
+---
+
+## 4.3 Frame Generator → BFSK Mapper
 
 | Signal | Dir 기준 | Width | 설명 |
 |---|:---:|---:|---|
@@ -196,7 +256,7 @@ tx_bit_valid && tx_bit_ready
 
 ---
 
-## 4.2 TX FSM → BFSK Mapper
+## 4.4 TX FSM → BFSK Mapper
 
 TX-3에서 SYNC 전용 Handshake를 추가하였다.
 
@@ -221,7 +281,7 @@ SYNC와 DATA 요청이 동시에 들어오면 SYNC 요청을 먼저 수락하며
 
 ---
 
-## 4.3 BFSK Mapper → Carrier Generator
+## 4.5 BFSK Mapper → Carrier Generator
 
 | Signal | Dir 기준 | Width | 설명 |
 |---|:---:|---:|---|
@@ -241,7 +301,20 @@ Symbol Encoding:
 
 ---
 
-## 4.4 Carrier Generator → Optical Driver
+## 4.6 Carrier Generator → TX FSM
+
+| Signal | Dir 기준 | Width | 설명 |
+|---|:---:|---:|---|
+| `symbol_done` | Carrier → TX FSM | 1 | 현재 SYNC Symbol 출력 완료 Pulse |
+
+TX FSM은 Preamble 구간에서 `sync_valid && sync_ready`로 SYNC 요청이 수락된 뒤
+`symbol_done`을 기다린 다음 다음 SYNC를 요청한다.
+
+SYNC Count는 실제 Symbol 완료 기준으로 진행한다.
+
+---
+
+## 4.7 Carrier Generator → Optical Driver
 
 | Signal | Dir 기준 | Width | 설명 |
 |---|:---:|---:|---|
@@ -493,6 +566,80 @@ tb_xpr/tb_bfsk_carrier_gen/tb_bfsk_carrier_gen.xpr 포함
 
 ---
 
+## TX-5 TX FSM — PASS
+
+RTL:
+
+```text
+rtl/tx/tx_fsm.v
+```
+
+TB:
+
+```text
+sim/tx/tb_tx_fsm.v
+```
+
+Vivado Project:
+
+```text
+tb_xpr/tb_TX_FSM/tb_TX_FSM.xpr
+```
+
+구현 Commit:
+
+```text
+92ece97
+feat: add and verify TX FSM
+```
+
+Vivado / XSim:
+
+```text
+TX FSM TEST RESULT : PASS
+PASS = 15
+FAIL = 0
+```
+
+검증 항목:
+
+```text
+Reset 후 IDLE / char_ready / tx_busy PASS
+char_valid && char_ready에서 Character ID Latch PASS
+tx_busy 동안 새로운 Character 입력 차단 PASS
+sync_valid / sync_ready Handshake PASS
+SYNC Symbol 정확히 4개 PASS
+Mapper Ready Stall 중 sync_valid 유지 PASS
+4번째 SYNC 완료 후 frame_gen_start 1-Clock Pulse PASS
+Frame 완료 후 IDLE 복귀 PASS
+Frame ID 증가 PASS
+Frame ID 8'hFF → 8'h00 Roll-over PASS
+```
+
+TX FSM 송신 순서:
+
+```text
+ST_IDLE
+→ ST_LOAD_DATA
+→ ST_PREAMBLE
+→ ST_SEND_FRAME
+→ ST_FRAME_DONE
+→ ST_IDLE
+```
+
+Preamble 제어:
+
+```text
+sync_valid
+→ sync_valid && sync_ready
+→ SYNC 요청 수락
+→ symbol_done 대기
+→ 완료 Count
+→ 총 4회 완료 후 frame_gen_start
+```
+
+---
+
 # 6. TX-4 디버깅 이력
 
 문제:
@@ -535,72 +682,93 @@ FAIL = 0
 | 2026-09-16 | Mapper Priority | DATA 경로 중심 | SYNC > DATA | SYNC / DATA 동시 요청 충돌 방지 |
 | 2026-09-17 | Carrier Generator | 미검증 | 10/20/25 kHz + IDLE PASS | PASS=27 / FAIL=0 |
 | 2026-09-17 | Carrier Counter | `+ 1'b0` | `+ 1'b1` | `symbol_done` 미발생 버그 수정 |
+| 2026-09-17 | TX FSM | 미구현 | `IDLE → LOAD_DATA → PREAMBLE → SEND_FRAME → FRAME_DONE` | PASS=15 / FAIL=0 |
+| 2026-09-17 | Preamble Control | Mapper 직접 요청 계획 | TX FSM이 `sync_valid/sync_ready` + `symbol_done`으로 SYNC ×4 제어 | 실제 Symbol 완료 기준으로 다음 SYNC 진행 |
+| 2026-09-17 | Frame ID | 정책만 정의 | Frame 완료 시 +1 / `FF → 00` Roll-over | TX-5 TB PASS |
 
 ---
 
 # 8. 다음 작업
 
-## TX-5 TX FSM
+## TX-6 Integration / Optical TX Top
 
-목표:
+다음 목표:
 
 ```text
-IDLE
-↓
-PREAMBLE
-  SYNC ×4
-↓
-FRAME START
-↓
-SFD + Frame ID + DATA + CRC
-↓
-DONE
-↓
-IDLE
+rtl/tx/optical_tx_top.v
+sim/tx/tb_optical_tx_top.v
 ```
 
-구현 예정:
+통합 대상:
 
 ```text
-rtl/tx/tx_fsm.v
-sim/tx/tb_tx_fsm.v
+tx_fsm
+tx_frame_generator
+crc8
+bfsk_mapper
+bfsk_carrier_gen
 ```
 
-검증 항목:
+통합 송신 순서:
 
 ```text
-SYNC Symbol 정확히 4개
-sync_valid / sync_ready Handshake
-Frame Generator Start 제어
-Mapper Busy 상태에서 중복 요청 금지
-Frame 완료 후 IDLE 복귀
+char_valid && char_ready
+→ Character Latch
+→ SYNC ×4
+→ SFD + Frame ID + DATA + CRC
+→ 10 / 20 kHz DATA Carrier
+→ Frame Done
+→ IDLE
 ```
 
-TX-5 PASS 후:
+통합 검증 항목:
 
 ```text
-optical_tx_top.v
+Preamble SYNC 정확히 4 Symbol
+SYNC = 25 kHz
+Frame Bit Order = MSB First
+BIT0 = 10 kHz
+BIT1 = 20 kHz
+각 Symbol = 1.6 ms
+Frame ID 증가
+Frame 종료 후 IDLE
+전체 Handshake deadlock 없음
+```
+
+TX-6 Simulation PASS 후 Hardware 단계:
+
+```text
 XDC
-PMOD
-Oscilloscope 10 / 20 / 25 kHz Hardware Test
+→ Zybo PMOD
+→ Oscilloscope
+→ 10 / 20 / 25 kHz 확인
+→ Symbol Time 1.6 ms 확인
+→ 2N7000 / Optical Source 연결
 ```
 
 ---
 
 # 9. Git / 문서 동기화 상태
 
-TX-4 구현 파일은 Git 원격 반영 완료:
+TX-5 구현 파일은 Git 원격 반영 완료:
 
 ```text
-rtl/tx/bfsk_carrier_gen.v
-sim/tx/tb_bfsk_carrier_gen.v
-tb_xpr/tb_bfsk_carrier_gen/tb_bfsk_carrier_gen.xpr
+rtl/tx/tx_fsm.v
+sim/tx/tb_tx_fsm.v
+tb_xpr/tb_TX_FSM/tb_TX_FSM.xpr
 ```
 
 구현 Commit:
 
 ```text
-5886ce1
+92ece97
+```
+
+검증 결과:
+
+```text
+PASS = 15
+FAIL = 0
 ```
 
 현재 문서 동기화 대상:
