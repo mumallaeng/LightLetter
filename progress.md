@@ -6,7 +6,7 @@
 > 현재 저장소의 실제 파일과 검증 결과를 우선 기준으로 한다.
 >
 > **Last Updated:** 2026-09-17  
-> **Document Version:** v1.7
+> **Document Version:** v1.8
 
 ---
 
@@ -128,6 +128,30 @@ char_ready
 tx_busy
 optical_tx
 tx_enable
+```
+
+AXI4-Lite 적용 후 외부 구조:
+
+```text
+Zynq PS
+  ↓ AXI4-Lite
+AXI4-Lite Slave Wrapper
+  ↓
+char_id / char_valid / char_ready / tx_busy
+  ↓
+optical_tx_top
+  ↓
+optical_tx / tx_enable
+```
+
+설계 원칙:
+
+```text
+- 기존 optical_tx_top의 char_id / char_valid / char_ready / tx_busy 인터페이스는 유지한다.
+- AXI4-Lite Slave Wrapper는 optical_tx_top 외부에 추가한다.
+- Zynq PS에서 CNN 결과를 AXI4-Lite Register Write로 전달한다.
+- Wrapper가 기존 char_valid / char_ready Handshake를 생성한다.
+- optical_tx_top 내부 TX-1~TX-6 구조는 변경하지 않는다.
 ```
 
 완료 시점 정의:
@@ -874,29 +898,103 @@ FAIL = 0
 | 2026-09-17 | Frame 완료 의미 | Generator `frame_done`을 전체 Frame 완료로 사용 | `frame_gen_done`과 최종 `frame_done` 분리 | 마지막 Optical Symbol 완료까지 TX FSM이 대기 |
 | 2026-09-17 | Optical Frame Done | 마지막 Bit Mapper 전달 시점 | `last_symbol_pending && symbol_done` | 실제 마지막 Carrier 출력 완료를 Frame 완료 기준으로 사용 |
 | 2026-09-17 | Frame Shift Assignment | `frame_shift = {...}` | `frame_shift <= {...}` | Clocked Always Block의 Nonblocking Assignment 통일 |
+| 2026-09-17 | CNN → TX 입력 경로 | 직접 `char_id / char_valid` 연결 | Zynq PS → AXI4-Lite Slave Wrapper → `optical_tx_top` | PS에서 CNN 결과를 Register 기반으로 전달 |
+| 2026-09-17 | `optical_tx_top` 내부 Interface | 변경 검토 | `char_id / char_valid / char_ready / tx_busy` 유지 | TX-6 PASS 구조 보존 및 Wrapper 분리 |
+| 2026-09-17 | 개발 순서 | TX-7 Hardware Verification | TX-7 AXI4-Lite Wrapper → TX-8 AXI4-Lite + Optical TX 통합 Simulation → TX-9 Hardware Verification | PS 연동을 Hardware 검증 전에 완료 |
 
 ---
 
 # 8. 다음 작업
 
-## TX-7 Hardware Verification
+## TX-7 AXI4-Lite Wrapper 구현 / 검증
 
-TX RTL 통합 Simulation은 TX-6까지 완료하였다.
+CNN 결과는 **Zynq PS에서 AXI4-Lite를 통해 TX에 전달**한다.
 
-다음 단계:
+구조:
 
 ```text
-1. Hardware Test용 입력 방법 결정
-   - VIO 또는 고정 Test Character Generator
+Zynq PS
+  ↓ AXI4-Lite
+AXI4-Lite Slave Wrapper
+  ↓
+char_id / char_valid / char_ready / tx_busy
+  ↓
+optical_tx_top
+```
 
+설계 원칙:
+
+```text
+- optical_tx_top의 기존 내부 인터페이스 유지
+- char_id / char_valid / char_ready / tx_busy 유지
+- AXI4-Lite Slave Wrapper는 optical_tx_top 외부에 추가
+- AXI Register Write로 Character ID / 송신 요청 전달
+- Wrapper가 char_valid를 생성
+- char_ready / tx_busy를 AXI Status Register로 제공
+```
+
+TX-7 구현 예정:
+
+```text
+rtl/tx/axi_lite_tx_wrapper.v
+sim/tx/tb_axi_lite_tx_wrapper.v
+```
+
+TX-7 검증 항목:
+
+```text
+AXI4-Lite Write Handshake
+AXI4-Lite Read Handshake
+Character ID Register Write
+TX Start / char_valid 요청
+char_ready 연동
+tx_busy Status Read
+Busy 중 중복 요청 처리
+Reset 동작
+```
+
+---
+
+## TX-8 AXI4-Lite + Optical TX 전체 통합 Simulation
+
+통합 구조:
+
+```text
+AXI4-Lite Master TB
+→ AXI4-Lite Slave Wrapper
+→ optical_tx_top
+→ tx_fsm
+→ tx_frame_generator / crc8
+→ bfsk_mapper
+→ bfsk_carrier_gen
+→ optical_tx
+```
+
+통합 검증 목표:
+
+```text
+AXI Write로 Character 입력
+→ Preamble SYNC ×4
+→ Data Symbol 32개
+→ D50041C0 복원
+→ Optical Carrier 검증
+→ 최종 Busy Clear / Ready 복귀
+```
+
+TX-8 PASS 후 Hardware 단계로 이동한다.
+
+---
+
+## TX-9 Hardware Verification
+
+```text
+1. Zynq PS에서 AXI4-Lite Register Write
 2. XDC 작성
    - clk
    - rst
    - optical_tx
    - 필요 시 tx_enable / debug signal
-
 3. Zybo PMOD에 optical_tx 연결
-
 4. Oscilloscope Hardware 검증
    - SYNC 25 kHz
    - BIT0 10 kHz
@@ -904,9 +1002,7 @@ TX RTL 통합 Simulation은 TX-6까지 완료하였다.
    - Symbol Time 1.6 ms
    - Preamble SYNC ×4
    - Frame 종료 후 IDLE
-
 5. 2N7000 Driver 연결
-
 6. LED / Laser Optical Source 검증
 ```
 
@@ -919,8 +1015,14 @@ Optical Link
 → XADC / FFT RX 연동
 ```
 
-Interface Excel은 현재 변경사항을 `progress.md`에 먼저 기록하고,
-문서 정리 단계에서 최신 RTL 기준으로 일괄 동기화한다.
+Interface Excel:
+
+```text
+현재 Excel은 즉시 수정하지 않는다.
+TX-7 AXI4-Lite Wrapper의 실제 Port / Register Map이 확정된 뒤
+AXI Wrapper 외부 인터페이스를 추가 대상으로 반영한다.
+문서 정리 채팅에서 최신 RTL 기준으로 일괄 동기화한다.
+```
 
 ---
 
@@ -955,16 +1057,26 @@ docs/progress_지침.md
 Commit = 08bb3f1
 ```
 
-이번 진행상황 동기화 대상:
+이번 설계 변경 동기화 대상:
 
 ```text
 progress.md
 Notion Progress
-Notion Testbench 결과
 ```
 
-Interface Excel은 이번 단계에서 제외하고,
-문서 정리 채팅에서 최신 RTL 기준으로 일괄 업데이트한다.
+Interface Excel은 이번 단계에서 제외한다.
+
+TX-7 AXI4-Lite Wrapper 구현 후 다음 항목을 추가 대상으로 기록한다.
+
+```text
+AXI4-Lite Slave 외부 Port
+Register Map
+Character ID / Start Register
+Ready / Busy Status Register
+Wrapper ↔ optical_tx_top 내부 Handshake
+```
+
+문서 정리 채팅에서 실제 TX-7 RTL 기준으로 일괄 업데이트한다.
 
 문서 Commit은 구현 Commit과 분리하여 관리한다.
 
