@@ -6,7 +6,7 @@
 > 현재 저장소의 실제 파일과 검증 결과를 우선 기준으로 한다.
 >
 > **Last Updated:** 2026-09-17  
-> **Document Version:** v2.0
+> **Document Version:** v2.1
 
 ---
 
@@ -374,7 +374,7 @@ tx_enable
 | TX-5 | TX FSM | PASS 15/0 | SYNC ×4, Frame Start, Frame ID Roll-over | `92ece97` |
 | TX-6 | Optical TX Top | PASS 18/0 | `D50041C0`, 816 Rising Edge, 최종 Optical 완료 | `cd0f5b5` |
 | TX-7 | AXI4-Lite Wrapper | PASS 17/0 | Register R/W, START, READY/BUSY, AW First, W First | `334e7f1` |
-| TX-8 | AXI4-Lite + Optical TX Integration | TB 구현 완료 / 결과 확인 대기 | AXI→Wrapper→Optical TX end-to-end, 3 Frame, AW/W 순서, Status | `4e7bc82` |
+| TX-8 | AXI4-Lite + Optical TX Integration | PASS 48/0 | AXI→Wrapper→Optical TX end-to-end, 3 Frame, AW/W 순서, Status | `4e7bc82` |
 
 ## TX-6 Optical TX Top 핵심 보정
 
@@ -469,7 +469,7 @@ PASS = 17 / FAIL = 0
 
 ---
 
-## TX-8 AXI4-Lite + Optical TX Integration — TB 구현 완료 / 결과 확인 대기
+## TX-8 AXI4-Lite + Optical TX Integration — PASS
 
 파일:
 
@@ -548,12 +548,20 @@ SYNC = 40
 
 실제 10 / 20 / 25 kHz 및 Symbol 1.6 ms Timing은 TX-4 / TX-6에서 이미 검증 완료하였다.
 
-검증 상태:
+Vivado / XSim:
 
 ```text
-RTL / TB / XPR Git 반영 완료
-Vivado/XSim 최종 PASS/FAIL 숫자는 현재 Git에서 확인되지 않음
-따라서 progress.md에서는 TX-8을 아직 최종 PASS 처리하지 않음
+OPTICAL TX AXI TOP TEST RESULT : PASS
+PASS = 48
+FAIL = 0
+```
+
+결론:
+
+```text
+TX-8 AXI4-Lite + Optical TX 전체 통합 Simulation PASS
+AXI Register Write에서 Optical Carrier 출력까지 End-to-End 검증 완료
+TX-9 Hardware Verification 진행 가능
 ```
 
 ---
@@ -582,6 +590,7 @@ Vivado/XSim 최종 PASS/FAIL 숫자는 현재 Git에서 확인되지 않음
 | 2026-09-17 | TX-8 Integration Top | Wrapper / Optical Top 개별 검증 | `optical_tx_axi_top.v`로 AXI4-Lite + Optical TX 통합 | Commit `4e7bc82`, TB/XPR 반영 |
 | 2026-09-17 | Reset 연결 | AXI active-low / TX active-high 분리 | `tx_rst = ~s_axi_aresetn` | 단일 외부 Reset으로 Wrapper + TX Core 통합 |
 | 2026-09-17 | TX-8 Simulation | 실제 1.6 ms Symbol | TB에서 FS/BFSK 주파수 100× Scaling | End-to-end Simulation 시간 단축, Symbol당 Edge 수 유지 |
+| 2026-09-17 | TX-8 End-to-End 검증 | 결과 확인 대기 | AXI → Wrapper → Optical TX 전체 PASS | PASS=48 / FAIL=0 |
 
 ---
 
@@ -595,44 +604,13 @@ TX-4 Carrier Generator   PASS
 TX-5 TX FSM              PASS
 TX-6 Optical TX Top      PASS
 TX-7 AXI4-Lite Wrapper   PASS
-TX-8 AXI + Optical Top   TB 구현 완료 / XSim 결과 확인 대기
-TX-9 Hardware            대기
+TX-8 AXI + Optical Top   PASS 48 / 0
+TX-9 Hardware            다음 단계
 ```
 
 ---
 
 # 8. 다음 작업
-
-## TX-8 Vivado / XSim 결과 확정
-
-현재 TX-8 RTL / TB / XPR 구현은 Git 반영 완료하였다.
-
-남은 확인:
-
-```text
-OPTICAL TX AXI TOP TEST RESULT
-PASS = ?
-FAIL = ?
-```
-
-최종 PASS 근거가 확인되면 아래 항목을 공식 완료 처리한다.
-
-```text
-AXI DATA / START → TX 전체 송신
-READY / BUSY Status 변화
-SYNC ×4
-32 Data Symbol
-D50041C0 복원
-Optical Rising Edge 816
-Busy 중 START Ignore
-AW First / W First 전체 송신
-연속 Frame ID 증가
-AXI Response OKAY
-```
-
-TX-8 PASS 후 TX-9 Hardware 단계로 이동한다.
-
----
 
 ## TX-9 Hardware Verification
 
@@ -681,21 +659,21 @@ tb_xpr/tb_optical_tx_axi_top/tb_optical_tx_axi_top.xpr
 feat: integrate AXI4-Lite with optical TX and verify end-to-end
 ```
 
-확인된 구조:
+검증 결과:
 
 ```text
-AXI4-Lite
-→ axi_lite_tx_wrapper
-→ optical_tx_top
-→ optical_tx / tx_enable
+OPTICAL TX AXI TOP TEST RESULT : PASS
+PASS = 48
+FAIL = 0
 ```
 
 현재 검증 문서 상태:
 
 ```text
 TX-8 RTL / TB / XPR = 확인 완료
-TX-8 PASS / FAIL 숫자 = Git에서 확인되지 않음
-TX-8 최종 PASS 처리 = 보류
+TX-8 End-to-End Simulation = PASS 48 / FAIL 0
+TX-8 공식 PASS 처리 = 완료
+TX-9 Hardware Verification = 다음 단계
 ```
 
 이번 문서 동기화 대상:
