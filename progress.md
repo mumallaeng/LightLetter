@@ -6,7 +6,7 @@
 > 현재 저장소의 실제 파일과 검증 결과를 우선 기준으로 한다.
 >
 > **Last Updated:** 2026-09-17  
-> **Document Version:** v1.8
+> **Document Version:** v1.9
 
 ---
 
@@ -14,132 +14,71 @@
 
 현재 `BFSK_Tx` 저장소는 **TX 전용 저장소**로 관리한다.
 
-현재 Git 원격에서 확인된 구현 RTL:
+현재 구현 / 검증 완료 RTL:
 
 ```text
 rtl/common/bfsk_params.vh
 rtl/tx/crc8.v
 rtl/tx/tx_frame_generator.v
 rtl/tx/bfsk_mapper.v
+rtl/tx/bfsk_carrier_gen.v
+rtl/tx/tx_fsm.v
+rtl/tx/optical_tx_top.v
+rtl/tx/axi_lite_tx_wrapper.v
 ```
 
-현재 Git 원격에서 확인된 Testbench:
+현재 검증 완료 Testbench:
 
 ```text
 sim/tx/tb_crc8.v
 sim/tx/tb_tx_frame_generator.v
 sim/tx/tb_bfsk_mapper.v
-```
-
-현재 Git 원격에서 확인된 TX-4 구현 / 검증 파일:
-
-```text
-rtl/tx/bfsk_carrier_gen.v
 sim/tx/tb_bfsk_carrier_gen.v
-tb_xpr/tb_bfsk_carrier_gen/tb_bfsk_carrier_gen.xpr
-```
-
-TX-4 구현 Commit:
-
-```text
-5886ce1
-```
-
-현재 Git 원격에서 확인된 TX-5 구현 / 검증 파일:
-
-```text
-rtl/tx/tx_fsm.v
 sim/tx/tb_tx_fsm.v
-tb_xpr/tb_TX_FSM/tb_TX_FSM.xpr
-```
-
-TX-5 구현 Commit:
-
-```text
-92ece97
-```
-
-현재 Git 원격에서 확인된 TX-6 구현 / 검증 파일:
-
-```text
-rtl/tx/optical_tx_top.v
 sim/tx/tb_optical_tx_top.v
-tb_xpr/optical_Tx_top/optical_Tx_top.xpr
+sim/tx/tb_axi_lite_tx_wrapper.v
 ```
 
-TX-6 구현 Commit:
+최근 구현 Commit:
 
 ```text
-cd0f5b5
+TX-4 Carrier Generator = 5886ce1
+TX-5 TX FSM            = 92ece97
+TX-6 Optical TX Top    = cd0f5b5
+TX-7 AXI4-Lite Wrapper = 334e7f1
 ```
 
-> `rx_symbol_sync`, `rx_frame_decoder` 등 RX 구현 모듈은 현재 `BFSK_Tx` 저장소의 구현 파일이 아니므로
-> 본 문서에서 구현 완료 항목으로 관리하지 않는다.
-> FFT/RX 관련 값은 TX와 맞춰야 하는 **공통 통신 규격 기준값**으로만 기록한다.
+> `rx_symbol_sync`, `rx_frame_decoder` 등 RX 구현 모듈은 현재 `BFSK_Tx` 저장소의 구현 파일이 아니므로 구현 완료 항목으로 관리하지 않는다.
+> FFT/RX 관련 값은 TX와 맞춰야 하는 공통 통신 규격 기준값으로만 기록한다.
 
 ---
 
 # 1. 현재 TX 구조
 
 ```text
-char_id / char_valid
-        ↓
-optical_tx_top
-        │
-        ├─ tx_fsm
-        │    ├─ PREAMBLE SYNC ×4 제어
-        │    ├─ frame_gen_start
-        │    └─ 최종 frame_done 대기
-        │
-        ├─ tx_frame_generator
-        │    ├─ crc8
-        │    └─ frame_gen_done
-        │         = 마지막 Frame Bit의 Mapper 전달 완료
-        │
-        ├─ bfsk_mapper
-        │
-        └─ bfsk_carrier_gen
-              └─ symbol_done
-                   = 현재 Optical Symbol 출력 완료
-
-optical_tx_top:
-frame_gen_done
-    ↓
-last_symbol_pending = 1
-    ↓
-마지막 symbol_done
-    ↓
-final frame_done
-    ↓
-tx_fsm 송신 완료
-        ↓
-optical_tx / tx_enable
-```
-
-외부 TX 인터페이스:
-
-```text
-Input:
-char_id[7:0]
-char_valid
-
-Output:
-char_ready
-tx_busy
-optical_tx
-tx_enable
-```
-
-AXI4-Lite 적용 후 외부 구조:
-
-```text
 Zynq PS
   ↓ AXI4-Lite
-AXI4-Lite Slave Wrapper
+axi_lite_tx_wrapper
   ↓
 char_id / char_valid / char_ready / tx_busy
   ↓
 optical_tx_top
+  │
+  ├─ tx_fsm
+  │    ├─ PREAMBLE SYNC ×4
+  │    ├─ frame_gen_start
+  │    └─ 최종 frame_done 대기
+  │
+  ├─ tx_frame_generator
+  │    ├─ crc8
+  │    └─ frame_gen_done
+  │         = 마지막 Frame Bit의 Mapper 전달 완료
+  │
+  ├─ bfsk_mapper
+  │
+  └─ bfsk_carrier_gen
+       └─ symbol_done
+            = 현재 Optical Symbol 출력 완료
   ↓
 optical_tx / tx_enable
 ```
@@ -147,14 +86,14 @@ optical_tx / tx_enable
 설계 원칙:
 
 ```text
-- 기존 optical_tx_top의 char_id / char_valid / char_ready / tx_busy 인터페이스는 유지한다.
-- AXI4-Lite Slave Wrapper는 optical_tx_top 외부에 추가한다.
+- optical_tx_top의 char_id / char_valid / char_ready / tx_busy 인터페이스는 유지한다.
+- AXI4-Lite Slave Wrapper는 optical_tx_top 외부에 둔다.
 - Zynq PS에서 CNN 결과를 AXI4-Lite Register Write로 전달한다.
-- Wrapper가 기존 char_valid / char_ready Handshake를 생성한다.
-- optical_tx_top 내부 TX-1~TX-6 구조는 변경하지 않는다.
+- Wrapper가 char_valid 1-Clock Pulse를 생성한다.
+- optical_tx_top 내부 TX-1~TX-6 구조는 유지한다.
 ```
 
-완료 시점 정의:
+TX-6 완료 시점 정의:
 
 ```text
 frame_gen_done
@@ -162,6 +101,8 @@ frame_gen_done
 
 frame_done
 = 마지막 Optical Symbol의 Carrier 출력까지 끝난 시점
+
+frame_done = last_symbol_pending && symbol_done
 ```
 
 ---
@@ -191,21 +132,18 @@ frame_done
 ```verilog
 FS_HZ             = 160000
 FFT_N             = 128
-
 F0_HZ             = 10000
 F1_HZ             = 20000
 FSYNC_HZ          = 25000
-
 F0_BIN            = 8
 F1_BIN            = 16
 FSYNC_BIN         = 20
-
 FFT_BLOCK_SAMPLES = 128
 SYMBOL_SAMPLES    = 256
 PREAMBLE_SYMBOLS  = 4
 ```
 
-구형 값인 아래 항목은 **현재 규격으로 사용하지 않는다.**
+구형 값은 현재 규격으로 사용하지 않는다.
 
 ```text
 FFT 256 point
@@ -218,28 +156,29 @@ Preamble 12.8 ms
 
 # 3. Frame / CRC 규격
 
-Frame Generator가 출력하는 32-bit Data Frame:
-
 ```text
-SFD(8) + Frame ID(8) + DATA(8) + CRC-8(8)
+PREAMBLE(SYNC ×4)
++ SFD(8)
++ Frame ID(8)
++ DATA(8)
++ CRC-8(8)
 ```
 
-SFD:
+Frame Generator가 출력하는 Data Frame:
 
 ```text
-8'hD5
+SFD + Frame ID + DATA + CRC
 ```
 
 CRC:
 
 ```text
-CRC Type : CRC-8
-POLY     : 8'h07
-INIT     : 8'h00
-XOROUT   : 8'h00
-REFIN    : false
-REFOUT   : false
-ORDER    : MSB First
+POLY     = 8'h07
+INIT     = 8'h00
+XOROUT   = 8'h00
+REFIN    = false
+REFOUT   = false
+ORDER    = MSB First
 ```
 
 CRC 계산 대상:
@@ -248,7 +187,7 @@ CRC 계산 대상:
 Frame ID + DATA
 ```
 
-기준 Test Vector:
+Golden Vector:
 
 ```text
 Frame ID = 8'h00
@@ -261,625 +200,247 @@ Frame    = 32'hD50041C0
 
 # 4. TX Interface
 
-## 4.1 CNN / Upstream → TX FSM
+## 4.1 AXI4-Lite Slave Wrapper
 
-| Signal | Dir 기준 | Width | 설명 |
-|---|:---:|---:|---|
-| `char_id` | Upstream → TX FSM | 8 | 전송할 Character ID |
-| `char_valid` | Upstream → TX FSM | 1 | Character ID 유효 |
-| `char_ready` | TX FSM → Upstream | 1 | 새 Character 수락 가능 |
-| `tx_busy` | TX FSM → Upstream | 1 | TX 전체 송신 진행 중 |
-
-Handshake:
+RTL:
 
 ```text
-char_valid && char_ready
+rtl/tx/axi_lite_tx_wrapper.v
 ```
 
-TX FSM은 Handshake 시 `char_id`를 `latched_char_id`에 저장한다.
-
----
-
-## 4.2 TX FSM → Frame Generator
-
-| Signal | Dir 기준 | Width | 설명 |
-|---|:---:|---:|---|
-| `latched_char_id` | TX FSM → Frame Gen | 8 | 현재 전송할 Character DATA |
-| `frame_id` | TX FSM → Frame Gen | 8 | 현재 Frame ID |
-| `frame_gen_start` | TX FSM → Frame Gen | 1 | Frame Generator Start 1-Clock Pulse |
-| `frame_gen_done` | Frame Gen → Top | 1 | 마지막 Frame Bit의 Mapper 전달 완료 Pulse |
-| `frame_done` | Top → TX FSM | 1 | 마지막 Optical Symbol 출력 완료 Pulse |
-
-Frame ID 정책:
+Parameter:
 
 ```text
-Frame 완료 시 +1
-8'hFF 다음 8'h00 Roll-over
+C_S_AXI_DATA_WIDTH = 32
+C_S_AXI_ADDR_WIDTH = 4
 ```
 
-TX-6 완료 시점 보정:
+Write Channel:
 
 ```text
-tx_frame_generator.frame_done
-→ Top 내부 wire: frame_gen_done
+s_axi_awaddr
+s_axi_awvalid
+s_axi_awready
 
-frame_gen_done 발생
-→ last_symbol_pending = 1
+s_axi_wdata
+s_axi_wstrb
+s_axi_wvalid
+s_axi_wready
 
-최종 frame_done
-= last_symbol_pending && symbol_done
+s_axi_bresp
+s_axi_bvalid
+s_axi_bready
 ```
 
-`frame_gen_done`은 마지막 Bit의 Mapper 전달 완료이고,
-TX FSM으로 전달되는 `frame_done`은 마지막 Optical Symbol 출력 완료를 의미한다.
+Read Channel:
 
----
+```text
+s_axi_araddr
+s_axi_arvalid
+s_axi_arready
+
+s_axi_rdata
+s_axi_rresp
+s_axi_rvalid
+s_axi_rready
+```
+
+Wrapper ↔ `optical_tx_top`:
+
+```text
+char_id[7:0]  : Wrapper → optical_tx_top
+char_valid    : Wrapper → optical_tx_top
+char_ready    : optical_tx_top → Wrapper
+tx_busy       : optical_tx_top → Wrapper
+```
+
+AXI Write 정책:
+
+```text
+AW와 W는 독립적으로 Handshake 가능
+AW First 지원
+W First 지원
+AW/W 모두 수신 후 Write 실행
+BRESP = OKAY
+```
+
+AXI Read 정책:
+
+```text
+AR Handshake 후 Register Read
+RRESP = OKAY
+```
+
+## 4.2 AXI Register Map
+
+| Address | Register | Access | Bit | 설명 |
+|---|---|:---:|---|---|
+| `0x00` | `TX_DATA` | R/W | `[7:0]` | Character ID / `char_id` |
+| `0x04` | `TX_CTRL` | W | `[0]` | `START` |
+| `0x08` | `TX_STATUS` | R | `[0]` | `READY` = `char_ready` |
+| `0x08` | `TX_STATUS` | R | `[1]` | `BUSY` = `tx_busy` |
+
+START 정책:
+
+```text
+TX_CTRL.START = 1 && char_ready = 1
+→ char_valid 1-Clock Pulse
+
+char_ready = 0
+→ START Ignore
+```
 
 ## 4.3 Frame Generator → BFSK Mapper
 
-| Signal | Dir 기준 | Width | 설명 |
-|---|:---:|---:|---|
-| `tx_bit` | Frame Gen → Mapper | 1 | 송신 Bit |
-| `tx_bit_valid` | Frame Gen → Mapper | 1 | Bit 유효 |
-| `tx_bit_ready` | Mapper → Frame Gen | 1 | Mapper DATA 수락 가능 |
-
-Handshake:
-
 ```text
-tx_bit_valid && tx_bit_ready
+tx_bit
+tx_bit_valid
+tx_bit_ready
+Handshake = tx_bit_valid && tx_bit_ready
 ```
-
----
 
 ## 4.4 TX FSM → BFSK Mapper
 
-TX-3에서 SYNC 전용 Handshake를 추가하였다.
-
-| Signal | Dir 기준 | Width | 설명 |
-|---|:---:|---:|---|
-| `sync_valid` | TX FSM → Mapper | 1 | Preamble용 SYNC Symbol 요청 |
-| `sync_ready` | Mapper → TX FSM | 1 | Mapper가 SYNC 요청을 받을 수 있음 |
-
-Handshake:
-
 ```text
-sync_valid && sync_ready
+sync_valid
+sync_ready
+Handshake = sync_valid && sync_ready
+Priority = SYNC > DATA
 ```
-
-Priority:
-
-```text
-SYNC > DATA
-```
-
-SYNC와 DATA 요청이 동시에 들어오면 SYNC 요청을 먼저 수락하며 DATA ready를 차단한다.
-
----
 
 ## 4.5 BFSK Mapper → Carrier Generator
 
-| Signal | Dir 기준 | Width | 설명 |
-|---|:---:|---:|---|
-| `symbol_type` | Mapper → Carrier | 2 | IDLE / BIT0 / BIT1 / SYNC |
-| `symbol_valid` | Mapper → Carrier | 1 | Symbol 유효 |
-| `symbol_start` | Mapper → Carrier | 1 | Symbol 시작 1-Clock Pulse |
-| `symbol_done` | Carrier → Mapper | 1 | Symbol 출력 완료 1-Clock Pulse |
+```text
+symbol_type[1:0]
+symbol_valid
+symbol_start
+symbol_done
+```
 
 Symbol Encoding:
 
 ```text
-2'b00 = IDLE
-2'b01 = BIT0
-2'b10 = BIT1
-2'b11 = SYNC
+00 = IDLE
+01 = BIT0
+10 = BIT1
+11 = SYNC
 ```
 
----
+## 4.6 Carrier Generator → Optical Driver
 
-## 4.6 Carrier Generator → TX FSM
-
-| Signal | Dir 기준 | Width | 설명 |
-|---|:---:|---:|---|
-| `symbol_done` | Carrier → TX FSM | 1 | 현재 SYNC Symbol 출력 완료 Pulse |
-
-TX FSM은 Preamble 구간에서 `sync_valid && sync_ready`로 SYNC 요청이 수락된 뒤
-`symbol_done`을 기다린 다음 다음 SYNC를 요청한다.
-
-SYNC Count는 실제 Symbol 완료 기준으로 진행한다.
-
----
-
-## 4.7 Carrier Generator → Optical Driver
-
-| Signal | Dir 기준 | Width | 설명 |
-|---|:---:|---:|---|
-| `optical_tx` | Carrier → Driver | 1 | BFSK Carrier |
-| `tx_enable` | Carrier → Driver | 1 | Carrier 출력 Enable |
+```text
+optical_tx
+tx_enable
+```
 
 ---
 
 # 5. TX 개발 진행상황
 
-## TX-1 CRC-8 — PASS
-
-RTL:
-
-```text
-rtl/tx/crc8.v
-```
-
-TB:
-
-```text
-sim/tx/tb_crc8.v
-```
-
-검증:
-
-```text
-Frame ID = 00
-DATA     = 41
-CRC      = C0
-Result   = PASS
-```
-
-Commit:
-
-```text
-266eeca
-```
-
----
-
-## TX-2 Frame Generator — PASS
-
-RTL:
-
-```text
-rtl/tx/tx_frame_generator.v
-```
-
-TB:
-
-```text
-sim/tx/tb_tx_frame_generator.v
-```
-
-검증:
-
-```text
-SFD + Frame ID + DATA + CRC
-MSB First
-frame_start / frame_done
-valid / ready Backpressure
-
-D50041C0 PASS
-D51234F1 PASS
-```
-
-Commit:
-
-```text
-abdd1cf
-```
-
----
-
-## TX-3 BFSK Mapper — PASS
-
-RTL:
-
-```text
-rtl/tx/bfsk_mapper.v
-```
-
-TB:
-
-```text
-sim/tx/tb_bfsk_mapper.v
-```
-
-Vivado / XSim:
-
-```text
-TEST 1 RESET / IDLE   PASS
-TEST 2 BIT0           PASS
-TEST 3 BIT1           PASS
-TEST 4 SYNC           PASS
-TEST 5 SYNC PRIORITY  PASS
-
-PASS = 24
-FAIL = 0
-```
-
-검증 내용:
-
-```text
-IDLE = 2'b00
-BIT0 = 2'b01
-BIT1 = 2'b10
-SYNC = 2'b11
-
-symbol_start 1 Clock Pulse PASS
-symbol_done 전 symbol_type / symbol_valid 유지 PASS
-symbol_done 후 IDLE 복귀 PASS
-SYNC와 DATA 동시 요청 시 SYNC 우선 PASS
-```
-
-Interface 변경:
-
-```text
-TX FSM → BFSK Mapper
-
-sync_valid
-sync_ready
-
-Handshake:
-sync_valid && sync_ready
-```
-
-변경 이유:
-
-```text
-기존 tx_bit 인터페이스는 BIT0 / BIT1만 표현할 수 있다.
-Preamble용 SYNC Symbol(25 kHz)을 Mapper에 요청하기 위해
-별도의 SYNC Handshake 경로가 필요하다.
-```
-
-Commit:
-
-```text
-eb25eed
-```
-
-Vivado XPR Commit:
-
-```text
-33bd050
-```
-
----
-
-## TX-4 BFSK Carrier Generator — PASS
-
-RTL:
-
-```text
-rtl/tx/bfsk_carrier_gen.v
-```
-
-TB:
-
-```text
-sim/tx/tb_bfsk_carrier_gen.v
-```
-
-현재 Parameter:
-
-```text
-CLK_FREQ_HZ    = 100_000_000
-FS_HZ          = 160_000
-SYMBOL_SAMPLES = 256
-
-F0_HZ          = 10_000
-F1_HZ          = 20_000
-FSYNC_HZ       = 25_000
-```
-
-Symbol Length:
-
-```text
-256 / 160,000
-= 1.6 ms
-
-100 MHz 기준
-= 160,000 Clock
-```
-
-### RESET / IDLE
-
-```text
-optical_tx = 0 PASS
-tx_enable  = 0 PASS
-symbol_done = 0 PASS
-```
-
-### BIT0 / 10 kHz
-
-```text
-Symbol Length       = 160000 Clock PASS
-Carrier Rising Edge = 16 PASS
-symbol_done Pulse   = 1 PASS
-종료 후 optical_tx  = 0 PASS
-종료 후 tx_enable   = 0 PASS
-```
-
-### BIT1 / 20 kHz
-
-```text
-Symbol Length       = 160000 Clock PASS
-Carrier Rising Edge = 32 PASS
-symbol_done Pulse   = 1 PASS
-종료 후 optical_tx  = 0 PASS
-종료 후 tx_enable   = 0 PASS
-```
-
-### SYNC / 25 kHz
-
-```text
-Symbol Length       = 160000 Clock PASS
-Carrier Rising Edge = 40 PASS
-symbol_done Pulse   = 1 PASS
-종료 후 optical_tx  = 0 PASS
-종료 후 tx_enable   = 0 PASS
-```
-
-### IDLE / No Carrier
-
-```text
-Symbol Length       = 160000 Clock PASS
-Carrier Rising Edge = 0 PASS
-symbol_done Pulse   = 1 PASS
-optical_tx           = 0 PASS
-tx_enable            = 0 PASS
-```
-
-Final:
-
-```text
-BFSK CARRIER GENERATOR TEST RESULT : PASS
-PASS = 27
-FAIL = 0
-```
-
-Git 반영:
-
-```text
-Commit = 5886ce1
-tb_xpr/tb_bfsk_carrier_gen/tb_bfsk_carrier_gen.xpr 포함
-```
-
----
-
-## TX-5 TX FSM — PASS
-
-RTL:
-
-```text
-rtl/tx/tx_fsm.v
-```
-
-TB:
-
-```text
-sim/tx/tb_tx_fsm.v
-```
-
-Vivado Project:
-
-```text
-tb_xpr/tb_TX_FSM/tb_TX_FSM.xpr
-```
-
-구현 Commit:
-
-```text
-92ece97
-feat: add and verify TX FSM
-```
-
-Vivado / XSim:
-
-```text
-TX FSM TEST RESULT : PASS
-PASS = 15
-FAIL = 0
-```
-
-검증 항목:
-
-```text
-Reset 후 IDLE / char_ready / tx_busy PASS
-char_valid && char_ready에서 Character ID Latch PASS
-tx_busy 동안 새로운 Character 입력 차단 PASS
-sync_valid / sync_ready Handshake PASS
-SYNC Symbol 정확히 4개 PASS
-Mapper Ready Stall 중 sync_valid 유지 PASS
-4번째 SYNC 완료 후 frame_gen_start 1-Clock Pulse PASS
-Frame 완료 후 IDLE 복귀 PASS
-Frame ID 증가 PASS
-Frame ID 8'hFF → 8'h00 Roll-over PASS
-```
-
-TX FSM 송신 순서:
-
-```text
-ST_IDLE
-→ ST_LOAD_DATA
-→ ST_PREAMBLE
-→ ST_SEND_FRAME
-→ ST_FRAME_DONE
-→ ST_IDLE
-```
-
-Preamble 제어:
-
-```text
-sync_valid
-→ sync_valid && sync_ready
-→ SYNC 요청 수락
-→ symbol_done 대기
-→ 완료 Count
-→ 총 4회 완료 후 frame_gen_start
-```
-
----
-
-## TX-6 Optical TX Top Integration — PASS
-
-RTL:
-
-```text
-rtl/tx/optical_tx_top.v
-```
-
-TB:
-
-```text
-sim/tx/tb_optical_tx_top.v
-```
-
-Vivado Project:
-
-```text
-tb_xpr/optical_Tx_top/optical_Tx_top.xpr
-```
-
-구현 Commit:
-
-```text
-cd0f5b5
-feat: integrate optical TX top and verify full BFSK frame
-```
-
-통합 대상:
-
-```text
-tx_fsm
-tx_frame_generator
-crc8
-bfsk_mapper
-bfsk_carrier_gen
-```
-
-Vivado / XSim:
-
-```text
-OPTICAL TX TOP TEST RESULT : PASS
-PASS = 18
-FAIL = 0
-```
-
-주요 검증:
-
-```text
-Preamble SYNC x4 PASS
-Data Symbol 32개 PASS
-D50041C0 복원 PASS
-
-frame_gen_start 1회 PASS
-frame_done 1회 PASS
-
-optical carrier rising edge = 816 PASS
-
-frame_id 00 → 01 PASS
-
-최종:
-char_ready  = 1 PASS
-tx_busy     = 0 PASS
-optical_tx  = 0 PASS
-tx_enable   = 0 PASS
-```
-
-Optical Rising Edge 기준:
-
-```text
-Preamble:
-4 × 25 kHz × 1.6 ms = 4 × 40 = 160
-
-D50041C0:
-BIT1 = 9개  → 9 × 32 = 288
-BIT0 = 23개 → 23 × 16 = 368
-
-Total = 160 + 288 + 368
-      = 816
-```
-
-### TX-6 완료 시점 보정
+| 단계 | 모듈 | 결과 | 주요 검증 | Commit |
+|---|---|---|---|---|
+| TX-1 | CRC-8 | PASS | `00 + 41 → C0` | `266eeca` |
+| TX-2 | Frame Generator | PASS | `D50041C0`, `D51234F1`, Backpressure | `abdd1cf` |
+| TX-3 | BFSK Mapper | PASS 24/0 | IDLE / BIT0 / BIT1 / SYNC / SYNC Priority | `eb25eed` |
+| TX-4 | Carrier Generator | PASS 27/0 | 10 / 20 / 25 kHz, IDLE, 1.6 ms | `5886ce1` |
+| TX-5 | TX FSM | PASS 15/0 | SYNC ×4, Frame Start, Frame ID Roll-over | `92ece97` |
+| TX-6 | Optical TX Top | PASS 18/0 | `D50041C0`, 816 Rising Edge, 최종 Optical 완료 | `cd0f5b5` |
+| TX-7 | AXI4-Lite Wrapper | PASS 17/0 | Register R/W, START, READY/BUSY, AW First, W First | `334e7f1` |
+
+## TX-6 Optical TX Top 핵심 보정
 
 문제:
 
 ```text
-tx_frame_generator.frame_done은
-마지막 Bit가 Mapper에 전달된 시점에 발생한다.
-
-이 시점에는 마지막 BFSK Optical Symbol의
-1.6 ms Carrier 출력이 아직 완료되지 않았을 수 있다.
+tx_frame_generator.frame_done은 마지막 Bit가 Mapper에 전달된 시점이므로
+마지막 Optical Symbol의 1.6 ms 출력 완료보다 빠를 수 있음.
 ```
 
 변경:
 
 ```text
-frame_gen_done
-= tx_frame_generator.frame_done
-
-frame_gen_done 발생 시
-last_symbol_pending <= 1
-
-최종 frame_done
-= last_symbol_pending && symbol_done
+frame_gen_done = tx_frame_generator.frame_done
+frame_gen_done 발생 → last_symbol_pending = 1
+최종 frame_done = last_symbol_pending && symbol_done
 ```
 
-의미:
+검증:
 
 ```text
-frame_gen_done = Digital Frame Bit 전달 완료
-frame_done     = 실제 마지막 Optical Symbol 출력 완료
+Preamble SYNC ×4 PASS
+Data Symbol 32개 PASS
+D50041C0 PASS
+frame_gen_start = 1회 PASS
+최종 frame_done = 1회 PASS
+Optical Rising Edge = 816 PASS
+Frame ID 00 → 01 PASS
+PASS = 18 / FAIL = 0
 ```
 
-결과:
+## TX-7 AXI4-Lite Wrapper — PASS
+
+파일:
 
 ```text
-TX FSM은 마지막 Optical Symbol이 끝난 이후에만
-Frame 완료 처리 및 IDLE 복귀를 수행한다.
-
-통합 TB PASS = 18 / FAIL = 0
+RTL: rtl/tx/axi_lite_tx_wrapper.v
+TB : sim/tx/tb_axi_lite_tx_wrapper.v
+XPR: tb_xpr/tb_axi_lite_tx_wrapper/tb_axi_lite_tx_wrapper.xpr
 ```
 
-참고 수정:
+Vivado / XSim:
 
 ```text
-tx_frame_generator ST_LOAD:
-frame_shift = ...
-→
-frame_shift <= ...
+AXI LITE TX WRAPPER TEST RESULT : PASS
+PASS = 17
+FAIL = 0
 ```
 
-Clocked Always Block의 `frame_shift` 갱신을 Nonblocking Assignment로 통일하였다.
-
----
-
-# 6. TX-4 디버깅 이력
-
-문제:
+검증:
 
 ```text
-symbol_count가 증가하지 않아 symbol_done이 발생하지 않음.
+Reset PASS
+TX_DATA Write / Readback PASS
+STATUS READY/BUSY Read PASS
+START → char_valid 1 Clock Pulse PASS
+Busy 중 START Ignore PASS
+AW First PASS
+W First PASS
+AXI Write Response OKAY PASS
+AXI Read Response OKAY PASS
 ```
 
-원인:
+### TX-7 Testbench 수정 이력
 
-```verilog
-symbol_count <= symbol_count + 1'b0;
+초기 문제:
+
+```text
+axi_write task가 AWVALID / WVALID을 동시에 올린 뒤
+AW Handshake와 W Handshake를 순차적으로 기다렸다.
+
+DUT가 AW와 W를 같은 Cycle에 모두 수락하면
+W Handshake가 이미 완료되었는데 TB가 이후 W를 다시 기다리면서
+Simulation이 정지할 수 있었다.
 ```
 
 수정:
 
-```verilog
-symbol_count <= symbol_count + 1'b1;
+```text
+AW/W 동시 Write에서는 awready && wready를 함께 확인하고,
+같은 Rising Edge에서 AW/W Handshake가 모두 완료된 것으로 처리하도록 수정.
 ```
 
 결과:
 
 ```text
-수정 후 전체 Test PASS
-PASS = 27
-FAIL = 0
+AW/W 동시 수락 정상
+AW First PASS
+W First PASS
+PASS = 17 / FAIL = 0
 ```
 
 ---
 
-# 7. 설계 / 인터페이스 변경 이력
+# 6. 설계 / 인터페이스 변경 이력
 
 | 날짜 | 영역 | 변경 전 | 변경 후 | 이유 / 결과 |
 |---|---|---|---|---|
@@ -887,73 +448,23 @@ FAIL = 0
 | 2026-09-14 | FFT Block | 256 Sample / 1.6 ms | 128 Sample / 0.8 ms | 128-point FFT 기준 |
 | 2026-09-14 | Symbol | 512 Sample / 3.2 ms | 256 Sample / 1.6 ms | 2 × 128-sample FFT Block |
 | 2026-09-14 | Preamble | 12.8 ms | 6.4 ms | SYNC ×4 × 1.6 ms |
-| 2026-09-16 | TX FSM → Mapper | SYNC 별도 경로 없음 | `sync_valid / sync_ready` | Preamble SYNC 요청 전용 Handshake |
-| 2026-09-16 | Mapper Priority | DATA 경로 중심 | SYNC > DATA | SYNC / DATA 동시 요청 충돌 방지 |
-| 2026-09-17 | Carrier Generator | 미검증 | 10/20/25 kHz + IDLE PASS | PASS=27 / FAIL=0 |
+| 2026-09-16 | TX FSM → Mapper | SYNC 경로 없음 | `sync_valid / sync_ready` | Preamble SYNC 요청 전용 Handshake |
 | 2026-09-17 | Carrier Counter | `+ 1'b0` | `+ 1'b1` | `symbol_done` 미발생 버그 수정 |
-| 2026-09-17 | TX FSM | 미구현 | `IDLE → LOAD_DATA → PREAMBLE → SEND_FRAME → FRAME_DONE` | PASS=15 / FAIL=0 |
-| 2026-09-17 | Preamble Control | Mapper 직접 요청 계획 | TX FSM이 `sync_valid/sync_ready` + `symbol_done`으로 SYNC ×4 제어 | 실제 Symbol 완료 기준으로 다음 SYNC 진행 |
-| 2026-09-17 | Frame ID | 정책만 정의 | Frame 완료 시 +1 / `FF → 00` Roll-over | TX-5 TB PASS |
-| 2026-09-17 | TX-6 Integration | 개별 TX Block PASS | `optical_tx_top`으로 TX-1~TX-5 통합 | PASS=18 / FAIL=0 / Commit `cd0f5b5` |
-| 2026-09-17 | Frame 완료 의미 | Generator `frame_done`을 전체 Frame 완료로 사용 | `frame_gen_done`과 최종 `frame_done` 분리 | 마지막 Optical Symbol 완료까지 TX FSM이 대기 |
-| 2026-09-17 | Optical Frame Done | 마지막 Bit Mapper 전달 시점 | `last_symbol_pending && symbol_done` | 실제 마지막 Carrier 출력 완료를 Frame 완료 기준으로 사용 |
-| 2026-09-17 | Frame Shift Assignment | `frame_shift = {...}` | `frame_shift <= {...}` | Clocked Always Block의 Nonblocking Assignment 통일 |
-| 2026-09-17 | CNN → TX 입력 경로 | 직접 `char_id / char_valid` 연결 | Zynq PS → AXI4-Lite Slave Wrapper → `optical_tx_top` | PS에서 CNN 결과를 Register 기반으로 전달 |
-| 2026-09-17 | `optical_tx_top` 내부 Interface | 변경 검토 | `char_id / char_valid / char_ready / tx_busy` 유지 | TX-6 PASS 구조 보존 및 Wrapper 분리 |
-| 2026-09-17 | 개발 순서 | TX-7 Hardware Verification | TX-7 AXI4-Lite Wrapper → TX-8 AXI4-Lite + Optical TX 통합 Simulation → TX-9 Hardware Verification | PS 연동을 Hardware 검증 전에 완료 |
+| 2026-09-17 | TX FSM | 미구현 | Preamble / Frame 순서 FSM | PASS=15 / FAIL=0 |
+| 2026-09-17 | Frame 완료 의미 | Generator `frame_done` | `frame_gen_done` + 최종 `frame_done` 분리 | 마지막 Optical Symbol 완료까지 대기 |
+| 2026-09-17 | Optical Frame Done | 마지막 Bit 전달 시점 | `last_symbol_pending && symbol_done` | 실제 Carrier 완료 기준 |
+| 2026-09-17 | CNN → TX 입력 | 직접 `char_id / char_valid` | Zynq PS → AXI4-Lite Wrapper → `optical_tx_top` | PS에서 CNN 결과 전달 |
+| 2026-09-17 | `optical_tx_top` Interface | 변경 검토 | `char_id / char_valid / char_ready / tx_busy` 유지 | TX-6 PASS 구조 보존 |
+| 2026-09-17 | 개발 순서 | TX-7 Hardware | TX-7 AXI Wrapper → TX-8 통합 → TX-9 Hardware | PS 연동 우선 |
+| 2026-09-17 | TX-7 Wrapper | 미구현 | `axi_lite_tx_wrapper.v` | PASS=17 / FAIL=0 / `334e7f1` |
+| 2026-09-17 | AXI Register Map | 미확정 | `0x00 DATA`, `0x04 CTRL`, `0x08 STATUS` | Character / START / READY / BUSY 접근 |
+| 2026-09-17 | AXI Write 순서 | AW/W 동시 전제 가능성 | AW/W 독립 Pending 처리 | AW First / W First PASS |
+| 2026-09-17 | START 정책 | 미확정 | `char_ready=1`일 때만 `char_valid` Pulse | Busy 중 START Ignore PASS |
+| 2026-09-17 | TX-7 TB `axi_write` | AW/W Handshake 순차 대기 | AW/W 동시 수락을 한 번에 처리 | 완료된 W Handshake를 놓치는 TB 정지 문제 해결 |
 
 ---
 
-# 8. 다음 작업
-
-## TX-7 AXI4-Lite Wrapper 구현 / 검증
-
-CNN 결과는 **Zynq PS에서 AXI4-Lite를 통해 TX에 전달**한다.
-
-구조:
-
-```text
-Zynq PS
-  ↓ AXI4-Lite
-AXI4-Lite Slave Wrapper
-  ↓
-char_id / char_valid / char_ready / tx_busy
-  ↓
-optical_tx_top
-```
-
-설계 원칙:
-
-```text
-- optical_tx_top의 기존 내부 인터페이스 유지
-- char_id / char_valid / char_ready / tx_busy 유지
-- AXI4-Lite Slave Wrapper는 optical_tx_top 외부에 추가
-- AXI Register Write로 Character ID / 송신 요청 전달
-- Wrapper가 char_valid를 생성
-- char_ready / tx_busy를 AXI Status Register로 제공
-```
-
-TX-7 구현 예정:
-
-```text
-rtl/tx/axi_lite_tx_wrapper.v
-sim/tx/tb_axi_lite_tx_wrapper.v
-```
-
-TX-7 검증 항목:
-
-```text
-AXI4-Lite Write Handshake
-AXI4-Lite Read Handshake
-Character ID Register Write
-TX Start / char_valid 요청
-char_ready 연동
-tx_busy Status Read
-Busy 중 중복 요청 처리
-Reset 동작
-```
-
----
+# 7. 다음 작업
 
 ## TX-8 AXI4-Lite + Optical TX 전체 통합 Simulation
 
@@ -961,7 +472,8 @@ Reset 동작
 
 ```text
 AXI4-Lite Master TB
-→ AXI4-Lite Slave Wrapper
+→ axi_lite_tx_wrapper
+→ char_id / char_valid / char_ready / tx_busy
 → optical_tx_top
 → tx_fsm
 → tx_frame_generator / crc8
@@ -973,80 +485,79 @@ AXI4-Lite Master TB
 통합 검증 목표:
 
 ```text
-AXI Write로 Character 입력
-→ Preamble SYNC ×4
-→ Data Symbol 32개
-→ D50041C0 복원
-→ Optical Carrier 검증
-→ 최종 Busy Clear / Ready 복귀
+1. AXI Write 0x00 TX_DATA로 Character 입력
+2. AXI Write 0x04 TX_CTRL.START로 송신 시작
+3. TX_STATUS READY/BUSY 변화 확인
+4. Preamble SYNC ×4
+5. Data Symbol 32개
+6. D50041C0 복원
+7. Optical Carrier Rising Edge = 816
+8. 최종 frame_done 이후 BUSY Clear / READY 복귀
+9. optical_tx = 0 / tx_enable = 0
+10. AW First / W First 조건에서도 전체 송신 정상
+11. Busy 중 START Ignore 유지
+12. AXI Response OKAY
+13. 연속 Character 전송 시 Frame ID 증가 확인
 ```
 
 TX-8 PASS 후 Hardware 단계로 이동한다.
-
----
 
 ## TX-9 Hardware Verification
 
 ```text
 1. Zynq PS에서 AXI4-Lite Register Write
+   - 0x00 TX_DATA
+   - 0x04 TX_CTRL.START
+   - 0x08 TX_STATUS
 2. XDC 작성
-   - clk
-   - rst
-   - optical_tx
-   - 필요 시 tx_enable / debug signal
 3. Zybo PMOD에 optical_tx 연결
-4. Oscilloscope Hardware 검증
+4. Oscilloscope 검증
    - SYNC 25 kHz
    - BIT0 10 kHz
    - BIT1 20 kHz
-   - Symbol Time 1.6 ms
+   - Symbol 1.6 ms
    - Preamble SYNC ×4
    - Frame 종료 후 IDLE
 5. 2N7000 Driver 연결
 6. LED / Laser Optical Source 검증
 ```
 
-Hardware 검증 이후:
-
-```text
-Optical Link
-→ BPW34
-→ MCP6022
-→ XADC / FFT RX 연동
-```
-
 Interface Excel:
 
 ```text
-현재 Excel은 즉시 수정하지 않는다.
-TX-7 AXI4-Lite Wrapper의 실제 Port / Register Map이 확정된 뒤
-AXI Wrapper 외부 인터페이스를 추가 대상으로 반영한다.
-문서 정리 채팅에서 최신 RTL 기준으로 일괄 동기화한다.
+TX-7 실제 RTL / Register Map이 확정되었으므로
+문서 정리 단계에서 아래 내용을 추가한다.
+
+- AXI4-Lite Slave 외부 Port
+- 0x00 TX_DATA
+- 0x04 TX_CTRL.START
+- 0x08 TX_STATUS.READY/BUSY
+- Wrapper ↔ optical_tx_top char_id / valid / ready / busy
 ```
 
 ---
 
-# 9. Git / 문서 동기화 상태
+# 8. Git / 문서 동기화 상태
 
-TX-6 구현 파일은 Git 원격 반영 완료:
+TX-7 구현 파일 Git 반영 완료:
 
 ```text
-rtl/tx/optical_tx_top.v
-rtl/tx/tx_frame_generator.v
-sim/tx/tb_optical_tx_top.v
-tb_xpr/optical_Tx_top/optical_Tx_top.xpr
+rtl/tx/axi_lite_tx_wrapper.v
+sim/tx/tb_axi_lite_tx_wrapper.v
+tb_xpr/tb_axi_lite_tx_wrapper/tb_axi_lite_tx_wrapper.xpr
 ```
 
 구현 Commit:
 
 ```text
-cd0f5b5
+334e7f1
+feat: add and verify AXI4-Lite TX wrapper
 ```
 
 검증 결과:
 
 ```text
-PASS = 18
+PASS = 17
 FAIL = 0
 ```
 
@@ -1057,38 +568,27 @@ docs/progress_지침.md
 Commit = 08bb3f1
 ```
 
-이번 설계 변경 동기화 대상:
+이번 동기화 대상:
 
 ```text
 progress.md
 Notion Progress
+Notion Testbench 결과
 ```
 
-Interface Excel은 이번 단계에서 제외한다.
-
-TX-7 AXI4-Lite Wrapper 구현 후 다음 항목을 추가 대상으로 기록한다.
-
-```text
-AXI4-Lite Slave 외부 Port
-Register Map
-Character ID / Start Register
-Ready / Busy Status Register
-Wrapper ↔ optical_tx_top 내부 Handshake
-```
-
-문서 정리 채팅에서 실제 TX-7 RTL 기준으로 일괄 업데이트한다.
-
-문서 Commit은 구현 Commit과 분리하여 관리한다.
+Interface Excel은 이번 단계에서 수정하지 않는다.
+TX-7 실제 Port / Register Map은 문서 정리 채팅에서 반영한다.
 
 ---
 
-# 10. 업데이트 규칙
+# 9. 업데이트 규칙
 
 - RTL은 Verilog `.v` 기준으로 관리한다.
 - 설명 주석은 한글을 기본으로 한다.
 - PASS되지 않은 항목은 완료 처리하지 않는다.
 - 기존 PASS RTL/TB는 Regression 용도로 유지한다.
 - 실제 저장소에 없는 모듈을 구현 완료 항목으로 기록하지 않는다.
-- 인터페이스 변경은 `progress.md`에 즉시 기록한다. Interface Excel은 문서 정리 단계에서 최신 RTL 기준으로 일괄 동기화한다.
+- 인터페이스 변경은 `progress.md`에 즉시 기록한다.
+- Interface Excel은 문서 정리 단계에서 최신 RTL 기준으로 일괄 동기화한다.
 - `FS_HZ`, `FFT_N`, `SYMBOL_SAMPLES`, `F0/F1/FSYNC` 변경 시 공통 규격을 함께 갱신한다.
 - Hardware 검증 전 Simulation PASS를 먼저 확보한다.
