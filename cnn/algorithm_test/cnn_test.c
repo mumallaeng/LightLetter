@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <inttypes.h>
 
 #define IN_H        28
 #define IN_W        28
@@ -31,6 +32,101 @@
 
 
 /*
+ * INT16 quantization
+ *
+ *   activation : int16_t
+ *   weight     : int16_t
+ *   bias       : int32_t
+ *   acc / psum : int64_t
+ *
+ * int16 * int16 는 최대 2^30 이므로
+ * 9개(layer 1) 또는 54개(layer 2) 항을 더하면 int32 범위를 넘을 수 있음.
+ * 따라서 누산기와 출력(requantization 이전 값)은 int64_t 로 둔다.
+ */
+
+
+/*
+ * MAC trace
+ *
+ * hw_style 모델에서 3x3 window 하나와 3x3 weight 커널 하나의 연산이
+ * 끝날 때마다 한 줄씩 콘솔과 TRACE_FILE_PATH(CSV)에 기록한다.
+ *
+ *   step       : 전체 연산 순서 (0부터)
+ *   layer      : 1 또는 2
+ *   oy, ox     : 출력 좌표
+ *   pass       : line buffer pass 번호 (layer 1은 항상 0)
+ *   oc, ic     : 출력 / 입력 채널
+ *   window     : 3x3 입력 window (열은 공백, 행은 '/' 로 구분)
+ *   weight     : 3x3 weight 커널 (같은 형식)
+ *   acc_before : 이번 연산 전 누산값 (첫 연산이면 bias)
+ *   mac_out    : sum(window * weight)
+ *   acc_after  : acc_before + mac_out
+ */
+#define TRACE_FILE_PATH     "cnn_trace.csv"
+#define TRACE_TO_CONSOLE    1
+
+static FILE *trace_fp = NULL;
+static uint64_t trace_step = 0;
+
+static void trace_write(const char *line)
+{
+#if TRACE_TO_CONSOLE
+    fputs(line, stdout);
+#endif
+    if (trace_fp != NULL)
+    {
+        fputs(line, trace_fp);
+    }
+}
+
+static int trace_append_3x3(
+    char *buf,
+    size_t size,
+    const int16_t m[KERNEL_H][KERNEL_W]
+)
+{
+    int n = 0;
+
+    for (int ky = 0; ky < KERNEL_H; ky++)
+    {
+        for (int kx = 0; kx < KERNEL_W; kx++)
+        {
+            const char *sep =
+                (kx > 0) ? " " : (ky > 0) ? "/" : "";
+
+            n += snprintf(buf + n, size - n, "%s%d", sep, m[ky][kx]);
+        }
+    }
+
+    return n;
+}
+
+static void trace_mac(
+    int layer, int oy, int ox, int pass, int oc, int ic,
+    const int16_t window[KERNEL_H][KERNEL_W],
+    const int16_t kernel[KERNEL_H][KERNEL_W],
+    int64_t acc_before,
+    int64_t mac_out
+)
+{
+    char line[512];
+    int n = snprintf(line, sizeof(line),
+                     "%" PRIu64 ",%d,%d,%d,%d,%d,%d,",
+                     trace_step, layer, oy, ox, pass, oc, ic);
+
+    n += trace_append_3x3(line + n, sizeof(line) - n, window);
+    n += snprintf(line + n, sizeof(line) - n, ",");
+    n += trace_append_3x3(line + n, sizeof(line) - n, kernel);
+    snprintf(line + n, sizeof(line) - n,
+             ",%" PRId64 ",%" PRId64 ",%" PRId64 "\n",
+             acc_before, mac_out, acc_before + mac_out);
+
+    trace_write(line);
+    trace_step++;
+}
+
+
+/*
  * Input:
  *   ifmap[28][28]
  *
@@ -41,10 +137,10 @@
  *   ofmap[6][26][26]
  */
 void conv_1ch_6ch(
-    const uint8_t ifmap[IN_H][IN_W],
-    const int8_t weight[OUT_CH][KERNEL_H][KERNEL_W],
+    const int16_t ifmap[IN_H][IN_W],
+    const int16_t weight[OUT_CH][KERNEL_H][KERNEL_W],
     const int32_t bias[OUT_CH],
-    int32_t ofmap[OUT_CH][OUT_H][OUT_W]
+    int64_t ofmap[OUT_CH][OUT_H][OUT_W]
 )
 {
     for (int oc = 0; oc < OUT_CH; oc++)
@@ -53,17 +149,17 @@ void conv_1ch_6ch(
         {
             for (int ox = 0; ox < OUT_W; ox++)
             {
-                int32_t acc = bias[oc];
+                int64_t acc = bias[oc];
 
                 for (int ky = 0; ky < KERNEL_H; ky++)
                 {
                     for (int kx = 0; kx < KERNEL_W; kx++)
                     {
-                        uint8_t input_value =
+                        int16_t input_value =
                             ifmap[oy * STRIDE + ky]
                                  [ox * STRIDE + kx];
 
-                        int8_t weight_value =
+                        int16_t weight_value =
                             weight[oc][ky][kx];
 
                         acc +=
@@ -79,10 +175,10 @@ void conv_1ch_6ch(
 }
 
 void conv_1ch_6ch_hw_style(
-    const uint8_t ifmap[IN_H][IN_W],
-    const int8_t weight[OUT_CH][KERNEL_H][KERNEL_W],
+    const int16_t ifmap[IN_H][IN_W],
+    const int16_t weight[OUT_CH][KERNEL_H][KERNEL_W],
     const int32_t bias[OUT_CH],
-    int32_t ofmap[OUT_CH][OUT_H][OUT_W]
+    int64_t ofmap[OUT_CH][OUT_H][OUT_W]
 )
 {
     /*
@@ -98,7 +194,7 @@ void conv_1ch_6ch_hw_style(
              * 실제 HW에서는 이 부분이
              * 3x3 Line Buffer 출력에 해당
              */
-            uint8_t window[3][3];
+            int16_t window[3][3];
 
             for (int ky = 0; ky < 3; ky++)
             {
@@ -115,20 +211,26 @@ void conv_1ch_6ch_hw_style(
              */
             for (int oc = 0; oc < OUT_CH; oc++)
             {
-                int32_t acc = bias[oc];
+                int64_t mac = 0;
 
                 for (int ky = 0; ky < 3; ky++)
                 {
                     for (int kx = 0; kx < 3; kx++)
                     {
-                        acc +=
+                        mac +=
                             (int32_t)window[ky][kx]
                             *
                             (int32_t)weight[oc][ky][kx];
                     }
                 }
 
-                ofmap[oc][oy][ox] = acc;
+                trace_mac(1, oy, ox, 0, oc, 0,
+                          (const int16_t (*)[KERNEL_W])window,
+                          weight[oc],
+                          bias[oc],
+                          mac);
+
+                ofmap[oc][oy][ox] = bias[oc] + mac;
             }
         }
     }
@@ -137,10 +239,10 @@ void conv_1ch_6ch_hw_style(
 
 /* Straightforward layer-2 model used as the golden reference. */
 void conv_6ch_16ch_ref(
-    const uint8_t ifmap[L2_IN_CH][L2_IN_H][L2_IN_W],
-    const int8_t weight[L2_OUT_CH][L2_IN_CH][KERNEL_H][KERNEL_W],
+    const int16_t ifmap[L2_IN_CH][L2_IN_H][L2_IN_W],
+    const int16_t weight[L2_OUT_CH][L2_IN_CH][KERNEL_H][KERNEL_W],
     const int32_t bias[L2_OUT_CH],
-    int32_t ofmap[L2_OUT_CH][L2_OUT_H][L2_OUT_W]
+    int64_t ofmap[L2_OUT_CH][L2_OUT_H][L2_OUT_W]
 )
 {
     for (int oc = 0; oc < L2_OUT_CH; oc++)
@@ -149,7 +251,7 @@ void conv_6ch_16ch_ref(
         {
             for (int ox = 0; ox < L2_OUT_W; ox++)
             {
-                int32_t acc = bias[oc];
+                int64_t acc = bias[oc];
 
                 for (int ic = 0; ic < L2_IN_CH; ic++)
                 {
@@ -176,49 +278,75 @@ void conv_6ch_16ch_ref(
 /*
  * Layer 2 hardware-style model: 6 input channels -> 16 output channels.
  *
- * pass 0: three line buffers receive input channels 0~2
- *         psum = bias + sum(ch 0~2)
- * pass 1: the line buffers receive input channels 3~5
- *         psum = previous psum + sum(ch 3~5)
+ * Line buffer는 3개뿐이므로 입력 이미지를 3채널씩 나눠 받는다.
  *
- * The three windows are loaded once per pass and reused by all 16 output
- * channels. psum_after_pass exposes the intermediate accumulation results.
+ * pass 0: 입력 채널 0~2 이미지가 들어옴
+ *         프레임 전체를 raster 순서로 훑으며
+ *         psum_mem[oc][oy][ox] = bias + sum(ch 0~2)
+ * pass 1: pass 0이 모든 위치에서 끝난 뒤 입력 채널 3~5 이미지가 들어옴
+ *         psum_mem[oc][oy][ox] += sum(ch 3~5)
+ *
+ * pass 사이의 중간 누산값은 psum_mem(16 x 24 x 24)에 보관한다.
+ * 한 위치의 3개 window는 16개 output channel이 재사용한다.
+ * psum_after_pass 는 pass별 psum_mem 상태를 그대로 노출한다.
  */
 void conv_6ch_16ch_hw_style(
-    const uint8_t ifmap[L2_IN_CH][L2_IN_H][L2_IN_W],
-    const int8_t weight[L2_OUT_CH][L2_IN_CH][KERNEL_H][KERNEL_W],
+    const int16_t ifmap[L2_IN_CH][L2_IN_H][L2_IN_W],
+    const int16_t weight[L2_OUT_CH][L2_IN_CH][KERNEL_H][KERNEL_W],
     const int32_t bias[L2_OUT_CH],
-    int32_t ofmap[L2_OUT_CH][L2_OUT_H][L2_OUT_W],
-    int32_t psum_after_pass[L2_NUM_PASSES][L2_OUT_CH][L2_OUT_H][L2_OUT_W]
+    int64_t ofmap[L2_OUT_CH][L2_OUT_H][L2_OUT_W],
+    int64_t psum_after_pass[L2_NUM_PASSES][L2_OUT_CH][L2_OUT_H][L2_OUT_W]
 )
 {
-    for (int oy = 0; oy < L2_OUT_H; oy++)
+    /* pass 사이 누산값을 보관하는 psum 메모리 */
+    static int64_t psum_mem[L2_OUT_CH][L2_OUT_H][L2_OUT_W];
+
+    /* 이번 pass에 들어오는 3채널 입력 이미지 (line buffer 3개의 입력) */
+    static int16_t pass_in[L2_CHANNELS_PER_PASS][L2_IN_H][L2_IN_W];
+
+    for (int oc = 0; oc < L2_OUT_CH; oc++)
     {
-        for (int ox = 0; ox < L2_OUT_W; ox++)
+        for (int oy = 0; oy < L2_OUT_H; oy++)
         {
-            int32_t psum[L2_OUT_CH];
-
-            for (int oc = 0; oc < L2_OUT_CH; oc++)
+            for (int ox = 0; ox < L2_OUT_W; ox++)
             {
-                psum[oc] = bias[oc];
+                psum_mem[oc][oy][ox] = bias[oc];
             }
+        }
+    }
 
-            for (int pass = 0; pass < L2_NUM_PASSES; pass++)
+    for (int pass = 0; pass < L2_NUM_PASSES; pass++)
+    {
+        /* 이번 pass의 입력 채널 이미지만 들어온다. */
+        for (int lane = 0; lane < L2_CHANNELS_PER_PASS; lane++)
+        {
+            int ic = pass * L2_CHANNELS_PER_PASS + lane;
+
+            for (int y = 0; y < L2_IN_H; y++)
             {
-                uint8_t window[L2_CHANNELS_PER_PASS][KERNEL_H][KERNEL_W];
+                for (int x = 0; x < L2_IN_W; x++)
+                {
+                    pass_in[lane][y][x] = ifmap[ic][y][x];
+                }
+            }
+        }
+
+        for (int oy = 0; oy < L2_OUT_H; oy++)
+        {
+            for (int ox = 0; ox < L2_OUT_W; ox++)
+            {
+                int16_t window[L2_CHANNELS_PER_PASS][KERNEL_H][KERNEL_W];
 
                 /* The three line buffers create three 3x3 windows. */
                 for (int lane = 0; lane < L2_CHANNELS_PER_PASS; lane++)
                 {
-                    int ic = pass * L2_CHANNELS_PER_PASS + lane;
-
                     for (int ky = 0; ky < KERNEL_H; ky++)
                     {
                         for (int kx = 0; kx < KERNEL_W; kx++)
                         {
                             window[lane][ky][kx] =
-                                ifmap[ic][oy * STRIDE + ky]
-                                         [ox * STRIDE + kx];
+                                pass_in[lane][oy * STRIDE + ky]
+                                             [ox * STRIDE + kx];
                         }
                     }
                 }
@@ -226,32 +354,47 @@ void conv_6ch_16ch_hw_style(
                 /* Reuse these input windows across all output channels. */
                 for (int oc = 0; oc < L2_OUT_CH; oc++)
                 {
-                    int32_t acc = psum[oc];
+                    int64_t acc = psum_mem[oc][oy][ox];
 
                     for (int lane = 0; lane < L2_CHANNELS_PER_PASS; lane++)
                     {
                         int ic = pass * L2_CHANNELS_PER_PASS + lane;
+                        int64_t mac = 0;
 
                         for (int ky = 0; ky < KERNEL_H; ky++)
                         {
                             for (int kx = 0; kx < KERNEL_W; kx++)
                             {
-                                acc +=
+                                mac +=
                                     (int32_t)window[lane][ky][kx]
                                     *
                                     (int32_t)weight[oc][ic][ky][kx];
                             }
                         }
+
+                        trace_mac(2, oy, ox, pass, oc, ic,
+                                  (const int16_t (*)[KERNEL_W])window[lane],
+                                  weight[oc][ic],
+                                  acc,
+                                  mac);
+
+                        acc += mac;
                     }
 
-                    psum[oc] = acc;
+                    psum_mem[oc][oy][ox] = acc;
                     psum_after_pass[pass][oc][oy][ox] = acc;
                 }
             }
+        }
+    }
 
-            for (int oc = 0; oc < L2_OUT_CH; oc++)
+    for (int oc = 0; oc < L2_OUT_CH; oc++)
+    {
+        for (int oy = 0; oy < L2_OUT_H; oy++)
+        {
+            for (int ox = 0; ox < L2_OUT_W; ox++)
             {
-                ofmap[oc][oy][ox] = psum[oc];
+                ofmap[oc][oy][ox] = psum_mem[oc][oy][ox];
             }
         }
     }
@@ -260,17 +403,17 @@ void conv_6ch_16ch_hw_style(
 
 int main(void)
 {
-    static uint8_t ifmap[IN_H][IN_W];
-    static int8_t weight[OUT_CH][KERNEL_H][KERNEL_W];
+    static int16_t ifmap[IN_H][IN_W];
+    static int16_t weight[OUT_CH][KERNEL_H][KERNEL_W];
     static int32_t bias[OUT_CH];
-    static int32_t ofmap[OUT_CH][OUT_H][OUT_W];
+    static int64_t ofmap[OUT_CH][OUT_H][OUT_W];
 
-    static uint8_t l2_ifmap[L2_IN_CH][L2_IN_H][L2_IN_W];
-    static int8_t l2_weight[L2_OUT_CH][L2_IN_CH][KERNEL_H][KERNEL_W];
+    static int16_t l2_ifmap[L2_IN_CH][L2_IN_H][L2_IN_W];
+    static int16_t l2_weight[L2_OUT_CH][L2_IN_CH][KERNEL_H][KERNEL_W];
     static int32_t l2_bias[L2_OUT_CH];
-    static int32_t l2_ofmap_ref[L2_OUT_CH][L2_OUT_H][L2_OUT_W];
-    static int32_t l2_ofmap_hw[L2_OUT_CH][L2_OUT_H][L2_OUT_W];
-    static int32_t l2_psum_after_pass
+    static int64_t l2_ofmap_ref[L2_OUT_CH][L2_OUT_H][L2_OUT_W];
+    static int64_t l2_ofmap_hw[L2_OUT_CH][L2_OUT_H][L2_OUT_W];
+    static int64_t l2_psum_after_pass
         [L2_NUM_PASSES][L2_OUT_CH][L2_OUT_H][L2_OUT_W];
 
 
@@ -284,7 +427,7 @@ int main(void)
     {
         for (int x = 0; x < IN_W; x++)
         {
-            ifmap[y][x] = (uint8_t)((y * IN_W + x) % 16);
+            ifmap[y][x] = (int16_t)((y * IN_W + x) % 16);
         }
     }
 
@@ -300,7 +443,7 @@ int main(void)
         {
             for (int kx = 0; kx < KERNEL_W; kx++)
             {
-                weight[oc][ky][kx] = (int8_t)(oc + 1);
+                weight[oc][ky][kx] = (int16_t)(oc + 1);
             }
         }
 
@@ -319,7 +462,7 @@ int main(void)
             for (int x = 0; x < L2_IN_W; x++)
             {
                 l2_ifmap[ic][y][x] =
-                    (uint8_t)((ic * 3 + y * L2_IN_W + x) % 16);
+                    (int16_t)((ic * 3 + y * L2_IN_W + x) % 16);
             }
         }
     }
@@ -333,7 +476,7 @@ int main(void)
                 for (int kx = 0; kx < KERNEL_W; kx++)
                 {
                     l2_weight[oc][ic][ky][kx] =
-                        (int8_t)(((oc + ic + ky + kx) % 5) - 2);
+                        (int16_t)(((oc + ic + ky + kx) % 5) - 2);
                 }
             }
         }
@@ -345,6 +488,17 @@ int main(void)
     /*
      * Convolution
      */
+    trace_fp = fopen(TRACE_FILE_PATH, "w");
+
+    if (trace_fp == NULL)
+    {
+        fprintf(stderr, "failed to open %s\n", TRACE_FILE_PATH);
+        return 1;
+    }
+
+    trace_write("step,layer,oy,ox,pass,oc,ic,window,weight,"
+                "acc_before,mac_out,acc_after\n");
+
     conv_1ch_6ch_hw_style(
         ifmap,
         weight,
@@ -367,6 +521,9 @@ int main(void)
         l2_psum_after_pass
     );
 
+    fclose(trace_fp);
+    trace_fp = NULL;
+
     // conv_1ch_6ch(
     //     ifmap,
     //     weight,
@@ -388,7 +545,7 @@ int main(void)
         {
             for (int x = 0; x < 5; x++)
             {
-                printf("%6d ", ofmap[oc][y][x]);
+                printf("%6" PRId64 " ", ofmap[oc][y][x]);
             }
 
             printf("\n");
@@ -402,7 +559,7 @@ int main(void)
 
     for (int oc = 0; oc < L2_OUT_CH; oc++)
     {
-        printf("%4d | %6d | %12d | %12d | %6d\n",
+        printf("%4d | %6" PRId32 " | %12" PRId64 " | %12" PRId64 " | %6" PRId64 "\n",
                oc,
                l2_bias[oc],
                l2_psum_after_pass[0][oc][0][0],
