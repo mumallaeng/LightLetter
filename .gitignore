@@ -109,3 +109,6 @@ __pycache__/
 # tb/ Python testbench and training environment
 tb/.venv/
 tb/results/
+
+
+*.png
