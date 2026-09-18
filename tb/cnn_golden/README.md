@@ -2,12 +2,27 @@
 
 팀 논의 끝에 **`LeNet-5 3x3_schedule`**(`conv_channels=[1,6,16]`, `padding=0`,
 `pool_stride=2`, kernel 3×3, FC 400→120→84→36, ReLU+MaxPool, INT16 QAT)을 최종
-구조로 확정했다. `cnn_golden/model.py`가 정의하는 구조(채널 1개, FC 676→256→64→36)는
-옛 확정안이라 지금은 안 맞고, `data.py`/`model.py`/`train.py`/`tests/test_model.py`를
-이 확정 구조에 맞춰 갱신하는 작업이 다음 단계다.
+구조로 확정했다. `cnn_golden/model.py`/`train.py`/`tests/test_model.py`는 이 확정
+구조로 이미 갱신했다.
 
 비교에 쓴 5개 후보와 실측 근거는 아래 "후보 구조 비교" 절에 그대로 남겨둔다(왜 이
 구조를 골랐는지 추적하기 위함).
+
+## 전체 데이터 흐름 (확정 구조)
+
+conv의 stride는 항상 1(프로젝트 스펙 고정), pooling의 stride만 2로 바뀐 게 이번
+확정의 핵심이다. N은 그 conv 레이어가 **풀링 전에** 채널 하나당 만들어내는 출력
+픽셀 수(가로×세로)다.
+
+```
+입력 28×28 (1채널)
+  -> conv1(3×3, stride1, pad0, 1→6채널)   -> 26×26  (N=676=26×26)
+  -> pool1(2×2, stride2)                  -> 13×13
+  -> conv2(3×3, stride1, pad0, 6→16채널)  -> 11×11  (N=121=11×11)
+  -> pool2(2×2, stride2)                  -> 5×5
+  -> flatten: 16채널 × 5×5 = 400
+  -> FC1(400→120) -> ReLU -> FC2(120→84) -> ReLU -> FC3(84→36)
+```
 
 ## 후보 구조 비교
 
@@ -95,8 +110,19 @@ BRAM 필드는 INT16 weight만 연속 적재할 때의 하한이며, bias·featu
 
 ## 실행
 
-지금은 비교/탐색이 전부 `cnn_golden.ipynb`에서 이뤄진다(`tb`에서 `lightletter-tb` 커널로
-연다). `cnn_golden/train.py` CLI(`--data-root`/`--output` 등)는 옛 채널 1개 기준이라 최종 후보가 정해지면 그에 맞춰 갱신한다.
+5개 후보 비교/탐색은 `cnn_golden.ipynb`에서 이뤄졌다(`tb`에서 `lightletter-tb` 커널로
+연다). 확정 구조로 실제 재현 학습을 돌릴 땐 `cnn_golden/train.py` CLI를 쓴다:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -u -m cnn_golden.train \
+  --data-root results/emnist \
+  --output results/<run-name> --device mps
+```
+
+`train.py`도 확정 구조(LeNet-5 3x3_schedule)와 val/test 분리 평가 방식(위 "후보 구조
+비교"와 동일 — train의 10%를 validation으로 떼어 매 epoch 추적하고, test는 마지막에
+최종epoch·best-val-epoch 두 시점만 평가)으로 이미 갱신했다.
 
 참고: [PyTorch Adam](https://docs.pytorch.org/docs/stable/generated/torch.optim.Adam),
 [PyTorch FakeQuantize](https://docs.pytorch.org/docs/2.14/generated/torch.ao.quantization.fake_quantize.FakeQuantize.html).
