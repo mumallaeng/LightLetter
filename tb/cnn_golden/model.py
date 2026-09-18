@@ -1,10 +1,12 @@
-"""Confirmed model: C2-P1-S1, FC 676->256->64->36, INT16 QAT.
+"""Confirmed model: LeNet-5 3x3_schedule, FC 400->120->84->36, INT16 QAT.
 
-Conv x2 (3x3, zero-padding 1, stride 1, 1 output channel) -> ReLU -> MaxPool(2x2,
-stride 1) after each Conv -> Flatten(26x26=676) -> FC1(676->256) -> ReLU ->
-FC2(256->64) -> ReLU -> FC3(64->36). This hardcodes the single configuration chosen
-after sweeping 16 structures and comparing FC widths. The sweep history and width
-comparison code live in Vault/projects/LightLetter/sweep-exploration/, not this repo.
+conv_channels=[1,6,16] (kernel 3x3, stride 1, no padding) -> ReLU -> MaxPool(2x2,
+stride 2) after each Conv -> Flatten(5x5x16=400) -> FC1(400->120) -> ReLU ->
+FC2(120->84) -> ReLU -> FC3(84->36). Reproduces LeNet-5's spatial reduction
+schedule (28->26->13->11->5, matching LeCun 1998's 32x32/5x5 schedule) inside this
+project's fixed 3x3 kernel, chosen after training and comparing 5 candidates
+(1-6-16, 1-6-8-8 conv-3-layer, this 3x3 schedule, and two 32x32/5x5 LeNet-5
+references) -- see cnn_golden/README.md for the comparison table and rationale.
 
 This simulates INT16 boundaries, but MACs are computed in floating point, so results
 are not bit-exact with RTL.
@@ -15,10 +17,10 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-CONV_LAYERS = 2
-PADDING = 1
-POOL_STRIDE = 1
-FC_WIDTHS = [256, 64, 36]
+CONV_CHANNELS = [1, 6, 16]
+PADDING = 0
+POOL_STRIDE = 2
+FC_WIDTHS = [120, 84, 36]
 
 
 class Quant16(nn.Module):
@@ -53,32 +55,25 @@ class Quant16(nn.Module):
 
 
 class Net(nn.Module):
-    """Hardcodes the confirmed spec: C2-P1-S1-F3, FC 676->256->64->36."""
+    """Hardcodes the confirmed spec: LeNet-5 3x3_schedule, FC 400->120->84->36."""
 
-    def __init__(self, conv_init='center_identity'):
+    def __init__(self):
         super().__init__()
-        # "1 filter per layer" is implemented as 1 output channel; the input is 1-channel grayscale.
-        self.convs = nn.ModuleList([nn.Conv2d(1, 1, 3, padding=PADDING) for _ in range(CONV_LAYERS)])
-        if conv_init == 'center_identity':
-            # Prevents the single output channel from dying behind an initial negative bias.
-            with torch.no_grad():
-                for conv in self.convs:
-                    conv.weight.zero_()
-                    conv.weight[0, 0, 1, 1] = 1.
-                    conv.bias.zero_()
-        elif conv_init != 'default':
-            raise ValueError(f'Unknown Conv initialization: {conv_init}')
+        self.convs = nn.ModuleList([
+            nn.Conv2d(CONV_CHANNELS[i], CONV_CHANNELS[i + 1], 3, padding=PADDING)
+            for i in range(len(CONV_CHANNELS) - 1)
+        ])
         size = 28
         self.sizes = []
         for _ in self.convs:
             # Side length after a 3x3/stride-1 Conv: size-2+2*padding.
             size = size - 2 + 2 * PADDING
-            # Side length after a 2x2 MaxPool; stride 1 uses the floor rule.
+            # Side length after a 2x2 MaxPool at POOL_STRIDE; floor rule.
             size = (size - 2) // POOL_STRIDE + 1
             if size < 1:
                 raise ValueError('Empty spatial output')
             self.sizes.append(size)
-        widths = [size * size] + FC_WIDTHS
+        widths = [CONV_CHANNELS[-1] * size * size] + FC_WIDTHS
         self.fcs = nn.ModuleList([nn.Linear(a, b) for a, b in zip(widths, widths[1:])])
         self.input_quant = Quant16()
         self.weight_quant = nn.ModuleList([Quant16(weight=True) for _ in [*self.convs, *self.fcs]])

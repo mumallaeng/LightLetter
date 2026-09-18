@@ -6,34 +6,22 @@ from cnn_golden.train import scores
 
 
 class ModelTests(unittest.TestCase):
-    def test_center_identity_keeps_conv_signal(self):
-        net = Net()
-        for conv in net.convs:
-            expected = torch.zeros_like(conv.weight)
-            expected[0, 0, 1, 1] = 1.
-            torch.testing.assert_close(conv.weight, expected)
-            torch.testing.assert_close(conv.bias, torch.zeros_like(conv.bias))
-        net.train()
-        loss = net(torch.rand(4, 1, 28, 28)).square().mean()
-        loss.backward()
-        self.assertTrue(all(conv.weight.grad is not None and
-                            torch.any(conv.weight.grad != 0).item() for conv in net.convs))
-
     def test_shape_and_backward(self):
         net = Net()
         output = net(torch.rand(2, 1, 28, 28))
         self.assertEqual(tuple(output.shape), (2, 36))
         output.sum().backward()
         self.assertTrue(all(p.grad is not None for p in net.parameters()))
-        self.assertTrue(all(c.out_channels == 1 for c in net.convs))
+        self.assertEqual([c.in_channels for c in net.convs], [1, 6])
+        self.assertEqual([c.out_channels for c in net.convs], [6, 16])
 
     def test_inventory_matches_confirmed_spec(self):
-        # C2-P1-S1-F3, FC 676->256->64->36. 실측 학습 로그(inventory)와 정확히 일치해야 한다.
+        # LeNet-5 3x3_schedule, FC 400->120->84->36. 실측 학습 로그(inventory)와 정확히 일치해야 한다.
         net = Net()
         inv = net.inventory()
-        self.assertEqual(inv['spatial_outputs'], [27, 26])
-        self.assertEqual(inv['weights'], 191762)
-        self.assertEqual(inv['weight_int16_bytes'], 383524)
+        self.assertEqual(inv['spatial_outputs'], [13, 5])
+        self.assertEqual(inv['weights'], 62022)
+        self.assertEqual(inv['weight_int16_bytes'], 124044)
 
     def test_grid_rounding_clipping_and_gradient(self):
         quant = Quant16().eval()
