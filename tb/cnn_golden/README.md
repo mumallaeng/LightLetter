@@ -1,31 +1,78 @@
-# 확정 모델 — C2-P1-S1-F3, FC 676→256→64→36 (재검토 중)
+# CNN 골든모델 — LeNet-5 3x3_schedule 확정
 
-`cnn_golden/model.py`가 정의하는 구조는 아직 이 문서와 동일한 채널 1개짜리 이전 확정안이다
-(최신 커밋 기준). 이후 BRAM 예산(XC7Z020 630KB) 검토 과정에서 채널 1→6→16 확장이
-정확도를 끌어올리는 것으로 확인됐고, 지금은 `cnn_golden.ipynb`에서 채널·패딩·FC폭 조합을
-실측으로 재확정하는 중이다 — 결론이 나기 전까지 `data.py`/`model.py`/`train.py`/
-`tests/test_model.py`는 건드리지 않고, 확정되는 순간 이 문서와 함께 갱신한다.
+팀 논의 끝에 **`LeNet-5 3x3_schedule`**(`conv_channels=[1,6,16]`, `padding=0`,
+`pool_stride=2`, kernel 3×3, FC 400→120→84→36, ReLU+MaxPool, INT16 QAT)을 최종
+구조로 확정했다. `cnn_golden/model.py`가 정의하는 구조(채널 1개, FC 676→256→64→36)는
+옛 확정안이라 지금은 안 맞고, `data.py`/`model.py`/`train.py`/`tests/test_model.py`를
+이 확정 구조에 맞춰 갱신하는 작업이 다음 단계다.
 
-현재까지 노트북에서 실측한 결과 (10 epoch, 동일 hyperparameter):
+비교에 쓴 5개 후보와 실측 근거는 아래 "후보 구조 비교" 절에 그대로 남겨둔다(왜 이
+구조를 골랐는지 추적하기 위함).
 
-| 구성 | flatten | weights | BRAM 배율 | 전체 정확도 | 문자 정확도 |
-|---|---:|---:|---:|---:|---:|
-| 채널 1개 (이 문서의 확정안) | 676 | 191,762 | 0.59x | 90.92% | 87.37% |
-| 채널 1→6→16, padding=1 | 10,816 | 2,788,502 | 8.64x | 92.27% | 89.28% |
-| 채널 1→6→16, padding=0 | 7,744 | 2,002,070 | 6.21x | 92.34% | 89.02% |
-| 채널 1→6→16, padding=0, FC1=128 | 7,744 | 1,002,646 | **3.11x** | 92.16% | 89.37% |
+## 후보 구조 비교
 
-채널 확장은 정확도를 확실히 올리지만 BRAM을 최대 8.6배까지 초과시킨다. padding 제거는
-정확도 손실 없이 BRAM을 28% 줄이고, 여기에 FC1 폭을 256→128로 더 줄이면 weights가 거의
-절반(2,002,070 → 1,002,646)이 되면서 BRAM 배율도 6.21x → 3.11x로 낮아진다 — 정확도는
-전체 -0.18%p, 문자 +0.35%p로 노이즈 범위 안의 변화다. padding 제거+FC1 축소를 합치면
-원래 확정안(8.64x) 대비 BRAM을 약 64% 줄인 셈이지만, 예산(630KB)은 여전히 3.11배
-초과 상태라 FC를 더 줄이거나 INT8/INT4 양자화 등을 추가로 검토해야 한다.
+`cnn_golden.ipynb`에서 50epoch까지 학습한 5개 구성. 전부 `padding=0`, INT16 QAT,
+동일 hyperparameter(batch 128, Adam lr=0.001, seed 261014)다.
 
-16개 구조(C∈{2,3}·padding∈{0,1}·pool stride∈{1,2}·FC층∈{2,3})를 비교한 스윕과 FC 폭
-비교(64→32→36 vs 256→64→36) 실험 끝에 이전 확정안(채널 1개)을 확정했었다. 그 탐색 과정의
-코드·결과는 이 repo가 아니라 `Vault/projects/LightLetter/sweep-exploration/`(개인 학습 자료)에
-있다. 과거 A계열 모델(`legacy_a_models/`)은 폐기했다.
+**평가 방식**: train에서 10%를 validation으로 떼어 매 epoch은 validation으로만 추적하고,
+test는 학습이 끝난 뒤 (1) validation 문자 정확도가 제일 높았던 epoch, (2) 마지막(50) epoch,
+이 두 시점만 각각 한 번씩 평가했다. 아래 "정확도" 표는 **(1) 기준(정직한 최종 보고값)**이
+기본이고, 참고용으로 (2)도 같이 적었다.
+
+### 구성 요약
+
+| 후보 | conv 채널 | kernel | pool_stride | 입력 | FC 폭 | activation/pooling |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| 1-6-16 | 1→6→16 | 3×3 | 1 | 28×28 | 7744→256→64→36 | ReLU / MaxPool |
+| 1-6-8-8 | 1→6→8→8 (conv 3층) | 3×3 | 1 | 28×28 | 2888→256→64→36 | ReLU / MaxPool |
+| **LeNet-5 3x3_schedule (확정)** | 1→6→16 | 3×3(프로젝트 제약) | 2 | 28×28 | 400→120→84→36 | ReLU / MaxPool |
+| LeNet-5 authentic (원 논문) | 1→6→16 | 5×5 | 2 | 32×32(2px 패딩) | 400→120→84→36 | scaled-tanh / 학습되는 평균풀링 |
+| LeNet-5 modern | 1→6→16 | 5×5 | 2 | 32×32(2px 패딩) | 400→120→84→36 | ReLU / MaxPool |
+
+3번째 행("LeNet-5 3x3_schedule", **확정 구조**)은 프로젝트의 kernel 3×3 제약 안에서 LeNet-5의 공간 축소 스케줄
+(28→26→13→11→5, 최종 5×5×16=400)을 재현한 것이고, 4·5번째 행은 원 논문 스펙대로
+32×32/5×5를 그대로 쓴 참고용 비교다(프로젝트 제약과는 별개).
+
+### BRAM (weight-only, INT16, XC7Z020 630KB 예산 기준)
+
+| 후보 | weights | bytes | BRAM 배율 |
+| --- | ---: | ---: | ---: |
+| 1-6-16 | 2,002,070 | 4,004,140 | **6.21x** |
+| 1-6-8-8 | 759,078 | 1,518,156 | **2.35x** |
+| LeNet-5 3x3_schedule | 62,022 | 124,044 | **0.19x** |
+| LeNet-5 authentic (원 논문) | 63,676 | 127,352 | **0.20x** |
+| LeNet-5 modern | 63,654 | 127,308 | **0.20x** |
+
+### 정확도 (validation 기준 best epoch에서 test 1회 평가)
+
+문자 정확도(letter_accuracy) 내림차순.
+
+| 후보 | best epoch | 전체 | 숫자 | **문자** | balanced |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **LeNet-5 authentic (원 논문)** | 19 | 91.59% | 91.62% | **91.55%** | 92.31% |
+| LeNet-5 modern | 19 | 91.83% | 92.22% | 91.11% | 92.50% |
+| 1-6-16 | 19 | 91.43% | 91.68% | 90.97% | 92.24% |
+| **LeNet-5 3x3_schedule (확정)** | 19 | 91.93% | 92.69% | 90.54% | 92.24% |
+| 1-6-8-8 | 2 | 89.66% | 89.06% | 90.76% | 90.58% |
+
+참고: 마지막(epoch 50) 시점 test는 전부 문자 정확도가 87~88%대로 더 낮다(초반에 letter
+정확도가 최고점을 찍고 이후 계속 떨어지는 경향이 5개 후보 전부에서 재현됨 — 숫자 정확도는
+계속 오르는데 문자 정확도만 내려가는 트레이드오프).
+
+### 정리
+
+- **BRAM은 LeNet-5 계열 세 개가 압도적으로 작다** (0.2x 안팎, 1-6-16 대비 약 30배 작음) —
+  Conv 채널 수는 같은데(1→6→16), `pool_stride=2`로 flatten이 400까지 줄어든 게 핵심.
+- **문자 정확도는 LeNet-5 authentic (원 논문)이 1위(91.55%)**, 근소한 차이로 modern(91.11%),
+  1-6-16(90.97%), LeNet-5 3x3_schedule(90.54%) 순. 5개 중 4개가 90.5~91.6% 구간에 몰려있어
+  차이가 노이즈 수준에 가깝다.
+- **1-6-8-8은 BRAM은 중간(2.35x)인데 정확도·안정성 모두 제일 떨어진다** — best epoch이
+  2로 극단적으로 이르고, 그 지점의 다른 지표(전체 89.66%, 숫자 89.06%)도 낮다.
+- **BRAM과 정확도를 같이 보면 LeNet-5 authentic (원 논문)이 가장 균형 잡힌 후보**: 가장 작은
+  축에 속하는 BRAM(0.20x)이면서 문자 정확도 1위. 다만 scaled-tanh + 학습되는 평균풀링은
+  하드웨어로 구현하기에 ReLU+MaxPool보다 복잡하다는 점은 감안해야 한다.
+
+## 데이터 파이프라인
 
 데이터는 `cnn_golden/data.py`가 `torchvision.datasets.EMNIST(split="byclass")`로 직접
 받아온다 — 팀원마다 다른 ZIP을 안 갖고 있어도 누구나 실행할 수 있게 하기 위해서다.
@@ -35,54 +82,21 @@ byclass는 62클래스(숫자 0-9, 대문자 10-35, 소문자 36-61) 순서라 3
 틀린 방향의 글자를 학습하게 된다). 이 파이프라인은 이전 팀 ZIP 기반 학습과 대조해서
 loss curve·정확도가 소수점까지 동일하게 재현되는 것으로 검증했다.
 
-## 실험 조건
-
-| 항목 | 설정 |
-|---|---|
-| 데이터 | EMNIST ByClass, 숫자+대문자만 필터링 (36 class) |
-| Conv | 2층, 층마다 입력/출력 채널 1, kernel 3×3, stride 1, zero-padding 1 |
-| Pool | 모든 Conv → ReLU 뒤 MaxPool 2×2, stride 1 |
-| FC | Flatten(676) → 256 → ReLU → 64 → ReLU → 36 |
-| 학습 | 전체 train, batch 128, 10 epoch, 문자 가중 CrossEntropyLoss, backpropagation |
-| 문자 손실 가중치 | 숫자 1, 문자는 (숫자 표본 수)/(문자 표본 수) — train 그룹 총량 기준 자동 계산 |
-| Conv 초기화 | 중심 tap 1, 나머지 weight/bias 0; 첫 batch Conv gradient 검증 |
-| Optimizer | Adam lr 0.001, betas=(0.9,0.999), eps=1e-8, weight_decay=0 |
-| 부가 설정 | 증강·스케줄러 없음, seed 261014, 마지막 epoch 사용, test 튜닝 없음 |
-| Device | GPU MPS 또는 CUDA; CPU 학습 fallback 금지 |
-| QAT | 첫 batch부터 signed INT16 가중치·활성값 fake quantization |
+## 양자화(QAT) 메모
 
 INT16은 FP16이 아니다. tensor별 대칭·power-of-two scale과 round-to-even,
 [-32768,32767] clipping, straight-through gradient를 사용한다.
 활성값 observer는 학습 데이터의 running maximum을 사용하고 평가 때 고정한다.
 weight scale은 매 update의 현재 가중치로 계산하고 epoch 끝에 한 번 갱신한다.
-Float 비교는 동일 QAT 가중치에서 fake quantization만 끈 결과이며, 별도로
-학습한 FP32 baseline과의 비교가 아니다. bias와 MAC 누산은 FP32다.
 이 점수는 INT16 경계 오차를 모사한 예측이며 정수 누산·bias 양자화·RTL 검증이 아니다.
-
-## 실행 및 결과
-
-`tb`에서 실행한다. `--data-root`는 torchvision이 EMNIST 원본을 내려받아 캐싱해두는
-로컬 디렉터리로, 최초 실행 시에만 다운로드가 발생하고 이후엔 재사용한다.
-
-```bash
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python -u -m cnn_golden.train \
-  --data-root results/emnist \
-  --output results/<run-name> --device mps
-```
-
-같은 명령을 다시 실행하면 완료 모델은 건너뛰고 미완료면 마지막 저장 epoch부터 재개한다.
-동일 출력 경로에서 두 학습 프로세스를 동시에 실행하면 안 된다. 소스·환경·조건 manifest가
-다르면 재사용을 거부한다. MPS의 bit-level 재현성은 보장하지 않는다.
-
-- `results/<run-name>/ByClass-Uppercase-Digits/result.json`: 데이터 출처(data_source),
-  전체 행 수, loss 이력, qat16/float_same_weights 점수, confusion matrix,
-  inventory(weight-only BRAM 하한).
-- `.../last.pt`: 학습 가중치·observer·Adam 상태·완료 epoch.
-- `.../predictions.npz`: test CSV 순서의 전체 정답과 두 방식의 예측.
 
 BRAM 필드는 INT16 weight만 연속 적재할 때의 하한이며, bias·feature·accumulator·banking·
 제어 자원은 포함하지 않는다.
+
+## 실행
+
+지금은 비교/탐색이 전부 `cnn_golden.ipynb`에서 이뤄진다(`tb`에서 `lightletter-tb` 커널로
+연다). `cnn_golden/train.py` CLI(`--data-root`/`--output` 등)는 옛 채널 1개 기준이라 최종 후보가 정해지면 그에 맞춰 갱신한다.
 
 참고: [PyTorch Adam](https://docs.pytorch.org/docs/stable/generated/torch.optim.Adam),
 [PyTorch FakeQuantize](https://docs.pytorch.org/docs/2.14/generated/torch.ao.quantization.fake_quantize.FakeQuantize.html).
