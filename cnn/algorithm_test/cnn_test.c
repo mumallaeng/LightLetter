@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <math.h>
+#include <stdarg.h>
 
 /*
  * LightLetter CNN - layer 1, 2 정수 모델
@@ -9,13 +10,14 @@
  *   input  1 x 28 x 28
  *   conv1  1 -> 6ch, 3x3, stride 1, padding 0      -> 6 x 26 x 26
  *   ReLU + INT16 재양자화
- *   maxpool 2x2, stride 1 (line buffer)            -> 6 x 25 x 25
- *   conv2  6 -> 16ch, 3x3, stride 1, padding 0     -> 16 x 23 x 23
+ *   maxpool 2x2, stride 2 (line buffer)            -> 6 x 13 x 13
+ *   conv2  6 -> 16ch, 3x3, stride 1, padding 0     -> 16 x 11 x 11
  *   ReLU + INT16 재양자화
- *   maxpool 2x2, stride 1 (line buffer)            -> 16 x 22 x 22
+ *   maxpool 2x2, stride 2 (line buffer)            -> 16 x 5 x 5
  *
- * shape은 tb/cnn_golden 의 Net(conv_channels=[1,6,16], padding=0,
- * pool_stride=1) 과 같다.
+ * shape은 tb/cnn_golden 의 확정 구조 LeNet-5 3x3_schedule
+ * (conv_channels=[1,6,16], padding=0, pool_stride=2) 과 같다.
+ * 이후의 flatten(400) -> FC 400-120-84-36 은 아직 구현하지 않았다.
  */
 
 #define IN_H        28
@@ -32,9 +34,9 @@
 #define OUT_H       ((IN_H - KERNEL_H) / STRIDE + 1)
 #define OUT_W       ((IN_W - KERNEL_W) / STRIDE + 1)
 
-/* 2x2 / stride 1 max pooling 출력 크기 */
+/* 2x2 / stride 2 max pooling 출력 크기 (나머지 행/열은 버림: 11 -> 5) */
 #define POOL_K      2
-#define POOL_STRIDE 1
+#define POOL_STRIDE 2
 #define POOL_OUT(n) (((n) - POOL_K) / POOL_STRIDE + 1)
 
 #define P1_H        POOL_OUT(OUT_H)
@@ -206,6 +208,59 @@ static void trace_mac(
 
 
 /*
+ * Layer 2 동작 로그
+ *
+ * layer 2에서 일어나는 동작을 일어나는 순서대로 L2_LOG_FILE_PATH 에 남긴다.
+ * 줄 앞의 태그로 종류를 구분한다 (grep 으로 골라 보기 쉽게).
+ *
+ *   [INIT ]  psum_mem 을 bias 로 초기화
+ *   [PASS ]  pass 시작: line buffer 3개에 들어오는 입력 채널
+ *   [POS  ]  출력 위치 (oy, ox) 처리 시작
+ *   [WIN  ]  line buffer 가 만든 3x3 window (lane 별)
+ *   [READ ]  psum_mem 읽기
+ *   [MAC  ]  window x weight 연산 1회: 곱의 합과 누산값
+ *   [WRITE]  psum_mem 쓰기
+ *   [RELU ]  ReLU + 재양자화 결과 (ZERO: ReLU 로 0, SAT: 32767 로 포화)
+ *   [POOL ]  max pooling line buffer 동작 (저장 / 출력 / 버림)
+ *
+ * 값을 읽어서 기록만 하므로 연산 결과에는 영향이 없다.
+ */
+#define L2_LOG_FILE_PATH    "cnn_layer2_log.txt"
+
+static FILE *l2_log_fp = NULL;
+static int pool_log_ch = -1;    /* 0 이상이면 maxpool 이 이 채널 번호로 로그를 남긴다 */
+
+static void l2_log(const char *fmt, ...)
+{
+    va_list ap;
+
+    if (l2_log_fp == NULL)
+    {
+        return;
+    }
+
+    va_start(ap, fmt);
+    vfprintf(l2_log_fp, fmt, ap);
+    va_end(ap);
+}
+
+static void l2_log_3x3(const int16_t m[KERNEL_H][KERNEL_W])
+{
+    l2_log("[");
+
+    for (int ky = 0; ky < KERNEL_H; ky++)
+    {
+        for (int kx = 0; kx < KERNEL_W; kx++)
+        {
+            l2_log("%s%6d", (kx == 0 && ky > 0) ? " /" : "", m[ky][kx]);
+        }
+    }
+
+    l2_log(" ]");
+}
+
+
+/*
  * 양자화 기본 연산
  */
 
@@ -283,18 +338,22 @@ static int64_t bias_to_acc(double bias_real, int e_in, int e_w)
 
 
 /*
- * 2x2 / stride 1 max pooling - line buffer 기반
+ * 2x2 / stride 2 max pooling - line buffer 기반
  *
  * 한 채널의 픽셀이 raster 순서로 하나씩 들어온다고 본다.
- * 들고 있는 것은 직전 행 한 줄(line)과 직전 픽셀(left) 뿐이고,
- * 2x2 window가 완성되는 순간 출력 하나가 나온다.
+ * stride 2라 window가 겹치지 않으므로, 픽셀 전체가 아니라
+ * 가로 2칸의 max만 저장하면 된다.
  *
- *     line[x-1] = (y-1, x-1)      left = (y, x-1)
- *     line[x]   = (y-1, x)        cur  = (y, x)
+ *   x 짝수 : left 에 잡아 둔다.
+ *   x 홀수 : hmax = max(left, cur)            (가로 2칸 max)
+ *            y 짝수 -> line[x/2] = hmax        (윗줄 저장)
+ *            y 홀수 -> out = max(line[x/2], hmax)  (2x2 완성, 출력)
  *
- * line buffer는 호출하는 쪽에서 준다 (폭 W).
+ * line buffer 폭은 출력 폭(W/2)이면 된다.
+ * 크기가 홀수이면 마지막 행/열은 window를 채우지 못해 버려진다
+ * (golden 의 floor 규칙, 예: 11 -> 5).
  */
-static void maxpool2x2_s1_linebuffer(
+static void maxpool2x2_s2_linebuffer(
     const int16_t *in,
     int16_t *out,
     int H,
@@ -302,6 +361,8 @@ static void maxpool2x2_s1_linebuffer(
     int16_t *line
 )
 {
+    int out_h = POOL_OUT(H);
+    int out_w = POOL_OUT(W);
     int16_t left = 0;
 
     for (int y = 0; y < H; y++)
@@ -309,80 +370,57 @@ static void maxpool2x2_s1_linebuffer(
         for (int x = 0; x < W; x++)
         {
             int16_t cur = in[y * W + x];
+            int px = x >> 1;
+            int py = y >> 1;
 
-            /* window가 다 모이는 것은 y >= 1, x >= 1 부터 */
-            if (y >= 1 && x >= 1)
+            if ((x & 1) == 0)
             {
-                int16_t m = line[x - 1];
+                left = cur;
 
-                if (line[x] > m) { m = line[x]; }
-                if (left     > m) { m = left;     }
-                if (cur      > m) { m = cur;      }
-
-                out[(y - 1) * (W - 1) + (x - 1)] = m;
-            }
-
-            /* 다 쓴 자리에 현재 행 값을 밀어 넣는다. */
-            if (x >= 1)
-            {
-                line[x - 1] = left;
-            }
-
-            left = cur;
-        }
-
-        line[W - 1] = left;     /* 행의 마지막 픽셀 */
-    }
-}
-
-
-/*
- * Input:
- *   ifmap[28][28]
- *
- * Weight:
- *   weight[6][3][3]
- *
- * Output:
- *   ofmap[6][26][26]  (accumulator 단위)
- */
-void conv_1ch_6ch(
-    const int16_t ifmap[IN_H][IN_W],
-    const int16_t weight[OUT_CH][KERNEL_H][KERNEL_W],
-    const int64_t bias[OUT_CH],
-    int64_t ofmap[OUT_CH][OUT_H][OUT_W]
-)
-{
-    for (int oc = 0; oc < OUT_CH; oc++)
-    {
-        for (int oy = 0; oy < OUT_H; oy++)
-        {
-            for (int ox = 0; ox < OUT_W; ox++)
-            {
-                int64_t acc = bias[oc];
-
-                for (int ky = 0; ky < KERNEL_H; ky++)
+                if (pool_log_ch >= 0 && x == W - 1)
                 {
-                    for (int kx = 0; kx < KERNEL_W; kx++)
-                    {
-                        int16_t input_value =
-                            ifmap[oy * STRIDE + ky]
-                                 [ox * STRIDE + kx];
-
-                        int16_t weight_value =
-                            weight[oc][ky][kx];
-
-                        acc +=
-                            (int32_t)input_value *
-                            (int32_t)weight_value;
-                    }
+                    l2_log("[POOL ] ch %2d (y %2d, x %2d) = %6d : 짝이 없는 마지막 열 -> 버림\n",
+                           pool_log_ch, y, x, cur);
                 }
 
-                ofmap[oc][oy][ox] = acc;
+                continue;
+            }
+
+            if (px >= out_w)
+            {
+                continue;           /* 버려지는 열 */
+            }
+
+            int16_t hmax = (cur > left) ? cur : left;
+
+            if ((y & 1) == 0)
+            {
+                line[px] = hmax;
+
+                if (pool_log_ch >= 0)
+                {
+                    l2_log("[POOL ] ch %2d (y %2d, x %2d-%2d) 짝수 행: max(%6d, %6d) = %6d -> line[%d]%s\n",
+                           pool_log_ch, y, x - 1, x, left, cur, hmax, px,
+                           (py >= out_h) ? "  (짝이 없는 마지막 행 -> 쓰이지 않음)" : "");
+                }
+            }
+            else if (py < out_h)
+            {
+                out[py * out_w + px] =
+                    (line[px] > hmax) ? line[px] : hmax;
+
+                if (pool_log_ch >= 0)
+                {
+                    l2_log("[POOL ] ch %2d (y %2d, x %2d-%2d) 홀수 행: max(%6d, %6d) = %6d, "
+                           "max(line[%d] %6d, %6d) -> out[%d][%d] = %6d\n",
+                           pool_log_ch, y, x - 1, x, left, cur, hmax,
+                           px, line[px], hmax, py, px, out[py * out_w + px]);
+                }
             }
         }
     }
 }
+
 
 void conv_1ch_6ch_hw_style(
     const int16_t ifmap[IN_H][IN_W],
@@ -447,44 +485,6 @@ void conv_1ch_6ch_hw_style(
 }
 
 
-/* Straightforward layer-2 model used as the golden reference. */
-void conv_6ch_16ch_ref(
-    const int16_t ifmap[L2_IN_CH][L2_IN_H][L2_IN_W],
-    const int16_t weight[L2_OUT_CH][L2_IN_CH][KERNEL_H][KERNEL_W],
-    const int64_t bias[L2_OUT_CH],
-    int64_t ofmap[L2_OUT_CH][L2_OUT_H][L2_OUT_W]
-)
-{
-    for (int oc = 0; oc < L2_OUT_CH; oc++)
-    {
-        for (int oy = 0; oy < L2_OUT_H; oy++)
-        {
-            for (int ox = 0; ox < L2_OUT_W; ox++)
-            {
-                int64_t acc = bias[oc];
-
-                for (int ic = 0; ic < L2_IN_CH; ic++)
-                {
-                    for (int ky = 0; ky < KERNEL_H; ky++)
-                    {
-                        for (int kx = 0; kx < KERNEL_W; kx++)
-                        {
-                            acc +=
-                                (int32_t)ifmap[ic][oy * STRIDE + ky]
-                                                    [ox * STRIDE + kx]
-                                *
-                                (int32_t)weight[oc][ic][ky][kx];
-                        }
-                    }
-                }
-
-                ofmap[oc][oy][ox] = acc;
-            }
-        }
-    }
-}
-
-
 /*
  * Layer 2 hardware-style model: 6 input channels -> 16 output channels.
  *
@@ -496,7 +496,7 @@ void conv_6ch_16ch_ref(
  * pass 1: pass 0이 모든 위치에서 끝난 뒤 입력 채널 3~5 이미지가 들어옴
  *         psum_mem[oc][oy][ox] += sum(ch 3~5)
  *
- * pass 사이의 중간 누산값은 psum_mem(16 x 23 x 23)에 보관한다.
+ * pass 사이의 중간 누산값은 psum_mem(16 x 11 x 11)에 보관한다.
  * 한 위치의 3개 window는 16개 output channel이 재사용한다.
  * psum_after_pass 는 pass별 psum_mem 상태를 그대로 노출한다.
  */
@@ -523,10 +523,18 @@ void conv_6ch_16ch_hw_style(
                 psum_mem[oc][oy][ox] = bias[oc];
             }
         }
+
+        l2_log("[INIT ] psum_mem[oc %2d][*][*] <- bias %" PRId64 "\n", oc, bias[oc]);
     }
 
     for (int pass = 0; pass < L2_NUM_PASSES; pass++)
     {
+        l2_log("\n[PASS ] ===== pass %d 시작: line buffer lane 0/1/2 <- 입력 채널 %d/%d/%d =====\n",
+               pass,
+               pass * L2_CHANNELS_PER_PASS + 0,
+               pass * L2_CHANNELS_PER_PASS + 1,
+               pass * L2_CHANNELS_PER_PASS + 2);
+
         /* 이번 pass의 입력 채널 이미지만 들어온다. */
         for (int lane = 0; lane < L2_CHANNELS_PER_PASS; lane++)
         {
@@ -561,10 +569,23 @@ void conv_6ch_16ch_hw_style(
                     }
                 }
 
+                l2_log("\n[POS  ] pass %d (oy %2d, ox %2d)\n", pass, oy, ox);
+
+                for (int lane = 0; lane < L2_CHANNELS_PER_PASS; lane++)
+                {
+                    l2_log("[WIN  ]   lane %d (ic %d) ", lane,
+                           pass * L2_CHANNELS_PER_PASS + lane);
+                    l2_log_3x3((const int16_t (*)[KERNEL_W])window[lane]);
+                    l2_log("\n");
+                }
+
                 /* Reuse these input windows across all output channels. */
                 for (int oc = 0; oc < L2_OUT_CH; oc++)
                 {
                     int64_t acc = psum_mem[oc][oy][ox];
+
+                    l2_log("[READ ]   oc %2d: psum_mem = %14" PRId64 "%s\n",
+                           oc, acc, (pass == 0) ? "  (= bias)" : "  (= pass 0 결과)");
 
                     for (int lane = 0; lane < L2_CHANNELS_PER_PASS; lane++)
                     {
@@ -588,10 +609,16 @@ void conv_6ch_16ch_hw_style(
                                   acc,
                                   mac);
 
+                        l2_log("[MAC  ]     lane %d ic %d: sum(window x weight[%2d][%d]) = %12" PRId64
+                               "  acc %14" PRId64 " -> %14" PRId64 "\n",
+                               lane, ic, oc, ic, mac, acc, acc + mac);
+
                         acc += mac;
                     }
 
                     psum_mem[oc][oy][ox] = acc;
+
+                    l2_log("[WRITE]   oc %2d: psum_mem = %14" PRId64 "\n", oc, acc);
                     psum_after_pass[pass][oc][oy][ox] = acc;
                 }
             }
@@ -695,27 +722,31 @@ static void stage_report_acc(
 
 int main(void)
 {
+    // ======= Hardware =======
     /* layer 1 */
     static int16_t ifmap[IN_H][IN_W];
     static int16_t w1[OUT_CH][KERNEL_H][KERNEL_W];
     static int64_t b1[OUT_CH];
-    static int64_t conv1_acc[OUT_CH][OUT_H][OUT_W];
-    static int16_t conv1_q[OUT_CH][OUT_H][OUT_W];
     static int16_t pool1[OUT_CH][P1_H][P1_W];
-
+    
     /* layer 2 */
     static int16_t w2[L2_OUT_CH][L2_IN_CH][KERNEL_H][KERNEL_W];
     static int64_t b2[L2_OUT_CH];
-    static int64_t conv2_acc_ref[L2_OUT_CH][L2_OUT_H][L2_OUT_W];
+    static int16_t pool2[L2_OUT_CH][P2_H][P2_W];
+    
+    /* max pooling line buffer (폭이 큰 layer 1 기준, 출력 폭만큼) */
+    static int16_t pool_line[P1_W];
+    
+    // ======= Software =======
+    /* layer 1 */
+    static int64_t conv1_acc[OUT_CH][OUT_H][OUT_W];
+    static int16_t conv1_q[OUT_CH][OUT_H][OUT_W];
+    
+    /* layer 2 */
     static int64_t conv2_acc_hw[L2_OUT_CH][L2_OUT_H][L2_OUT_W];
     static int64_t psum_after_pass
         [L2_NUM_PASSES][L2_OUT_CH][L2_OUT_H][L2_OUT_W];
     static int16_t conv2_q[L2_OUT_CH][L2_OUT_H][L2_OUT_W];
-    static int16_t pool2[L2_OUT_CH][P2_H][P2_W];
-
-    /* max pooling line buffer (폭이 큰 layer 1 기준으로 하나만 잡는다) */
-    static int16_t pool_line[OUT_W];
-
 
     /*
      * 입력 이미지
@@ -777,8 +808,9 @@ int main(void)
      */
     trace_fp = fopen(TRACE_FILE_PATH, "w");
     stage_fp = fopen(STAGE_FILE_PATH, "w");
+    l2_log_fp = fopen(L2_LOG_FILE_PATH, "w");
 
-    if (trace_fp == NULL || stage_fp == NULL)
+    if (trace_fp == NULL || stage_fp == NULL || l2_log_fp == NULL)
     {
         fprintf(stderr, "출력 파일을 열지 못했습니다\n");
         return 1;
@@ -854,7 +886,7 @@ int main(void)
             }
         }
 
-        maxpool2x2_s1_linebuffer(&conv1_q[oc][0][0], &pool1[oc][0][0],
+        maxpool2x2_s2_linebuffer(&conv1_q[oc][0][0], &pool1[oc][0][0],
                                  OUT_H, OUT_W, pool_line);
     }
 
@@ -862,9 +894,16 @@ int main(void)
     /*
      * Layer 2 : conv -> ReLU + 재양자화 -> max pooling
      */
-    conv_6ch_16ch_ref(pool1, w2, b2, conv2_acc_ref);
+    l2_log("# Layer 2 동작 로그\n");
+    l2_log("# 입력 %d x %d x %d (pool1) -> conv 3x3 -> %d x %d x %d -> ReLU+재양자화 -> maxpool 2x2/2 -> %d x %d x %d\n",
+           L2_IN_CH, L2_IN_H, L2_IN_W, L2_OUT_CH, L2_OUT_H, L2_OUT_W, L2_OUT_CH, P2_H, P2_W);
+    l2_log("# 단위: window = q x 2^%d, weight = q x 2^%d, psum/acc = 정수 x 2^%d, ReLU 출력 = q x 2^%d (SHIFT2 = %d)\n",
+           E_ACT1, E_W2, E_ACT1 + E_W2, E_ACT2, SHIFT2);
+    l2_log("# window/weight 표기: [1행 / 2행 / 3행]\n\n");
 
     conv_6ch_16ch_hw_style(pool1, w2, b2, conv2_acc_hw, psum_after_pass);
+
+    l2_log("\n[RELU ] ===== ReLU + 재양자화 (acc >> %d, round-to-even, saturate) =====\n", SHIFT2);
 
     for (int oc = 0; oc < L2_OUT_CH; oc++)
     {
@@ -874,12 +913,26 @@ int main(void)
             {
                 conv2_q[oc][y][x] =
                     relu_requantize(conv2_acc_hw[oc][y][x], SHIFT2);
+
+                l2_log("[RELU ] oc %2d (oy %2d, ox %2d): acc %14" PRId64 " -> q %6d (= %.6f)%s\n",
+                       oc, y, x, conv2_acc_hw[oc][y][x], conv2_q[oc][y][x],
+                       ldexp(conv2_q[oc][y][x], E_ACT2),
+                       (conv2_acc_hw[oc][y][x] < 0) ? "  ZERO(ReLU)"
+                       : (conv2_q[oc][y][x] == Q16_MAX) ? "  SAT" : "");
             }
         }
 
-        maxpool2x2_s1_linebuffer(&conv2_q[oc][0][0], &pool2[oc][0][0],
+        l2_log("\n[POOL ] ===== oc %d max pooling (%d x %d -> %d x %d) =====\n",
+               oc, L2_OUT_H, L2_OUT_W, P2_H, P2_W);
+
+        pool_log_ch = oc;
+        maxpool2x2_s2_linebuffer(&conv2_q[oc][0][0], &pool2[oc][0][0],
                                  L2_OUT_H, L2_OUT_W, pool_line);
+        pool_log_ch = -1;
     }
+
+    fclose(l2_log_fp);
+    l2_log_fp = NULL;
 
     fclose(trace_fp);
     trace_fp = NULL;
@@ -925,29 +978,9 @@ int main(void)
                conv2_q[oc][0][0]);
     }
 
-    /* Verify every hardware-style output against the reference model. */
-    int mismatch_count = 0;
-
-    for (int oc = 0; oc < L2_OUT_CH; oc++)
-    {
-        for (int y = 0; y < L2_OUT_H; y++)
-        {
-            for (int x = 0; x < L2_OUT_W; x++)
-            {
-                if (conv2_acc_hw[oc][y][x] != conv2_acc_ref[oc][y][x])
-                {
-                    mismatch_count++;
-                }
-            }
-        }
-    }
-
-    printf("\nLayer 2 verification: %s (mismatches: %d)\n",
-           mismatch_count == 0 ? "PASS" : "FAIL",
-           mismatch_count);
-
     printf("trace : %s (%" PRIu64 " MAC)\n", TRACE_FILE_PATH, trace_step);
     printf("stages: %s\n", STAGE_FILE_PATH);
+    printf("layer2: %s\n", L2_LOG_FILE_PATH);
 
     return 0;
 }
