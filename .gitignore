@@ -113,3 +113,4 @@ tb/results/
 # Layer-output/debug JSON dumps (large, regenerable -- experiment-result JSONs already
 # tracked under tb/cnn_golden/results/ stay tracked; this only affects new untracked ones)
 *.json
+*.png

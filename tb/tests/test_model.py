@@ -22,6 +22,8 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(inv['spatial_outputs'], [13, 5])
         self.assertEqual(inv['weights'], 62022)
         self.assertEqual(inv['weight_int16_bytes'], 124044)
+        self.assertEqual(inv['biases'], 262)
+        self.assertEqual(inv['bias_int32_bytes'], 1048)
 
     def test_grid_rounding_clipping_and_gradient(self):
         quant = Quant16().eval()
@@ -38,6 +40,23 @@ class ModelTests(unittest.TestCase):
         before = quant.maximum.clone()
         quant.eval()(torch.tensor([999.]))
         torch.testing.assert_close(before, quant.maximum)
+
+    def test_bias_quantized_with_derived_scale(self):
+        # Standard integer-inference scheme (Jacob et al. 2017): bias_scale is derived as
+        # input_scale * weight_scale, not independently observed like weight/activation.
+        net = Net()
+        net.input_quant.maximum.fill_(32767.)      # input_scale == 1.0
+        net.weight_quant[0].maximum.fill_(32767.)  # weight_scale == 1.0
+        bias = torch.tensor([0.3, -0.3, 100.7, 5.5, -5.5, 0.1])
+        quantized = net._quantized_bias(0, bias)
+        # bias_scale == 1.0 * 1.0 == 1.0 here, so quantizing rounds to the nearest integer.
+        torch.testing.assert_close(quantized, bias.round())
+
+    def test_bias_quantization_disabled_with_quantization_toggle(self):
+        net = Net()
+        net.quantization(False)
+        bias = torch.tensor([0.123456])
+        torch.testing.assert_close(net._quantized_bias(0, bias), bias)
 
     def test_metric_counts(self):
         y = np.arange(36)

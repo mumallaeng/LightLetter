@@ -8,7 +8,13 @@ project's fixed 3x3 kernel, chosen after training and comparing 5 candidates
 (1-6-16, 1-6-8-8 conv-3-layer, this 3x3 schedule, and two 32x32/5x5 LeNet-5
 references) -- see cnn_golden/README.md for the comparison table and rationale.
 
-This simulates INT16 boundaries, but MACs are computed in floating point, so results
+Weights and activations are fake-quantized to INT16 (Quant16, self-observed power-of-two
+scale). Biases follow the standard integer-only-inference scheme instead (Jacob et al.
+2017 / TFLite's quantization spec): each layer's bias_scale is *derived* as
+input_scale * weight_scale (not independently observed), stored at INT32 (wider than
+weight/activation) so it lines up with the accumulator's native fixed-point scale --
+that's what lets an RTL accumulator add bias in with a plain integer add, no rescale.
+This simulates integer boundaries, but MACs are computed in floating point, so results
 are not bit-exact with RTL.
 """
 import math
@@ -21,6 +27,14 @@ CONV_CHANNELS = [1, 6, 16]
 PADDING = 0
 POOL_STRIDE = 2
 FC_WIDTHS = [120, 84, 36]
+
+
+def fake_quantize(x, scale, bits):
+    """Rounds x onto the symmetric signed integer grid at `scale` (straight-through grad)."""
+    limit = 2. ** (bits - 1)
+    clipped = (x / scale).clamp(-limit, limit - 1)
+    rounded = clipped + (clipped.round() - clipped).detach()
+    return rounded * scale
 
 
 class Quant16(nn.Module):
@@ -48,10 +62,7 @@ class Quant16(nn.Module):
             with torch.no_grad():
                 maximum = x.detach().abs().amax()
                 self.maximum.copy_(maximum if self.weight else torch.maximum(self.maximum, maximum))
-        scale = self.scale.detach()
-        clipped = (x / scale).clamp(-32768, 32767)
-        rounded = clipped + (clipped.round() - clipped).detach()
-        return rounded * scale
+        return fake_quantize(x, self.scale.detach(), bits=16)
 
 
 class Net(nn.Module):
@@ -78,22 +89,36 @@ class Net(nn.Module):
         self.input_quant = Quant16()
         self.weight_quant = nn.ModuleList([Quant16(weight=True) for _ in [*self.convs, *self.fcs]])
         self.activation_quant = nn.ModuleList([Quant16() for _ in [*self.convs, *self.fcs]])
+        self.bias_quant_enabled = True
 
     def quantization(self, enabled):
         for module in self.modules():
             if isinstance(module, Quant16):
                 module.enabled = enabled
+        self.bias_quant_enabled = enabled
+
+    def _input_scale(self, i):
+        # Scale of whatever quantizer actually produced layer i's input: input_quant for
+        # the first conv, otherwise the previous layer's activation_quant.
+        return self.input_quant.scale if i == 0 else self.activation_quant[i - 1].scale
+
+    def _quantized_bias(self, i, bias):
+        if not self.bias_quant_enabled:
+            return bias
+        bias_scale = (self._input_scale(i) * self.weight_quant[i].scale).detach()
+        return fake_quantize(bias, bias_scale, bits=32)
 
     def forward(self, x):
         x = self.input_quant(x)
         for i, conv in enumerate(self.convs):
-            x = F.conv2d(x, self.weight_quant[i](conv.weight), conv.bias, padding=PADDING)
+            x = F.conv2d(x, self.weight_quant[i](conv.weight), self._quantized_bias(i, conv.bias),
+                        padding=PADDING)
             x = self.activation_quant[i](F.relu(x))
             x = F.max_pool2d(x, 2, POOL_STRIDE)
         x = x.flatten(1)
         for j, fc in enumerate(self.fcs):
             i = len(self.convs) + j
-            x = F.linear(x, self.weight_quant[i](fc.weight), fc.bias)
+            x = F.linear(x, self.weight_quant[i](fc.weight), self._quantized_bias(i, fc.bias))
             if j < len(self.fcs) - 1:
                 x = F.relu(x)
             # No ReLU on the last FC. The argmax over the 36 logits is the class ID.
@@ -104,6 +129,10 @@ class Net(nn.Module):
         weights = sum(m.weight.numel() for m in [*self.convs, *self.fcs])
         biases = sum(m.bias.numel() for m in [*self.convs, *self.fcs])
         return dict(weights=weights, biases=biases, weight_int16_bytes=weights * 2,
+                    bias_int32_bytes=biases * 4,
                     weight_only_bram36_x18=math.ceil(weights / 2048),
                     spatial_outputs=self.sizes,
-                    caveat='Weight-only packed BRAM lower bound; excludes biases, activations, accumulators, banking and control.')
+                    caveat='Weight-only packed BRAM lower bound; biases are INT32-quantized '
+                           '(derived scale = input_scale x weight_scale, see bias_int32_bytes) '
+                           'but not folded into this count; excludes activations, accumulators, '
+                           'banking and control.')
