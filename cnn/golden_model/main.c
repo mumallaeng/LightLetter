@@ -1,8 +1,8 @@
 /*
  * Layer 2 golden model testbench
  *
- * build : gcc -O2 -std=c99 -Wall -o l2_golden main.c l2_golden.c
- * option: -DCFG_CH35_EN_LATCH=1 -DCFG_READY_BLOCK_ON_CLEAR=1
+ * build : gcc -O2 -std=c99 -Wall -o l2_golden *.c
+ * option: -DCFG_READY_BLOCK_ON_CLEAR=1
  *         -DCFG_WEIGHT_PIPE=1 -DCFG_MAC_PIPE=2
  *         -DSTIM_BUBBLE_PCT=30  (이전 레이어 out_valid 를 30% 확률로 끊음)
  *         -DNUM_FRAMES=2
@@ -17,7 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "l2_golden.h"
+#include "l2_top.h"
 
 #ifndef STIM_BUBBLE_PCT
 #define STIM_BUBBLE_PCT 0
@@ -114,7 +114,8 @@ static void make_reference(void)
  * 이전 레이어 모델 (valid/ready source)
  *   - 한 프레임 = ch0~2 패스(raster) -> ch3~5 패스(raster)
  *   - ch_done 은 각 패스 마지막 픽셀과 같은 사이클
- *   - out_valid=0 인 동안 data/ch3_5_en 은 대기 중인 픽셀 값을 유지
+ *   - out_valid=0 인 동안 data 는 대기 중인 픽셀 값을 유지
+ *   - is_ch35 는 보내지 않는다 (FSM 이 state 에서 직접 생성)
  * ================================================================ */
 typedef struct
 {
@@ -140,7 +141,6 @@ static void source_drive(const source_t *s, int bubble, l2_in_t *in)
     int x    = pix % L2_IN_W;
 
     in->out_valid = (s->idx < s->total) && !bubble;
-    in->ch3_5_en  = (uint8_t)pass;
     in->ch_done   = in->out_valid && (pix == PIXELS_PER_PASS - 1);
 
     for (int lane = 0; lane < L2_LANES; lane++)
@@ -258,7 +258,7 @@ static void check_psum(checker_t *ck, const psum_bus_t *ps, long cycle)
 /* ================================================================
  * File dump helpers
  * ================================================================ */
-static void dump_weight_rom(const l2_core_t *c)
+static void dump_weight_rom(const weight_rom_t *rom)
 {
     FILE *f = fopen("golden_weight_rom.hex", "w");
     if (!f) return;
@@ -268,7 +268,7 @@ static void dump_weight_rom(const l2_core_t *c)
         for (int grp = 0; grp < L2_NUM_PASSES; grp++)
         {
             for (int t = L2_TAPS - 1; t >= 0; t--)
-                fprintf(f, "%04X", (uint16_t)c->rom_data[oc][grp][t]);
+                fprintf(f, "%04X", (uint16_t)rom->data[oc][grp][t]);
             fprintf(f, "\n");
         }
     fclose(f);
@@ -279,13 +279,13 @@ static void dump_input_stream(int total)
     FILE *f = fopen("golden_input.hex", "w");
     if (!f) return;
 
-    /* {ch3_5_en, ch_done, lane2, lane1, lane0} */
+    /* {ch_done, lane2, lane1, lane0} */
     for (int i = 0; i < total; i++)
     {
         source_t s = { i, total, 0 };
         l2_in_t  in;
         source_drive(&s, 0, &in);
-        fprintf(f, "%X %X %04X %04X %04X\n", in.ch3_5_en, in.ch_done,
+        fprintf(f, "%X %04X %04X %04X\n", in.ch_done,
                 (uint16_t)in.pixel_in[2], (uint16_t)in.pixel_in[1],
                 (uint16_t)in.pixel_in[0]);
     }
@@ -297,13 +297,13 @@ static void dump_input_stream(int total)
  * ================================================================ */
 int main(void)
 {
-    static l2_core_t     core;
+    static l2_top_t      top;
     static psum_buffer_t pb;
     checker_t ck = { 0, 0, 0, 0 };
 
     make_test_data();
     make_reference();
-    l2_core_reset(&core, g_weight);
+    l2_top_reset(&top, g_weight);
 
     source_t src = { 0, PIXELS_PER_FRAME * NUM_FRAMES, 0xACE1u };
 
@@ -316,15 +316,15 @@ int main(void)
     }
 
     fprintf(ftr, "cycle,tfsm,wac,out_valid,out_ready,pixel_valid,ch_done,"
-                 "ch3_5_en,ch_count,win_valid,phase_clear,mac_start,mac_done,"
+                 "is_ch35,ch_count,win_valid,phase_clear,mac_start,mac_done,"
                  "out_ch_sel,rom_grp,psum_valid,psum_och,psum_pass,psum_data\n");
     fprintf(fps, "# cycle och pass data\n");
 
     printf("LightLetter L2 golden model\n");
     printf("  INT%d activation x INT%d weight\n", ACT_BITS, WGT_BITS);
-    printf("  CFG_CH35_EN_LATCH=%d CFG_READY_BLOCK_ON_CLEAR=%d CFG_WEIGHT_PIPE=%d "
+    printf("  CFG_READY_BLOCK_ON_CLEAR=%d CFG_WEIGHT_PIPE=%d "
            "CFG_MAC_PIPE=%d\n  STIM_BUBBLE_PCT=%d NUM_FRAMES=%d\n",
-           CFG_CH35_EN_LATCH, CFG_READY_BLOCK_ON_CLEAR, CFG_WEIGHT_PIPE,
+           CFG_READY_BLOCK_ON_CLEAR, CFG_WEIGHT_PIPE,
            CFG_MAC_PIPE, STIM_BUBBLE_PCT, NUM_FRAMES);
 
     int  frames_done = 0;
@@ -332,53 +332,48 @@ int main(void)
 
     for (cycle = 0; cycle < MAX_CYCLES; cycle++)
     {
-        l2_in_t  in;
-        l2_out_t out;
+        l2_in_t in;
 
+        /* 입력 인가 -> 조합 로직 평가 */
         source_drive(&src, source_bubble(&src), &in);
-        l2_core_comb(&core, &in, &out);
+        l2_top_comb(&top, &in);
+
+        const psum_bus_t *psum = &top.mac_o.psum;
 
         fprintf(ftr, "%ld,%s,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%lld\n",
                 cycle,
-                total_state_name(core.tfsm.state), wac_state_name(core.wac.state),
-                in.out_valid, out.out_ready, out.pixel_valid, in.ch_done,
-                in.ch3_5_en, core.tfsm.ch_count, core.lb.win_valid,
-                core.tfsm.phase_clear, core.tfsm.mac_start, core.wac.mac_done,
-                core.wac.out_ch_sel, core.rom.grp_q,
-                out.psum.valid, out.psum.och, out.psum.pass,
-                (long long)out.psum.data);
+                total_state_name(top.fsm.state), wac_state_name(top.wac.state),
+                in.out_valid, top.fsm_o.out_ready, top.fsm_o.pixel_valid, in.ch_done,
+                top.fsm_o.is_ch35, top.fsm.ch_count, top.lb.win_valid,
+                top.fsm.phase_clear, top.fsm.mac_start, top.wac.mac_done,
+                top.wac.out_ch_sel, top.rom.grp_q,
+                psum->valid, psum->och, psum->pass, (long long)psum->data);
 
-        if (out.psum.valid)
+        if (psum->valid)
         {
-            fprintf(fps, "%ld %d %d %lld\n", cycle, out.psum.och, out.psum.pass,
-                    (long long)out.psum.data);
-            check_psum(&ck, &out.psum, cycle);
-            psum_buffer_accept(&pb, &out.psum);
+            fprintf(fps, "%ld %d %d %lld\n", cycle, psum->och, psum->pass,
+                    (long long)psum->data);
+            check_psum(&ck, psum, cycle);
+            psum_buffer_accept(&pb, psum);
         }
 
-        if (core.tfsm.state == T_STOP)
+        if (top.fsm.state == T_STOP)
             frames_done++;
 
-        /* posedge */
-        if (out.pixel_valid)
+        /* posedge clk */
+        if (top.fsm_o.pixel_valid)
             src.idx++;
-        l2_core_step(&core, &in);
+        l2_top_seq(&top);
 
-        if (frames_done == NUM_FRAMES && core.tfsm.state == T_IDLE &&
-            core.wac.state == W_IDLE)
-        {
-            /* MAC 파이프라인 drain */
-            int busy = 0;
-            for (int i = 0; i < CFG_MAC_PIPE; i++)
-                busy |= core.macp[i].valid;
-            if (!busy)
-                break;
-        }
+        /* 모든 프레임 끝 + FSM 두 개 IDLE + MAC 파이프라인 비면 종료 */
+        if (frames_done == NUM_FRAMES && top.fsm.state == T_IDLE &&
+            top.wac.state == W_IDLE && !mac_array_busy(&top.mac))
+            break;
     }
 
     fclose(ftr);
     fclose(fps);
-    dump_weight_rom(&core);
+    dump_weight_rom(&top.rom);
     dump_input_stream(src.total);
 
     /* ---------------- 최종 출력 비교 ---------------- */
