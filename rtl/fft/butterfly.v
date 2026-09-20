@@ -16,121 +16,57 @@ module butterfly #(
     input wire signed [DATA_WIDTH-1:0] b_im,
     input wire [2*COEFF_WIDTH-1:0] twiddle_factor,
 
-    output reg signed [DATA_WIDTH-1:0] y0_re,
-    output reg signed [DATA_WIDTH-1:0] y0_im,
-    output reg signed [DATA_WIDTH-1:0] y1_re,
-    output reg signed [DATA_WIDTH-1:0] y1_im,
-    output wire o_bf_read_data_valid
+    output wire signed [DATA_WIDTH-1:0] y0_re,
+    output wire signed [DATA_WIDTH-1:0] y0_im,
+    output wire signed [DATA_WIDTH-1:0] y1_re,
+    output wire signed [DATA_WIDTH-1:0] y1_im,
+    output wire o_bf_out_valid
 );
 
-    /******************** Input registers ********************/
+    wire signed [T_WIDTH-1:0] t_re, t_im;
 
-    reg signed [DATA_WIDTH-1:0] a_re_reg;
-    reg signed [DATA_WIDTH-1:0] a_im_reg;
-    reg signed [DATA_WIDTH-1:0] b_re_reg;
-    reg signed [DATA_WIDTH-1:0] b_im_reg;
-    reg [2*COEFF_WIDTH-1:0] twiddle_factor_reg;
-
-    /******************** Multiplier results ********************/
-
-    wire signed [T_WIDTH-1:0] t_re;
-    wire signed [T_WIDTH-1:0] t_im;
-
-    reg signed [T_WIDTH-1:0] t_re_reg;
-    reg signed [T_WIDTH-1:0] t_im_reg;
-
-    /******************** FSM states ********************/
-
-    localparam [2:0] IDLE    = 3'd0,
-                     WAIT_T  = 3'd2,
-                     ADD_SUB = 3'd3,
-                     DONE    = 3'd4;
-
-    reg [2:0] state;
-
-    /******************** Combinational multiplier ********************/
-
+    // 현재 B/W를 직접 받아 조합 연산
     multiplier #(
         .DATA_WIDTH (DATA_WIDTH),
         .COEFF_WIDTH(COEFF_WIDTH),
         .FRAC_BITS  (FRAC_BITS),
         .T_WIDTH    (T_WIDTH)
     ) u_multiplier (
-        .b_re          (b_re_reg),
-        .b_im          (b_im_reg),
-        .twiddle_factor(twiddle_factor_reg),
+        .b_re          (b_re),
+        .b_im          (b_im),
+        .twiddle_factor(twiddle_factor),
         .t_re          (t_re),
         .t_im          (t_im)
     );
 
-    /******************** Output valid ********************/
+    // 출력 저장 없이 외부로 전달
+    assign y0_re = a_re + t_re;
+    assign y0_im = a_im + t_im;
+    assign y1_re = a_re - t_re;
+    assign y1_im = a_im - t_im;
 
-    assign o_bf_read_data_valid = (state == DONE);
+    // Only the valid-control state is stored; A/B/W and Y are NOT stored.
+    // E0: request accepted in IDLE. E1: enter DONE, valid rises.
+    // E2: external receiver samples Y/valid; return to IDLE.
+    // Upper logic must hold A/B/W until external result capture is complete.
+    localparam [2:0] IDLE=3'd0, WAIT_CALC=3'd1, DONE=3'd4;
+    reg [2:0] state;
 
-    /******************** FSM and storage ********************/
+    assign o_bf_out_valid = (state == DONE);
 
     always @(posedge clk) begin
         if (rst) begin
             state <= IDLE;
-
-            a_re_reg <= {DATA_WIDTH{1'b0}};
-            a_im_reg <= {DATA_WIDTH{1'b0}};
-            b_re_reg <= {DATA_WIDTH{1'b0}};
-            b_im_reg <= {DATA_WIDTH{1'b0}};
-            twiddle_factor_reg <= {(2*COEFF_WIDTH){1'b0}};
-
-            t_re_reg <= {T_WIDTH{1'b0}};
-            t_im_reg <= {T_WIDTH{1'b0}};
-
-            y0_re <= {DATA_WIDTH{1'b0}};
-            y0_im <= {DATA_WIDTH{1'b0}};
-            y1_re <= {DATA_WIDTH{1'b0}};
-            y1_im <= {DATA_WIDTH{1'b0}};
-        end
-        else begin
+        end else begin
             case (state)
                 IDLE: begin
-                    if (i_read_data_valid) begin
-                        // E0: A/B와 계수를 함께 저장
-                        a_re_reg <= a_re;
-                        a_im_reg <= a_im;
-                        b_re_reg <= b_re;
-                        b_im_reg <= b_im;
-                        twiddle_factor_reg <= twiddle_factor;
-
-                        state <= WAIT_T;
-                    end
+                    if (i_read_data_valid)
+                        state <= WAIT_CALC;
                 end
-
-                WAIT_T: begin
-                    // E1: 한 클럭 동안 계산된 T를 저장
-                    // 조합형 Multiplier이므로 mul_done은 없음
-                    t_re_reg <= t_re;
-                    t_im_reg <= t_im;
-
-                    state <= ADD_SUB;
-                end
-
-                ADD_SUB: begin
-                    // E2: A ± T를 저장하고 출력 valid 발생
-                    y0_re <= a_re_reg + t_re_reg;
-                    y0_im <= a_im_reg + t_im_reg;
-                    y1_re <= a_re_reg - t_re_reg;
-                    y1_im <= a_im_reg - t_im_reg;
-
-                    state <= DONE;
-                end
-
-                DONE: begin
-                    // E3: 출력 valid 해제, IDLE 복귀
-                    state <= IDLE;
-                end
-
-                default: begin
-                    state <= IDLE;
-                end
+                WAIT_CALC: state <= DONE;
+                DONE: state <= IDLE;
+                default: state <= IDLE;
             endcase
         end
     end
-
 endmodule
