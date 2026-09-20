@@ -2,6 +2,7 @@
 #   make -f output_buffer.mk          build the test
 #   make -f output_buffer.mk test     build and run
 #   make -f output_buffer.mk vectors  regenerate vectors/ from the Python dump
+#   make -f output_buffer.mk rtl-vectors  bias ROM files (rtl/cnn/mem) + golden files for the RTL testbench (tb/cnn/vectors)
 #   make -f output_buffer.mk clean
 
 CC      ?= cc
@@ -13,10 +14,14 @@ TARGET  := $(BUILD)/test_output_buffer
 
 SRCS    := test_output_buffer.c output_buffer.c partial_sum.c buffer_ctrl.c bias_rom.c \
            relu_quant.c lane_packer.c output_fifo.c
+MODEL   := output_buffer.c partial_sum.c buffer_ctrl.c bias_rom.c relu_quant.c lane_packer.c output_fifo.c
+RTL_VEC := ../../tb/cnn/vectors
+RTL_MEM := ../../rtl/cnn/mem
+
 HDRS    := ob_common.h output_buffer.h partial_sum.h buffer_ctrl.h bias_rom.h \
            relu_quant.h lane_packer.h output_fifo.h
 
-.PHONY: all test vectors clean
+.PHONY: all test vectors rtl-vectors clean
 
 all: $(TARGET)
 
@@ -29,6 +34,14 @@ test: $(TARGET)
 
 vectors:
 	$(PYTHON) export_ob_vectors.py
+
+$(BUILD)/gen_rtl_vectors: gen_rtl_vectors.c $(MODEL) $(HDRS)
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) gen_rtl_vectors.c $(MODEL) -lm -o $@
+
+rtl-vectors: $(BUILD)/gen_rtl_vectors
+	@mkdir -p $(RTL_VEC) $(RTL_MEM)
+	./$(BUILD)/gen_rtl_vectors vectors $(RTL_VEC) $(RTL_MEM)
 
 clean:
 	rm -rf $(BUILD)
