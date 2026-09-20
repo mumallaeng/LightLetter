@@ -26,10 +26,12 @@ typedef struct
     uint64_t mem[OF_DEPTH];
 
     /* registers: reg / reg_next */
-    uint16_t wptr,  wptr_next;
-    uint16_t rptr,  rptr_next;
-    uint16_t count, count_next; /* 0..OF_DEPTH */
-    uint64_t dout,  dout_next;  /* BRAM output register */
+    uint16_t wptr,     wptr_next;
+    uint16_t rptr,     rptr_next;
+    uint16_t count,    count_next;    /* 0..OF_DEPTH */
+    uint64_t bram_q,   bram_q_next;   /* BRAM read register */
+    uint8_t  byp_en,   byp_en_next;   /* head was written last cycle, not yet readable */
+    uint64_t byp_data, byp_data_next;
 
     /* write request carried from comb to seq */
     uint8_t  w_we;
