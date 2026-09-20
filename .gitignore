@@ -92,7 +92,6 @@ ip/*_1.0/example_designs/
 *.lst
 *.srec
 *.hex
-*.mem
 *.dump
 *.gcda
 *.gcno
