@@ -115,5 +115,5 @@ tb/results/
 # tracked under tb/cnn_golden/results/ stay tracked; this only affects new untracked ones)
 *.json
 *.png
-# C golden model test binary
-cnn/golden_model/test_output_buffer
+# C golden model build output
+cnn/golden_model/build/

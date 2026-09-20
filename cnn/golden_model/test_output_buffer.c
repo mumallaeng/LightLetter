@@ -1,9 +1,8 @@
 /*
  * Unit tests for the Output Buffer / ReLU & Quantization golden model.
  *
- *   cc -std=c99 -Wall -Wextra -O1 test_output_buffer.c output_buffer.c partial_sum.c \
- *      buffer_ctrl.c bias_rom.c relu_quant.c lane_packer.c output_fifo.c -lm -o test_output_buffer
- *   ./test_output_buffer [vector_dir]        (default: ./vectors, see export_ob_vectors.py)
+ *   make -f output_buffer.mk test
+ *   (or: build/test_output_buffer [vector_dir], default ./vectors - see export_ob_vectors.py)
  */
 #include <math.h>
 #include <stdio.h>
@@ -12,22 +11,25 @@
 #include "relu_quant.h"
 
 #define MAX_STIM (2 * 676 * 16)
-#define MAX_OUT  (676 * 16)
+#define MAX_OUT (676 * 16)
 
 static output_buffer_t ob;
-static relu_quant_t    rq;
+static relu_quant_t rq;
 
 static int g_fail;
 
-#define CHECK(cond, ...)                         \
-    do {                                         \
-        if (!(cond)) {                           \
-            if (g_fail < 20) {                   \
+#define CHECK(cond, ...)                          \
+    do                                            \
+    {                                             \
+        if (!(cond))                              \
+        {                                         \
+            if (g_fail < 20)                      \
+            {                                     \
                 printf("    FAIL: " __VA_ARGS__); \
-                printf("\n");                    \
-            }                                    \
-            g_fail++;                            \
-        }                                        \
+                printf("\n");                     \
+            }                                     \
+            g_fail++;                             \
+        }                                         \
     } while (0)
 
 static int end_test(const char *name, int before)
@@ -56,11 +58,26 @@ static int64_t rand_signed(int bits)
 static void test_quantizer(void)
 {
     int before = g_fail;
-    static const struct { int64_t x; int shift; uint16_t want; } v[] = {
-        {-5, 2, 0},  {0, 3, 0},   {2, 2, 0},   {6, 2, 2},  {10, 2, 2}, {14, 2, 4},
-        {1, 1, 0},   {3, 1, 2},   {5, 1, 2},   {7, 0, 7},
-        {((int64_t)32767 << 4) + 7, 4, 32767}, {((int64_t)32767 << 4) + 8, 4, 32767},
-        {(int64_t)1 << 38, 4, 32767},          {-((int64_t)1 << 38), 4, 0},
+    static const struct
+    {
+        int64_t x;
+        int shift;
+        uint16_t want;
+    } v[] = {
+        {-5, 2, 0},
+        {0, 3, 0},
+        {2, 2, 0},
+        {6, 2, 2},
+        {10, 2, 2},
+        {14, 2, 4},
+        {1, 1, 0},
+        {3, 1, 2},
+        {5, 1, 2},
+        {7, 0, 7},
+        {((int64_t)32767 << 4) + 7, 4, 32767},
+        {((int64_t)32767 << 4) + 8, 4, 32767},
+        {(int64_t)1 << 38, 4, 32767},
+        {-((int64_t)1 << 38), 4, 0},
     };
     for (unsigned i = 0; i < sizeof v / sizeof v[0]; i++)
     {
@@ -108,7 +125,7 @@ static void test_output_buffer(const ob_param_t *p, unsigned seed)
             ref_sum[nref++] = ob_sext(a, OB_ACC_W);
         }
 
-    output_buffer_in_t  in = {0};
+    output_buffer_in_t in = {0};
     output_buffer_out_t out;
     output_buffer_init(&ob, p, bias, (uint8_t)co);
 
@@ -116,13 +133,13 @@ static void test_output_buffer(const ob_param_t *p, unsigned seed)
     for (int cyc = 0; (fed < frames * per_frame || got < nref) && cyc < 40 * MAX_STIM; cyc++)
     {
         int fire = (ob.state != OB_IDLE) && fed < frames * per_frame && (rand() % 4 != 0);
-        in.mac_valid  = (uint8_t)fire;
-        in.ch_result0 = fire ? stim[fed][0] : 111;      /* garbage while mac_valid = 0 */
+        in.mac_valid = (uint8_t)fire;
+        in.ch_result0 = fire ? stim[fed][0] : 111; /* garbage while mac_valid = 0 */
         in.ch_result1 = fire ? stim[fed][1] : 222;
         in.ch_result2 = fire ? stim[fed][2] : 333;
 
         output_buffer_comb(&ob, &in, &out);
-        output_buffer_comb(&ob, &in, &out);             /* comb must be repeatable */
+        output_buffer_comb(&ob, &in, &out); /* comb must be repeatable */
 
         CHECK(out.ch3_5_en == exp_en, "cycle %d: ch3_5_en %d want %d", cyc, out.ch3_5_en, exp_en);
         int want_done = out.sum_valid && ((got % per_pass) / co == n - 1);
@@ -138,7 +155,7 @@ static void test_output_buffer(const ob_param_t *p, unsigned seed)
         if (fire)
         {
             if (fed % per_pass == per_pass - 1)
-                exp_en = (g > 1) ? !exp_en : 0;         /* group flips after the last result of a pass */
+                exp_en = (g > 1) ? !exp_en : 0; /* group flips after the last result of a pass */
             fed++;
         }
         output_buffer_seq(&ob);
@@ -157,20 +174,20 @@ static void test_width_counters(void)
 {
     int before = g_fail;
     int32_t bias[6] = {0};
-    output_buffer_in_t  in = {0};
+    output_buffer_in_t in = {0};
     output_buffer_out_t out;
 
     output_buffer_init(&ob, &OB_PARAM_CONV1, bias, 6);
     output_buffer_comb(&ob, &in, &out);
-    output_buffer_seq(&ob);                             /* leave IDLE */
+    output_buffer_seq(&ob); /* leave IDLE */
 
-    in.mac_valid  = 1;
-    in.ch_result0 = ((int64_t)1 << (OB_CH_W - 1)) - 1;  /* largest legal value */
+    in.mac_valid = 1;
+    in.ch_result0 = ((int64_t)1 << (OB_CH_W - 1)) - 1; /* largest legal value */
     output_buffer_comb(&ob, &in, &out);
     output_buffer_seq(&ob);
     CHECK(ob.dbg_ch_ovf_cnt == 0, "legal value flagged");
 
-    in.ch_result0 = (int64_t)1 << (OB_CH_W - 1);        /* one past it */
+    in.ch_result0 = (int64_t)1 << (OB_CH_W - 1); /* one past it */
     output_buffer_comb(&ob, &in, &out);
     output_buffer_seq(&ob);
     CHECK(ob.dbg_ch_ovf_cnt == 1, "overflow not counted");
@@ -192,7 +209,7 @@ static void test_relu_quant(int pack, int shift, int nvals, int ready_pct, unsig
         rq_x[i] = rand_signed(shift + 16);
     relu_quant_init(&rq, &p);
 
-    relu_quant_in_t  in = {0};
+    relu_quant_in_t in = {0};
     relu_quant_out_t out, prev = {0};
     int fed = 0, got = 0, stalled = 0, entries = nvals / pack;
 
@@ -200,16 +217,16 @@ static void test_relu_quant(int pack, int shift, int nvals, int ready_pct, unsig
     {
         int v = fed < nvals && (rand() % 3 != 0);
         in.sum_valid = (uint8_t)v;
-        in.sum_data  = v ? rq_x[fed] : 0x123456;
-        in.ch_done   = (uint8_t)(v && fed / pack == entries - 1);
+        in.sum_data = v ? rq_x[fed] : 0x123456;
+        in.ch_done = (uint8_t)(v && fed / pack == entries - 1);
         in.out_ready = (uint8_t)((rand() % 100) < ready_pct);
 
         relu_quant_comb(&rq, &in, &out);
         relu_quant_comb(&rq, &in, &out);
 
-        if (stalled)                                    /* valid must hold with stable data until taken */
+        if (stalled) /* valid must hold with stable data until taken */
             CHECK(out.out_valid && out.out_data0 == prev.out_data0 && out.out_data1 == prev.out_data1 &&
-                  out.out_data2 == prev.out_data2 && out.out_ch_done == prev.out_ch_done,
+                      out.out_data2 == prev.out_data2 && out.out_ch_done == prev.out_ch_done,
                   "cycle %d: output changed while out_ready = 0", cyc);
 
         if (out.out_valid && in.out_ready)
@@ -241,14 +258,14 @@ static void test_fifo_full(void)
 {
     int before = g_fail;
     rq_param_t p = {1, 0};
-    relu_quant_in_t  in = {0};
+    relu_quant_in_t in = {0};
     relu_quant_out_t out;
 
     relu_quant_init(&rq, &p);
-    for (int i = 0; i < OF_DEPTH + 10; i++)             /* never ready: fills up, then drops */
+    for (int i = 0; i < OF_DEPTH + 10; i++) /* never ready: fills up, then drops */
     {
         in.sum_valid = 1;
-        in.sum_data  = i % 30000;
+        in.sum_data = i % 30000;
         relu_quant_comb(&rq, &in, &out);
         relu_quant_seq(&rq);
     }
@@ -274,7 +291,7 @@ static void test_fifo_full(void)
 
 /* ------------------------------------- full chain against the Python golden model */
 static int64_t vec_stim[MAX_STIM][3];
-static int     vec_exp[MAX_OUT];
+static int vec_exp[MAX_OUT];
 
 static void test_python_vectors(const char *dir, const char *file, int ready_pct)
 {
@@ -313,25 +330,25 @@ static void test_python_vectors(const char *dir, const char *file, int ready_pct
     output_buffer_init(&ob, &op, bias, (uint8_t)co);
     relu_quant_init(&rq, &rp);
 
-    output_buffer_in_t  oin = {0};
+    output_buffer_in_t oin = {0};
     output_buffer_out_t oout;
-    relu_quant_in_t     rin = {0};
-    relu_quant_out_t    rout;
+    relu_quant_in_t rin = {0};
+    relu_quant_out_t rout;
     int fed = 0, got = 0, exact = 0, off1 = 0, worse = 0, done_seen = 0;
 
     srand(7);
     for (int cyc = 0; got < nexp && cyc < 40 * MAX_STIM; cyc++)
     {
         int fire = (ob.state != OB_IDLE) && fed < nstim;
-        oin.mac_valid  = (uint8_t)fire;
+        oin.mac_valid = (uint8_t)fire;
         oin.ch_result0 = fire ? vec_stim[fed][0] : 0;
         oin.ch_result1 = fire ? vec_stim[fed][1] : 0;
         oin.ch_result2 = fire ? vec_stim[fed][2] : 0;
         output_buffer_comb(&ob, &oin, &oout);
 
-        rin.sum_data  = oout.sum_data;
+        rin.sum_data = oout.sum_data;
         rin.sum_valid = oout.sum_valid;
-        rin.ch_done   = oout.ch_done;
+        rin.ch_done = oout.ch_done;
         rin.out_ready = (uint8_t)((rand() % 100) < ready_pct);
         relu_quant_comb(&rq, &rin, &rout);
 
@@ -342,7 +359,7 @@ static void test_python_vectors(const char *dir, const char *file, int ready_pct
             {
                 int d = abs((int)lane[k] - vec_exp[got]);
                 exact += (d == 0);
-                off1  += (d == 1);
+                off1 += (d == 1);
                 worse += (d > 1);
                 if (d > 1 && worse <= 5)
                     printf("    value %d: got %u python %d\n", got, lane[k], vec_exp[got]);
