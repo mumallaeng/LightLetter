@@ -81,6 +81,7 @@ firmware/LightLetter_platform/tempdsa/
 ip/*_1.0/example_designs/
 
 # C / embedded build artifacts
+*.exe
 *.o
 *.obj
 *.d
