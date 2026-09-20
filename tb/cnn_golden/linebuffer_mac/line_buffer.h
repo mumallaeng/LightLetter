@@ -7,15 +7,20 @@
  *   - 3줄(row0~row2) 전체 저장 (k-1 최적화 대신 단순 구조로 확정)
  *   - 16bit 고정소수점 (float 미사용)
  *   - RTL 매핑을 명확히 하기 위해 두 단계로 분리:
- *       1) compute_output : always_comb 대응 - 레지스터를 "읽기만" 함,
- *          단 방금 들어온 pixel_in은 레지스터를 거치지 않고 직접 우회(bypass)
- *       2) update_regs    : always_ff 대응 - 레지스터에 "쓰기만" 함
- *     이렇게 나눠두면, RTL로 옮길 때 순서를 고민할 필요 없이
- *     compute_output 안의 조합식을 always_comb에, update_regs 안의
- *     대입을 always_ff(<=)에 그대로 옮기기만 하면 됨.
+ *       1) compute_fresh : always_comb 대응 - "이번 클록에 쓴다면 나올 값"을
+ *          wr_en과 무관하게 항상 계산 (RTL의 win_out_fresh와 동일하게,
+ *          조합 로직은 wr_en을 안 봄 - wr_en 게이팅은 순차 로직에서만)
+ *       2) update_regs   : always_ff 대응 - 3갈래 분기 (RTL과 동일)
+ *            - !rst_n || phase_clear : win_out/win_valid/카운터 전부 0
+ *            - wr_en                 : fresh 값을 그대로 커밋 + 카운터 진행
+ *            - else(wr_en=0)         : win_valid만 0 (win_out은 그대로 유지)
+ *              -> MAC_unit이 무상태(매 클록 row_valid 보고 즉시 0/계산)라서,
+ *                 line_buffer도 "새 윈도우 없음"을 즉시 알려야 파이프라인
+ *                 전체에서 같은 결과가 중복 전파되는 걸 막을 수 있음
+ *                 (실제 RTL 시뮬레이션으로 검증된 이유)
  *
  * 인터페이스 명세서 매핑:
- *   in : pixel_in[15:0], wr_en
+ *   in : pixel_in[15:0], wr_en, phase_clear
  *   out: win_out[143:0] (9 x 16bit), win_valid
  */
 
@@ -37,7 +42,7 @@ typedef struct {
     int32_t write_row_num;             /* 지금까지 시작된 행의 개수(0-index) */
     int32_t write_col;                 /* 현재 채우고 있는 행에서의 열 위치 */
 
-    /* ---- 출력 (always_comb에서만 계산됨, 레지스터 아님) ---- */
+    /* ---- 출력 (이제 진짜 레지스터, always_ff에서만 갱신됨) ---- */
     int16_t win_out[KSIZE * KSIZE];    /* 3x3 윈도우, row-major flatten */
     uint8_t win_valid;
 } line_buffer_t;
@@ -48,59 +53,79 @@ static inline void line_buffer_reset(line_buffer_t *lb) {
 }
 
 /*
- * always_comb에 대응 - 순수 조합 로직, 레지스터를 바꾸지 않는다.
- * 이번 클록에 들어온 pixel_in을 "쓰기 전"에 미리 윈도우 계산에 반영한다
- * (row_buf에 썼다가 같은 클록에 다시 읽는 게 아니라, pixel_in을 직접 우회시킴).
+ * always_comb에 대응 - "이번 클록에 쓴다면 나올 값"을 계산만 함, 레지스터 불변.
+ * RTL의 win_out_fresh 블록과 동일하게, wr_en을 아예 보지 않는다
+ * (wr_en 게이팅은 이 함수를 부르는 쪽이 아니라 update_regs 안에서만 함).
  */
-static inline void line_buffer_compute_output(line_buffer_t *lb, int16_t pixel_in, uint8_t wr_en) {
-    if (!wr_en) return; /* wr_en=0이면 출력도 그대로 유지 (레지스터 안 바뀌니 당연히) */
+static inline void line_buffer_compute_fresh(const line_buffer_t *lb, int16_t pixel_in,
+                                              int16_t win_out_fresh[KSIZE * KSIZE],
+                                              uint8_t *win_valid_fresh) {
+    *win_valid_fresh = 0;
+    memset(win_out_fresh, 0, KSIZE * KSIZE * sizeof(int16_t));
 
-    lb->win_valid = 0;
     if (lb->write_row_num >= (KSIZE - 1) && lb->write_col >= (KSIZE - 1)) {
         int32_t r0 = (lb->write_row_num - 2) % KSIZE;
         int32_t r1 = (lb->write_row_num - 1) % KSIZE;
         int32_t r2 = (lb->write_row_num - 0) % KSIZE;
         int32_t c0 = lb->write_col - 2;
         int32_t c1 = lb->write_col - 1;
-        int32_t c2 = lb->write_col; /* <- 이 자리가 "방금 들어온 픽셀"의 위치 */
+        int32_t c2 = lb->write_col;
 
-        lb->win_out[0] = lb->row_buf[r0][c0];
-        lb->win_out[1] = lb->row_buf[r0][c1];
-        lb->win_out[2] = lb->row_buf[r0][c2];
-        lb->win_out[3] = lb->row_buf[r1][c0];
-        lb->win_out[4] = lb->row_buf[r1][c1];
-        lb->win_out[5] = lb->row_buf[r1][c2];
-        lb->win_out[6] = lb->row_buf[r2][c0];
-        lb->win_out[7] = lb->row_buf[r2][c1];
-        /* row2, c2 자리는 아직 row_buf에 안 쓰여있는 "이번 클록 픽셀" 그 자체이므로
+        win_out_fresh[0] = lb->row_buf[r0][c0];
+        win_out_fresh[1] = lb->row_buf[r0][c1];
+        win_out_fresh[2] = lb->row_buf[r0][c2];
+        win_out_fresh[3] = lb->row_buf[r1][c0];
+        win_out_fresh[4] = lb->row_buf[r1][c1];
+        win_out_fresh[5] = lb->row_buf[r1][c2];
+        win_out_fresh[6] = lb->row_buf[r2][c0];
+        win_out_fresh[7] = lb->row_buf[r2][c1];
+        /* row2,c2 자리는 아직 row_buf에 안 쓰여있는 "이번 클록 픽셀" 그 자체이므로
          * 레지스터를 안 읽고 pixel_in을 직접 우회(bypass)시켜 씀 */
-        lb->win_out[8] = pixel_in;
+        win_out_fresh[8] = pixel_in;
 
-        lb->win_valid = 1;
+        *win_valid_fresh = 1;
     }
 }
 
 /*
- * always_ff에 대응 - 레지스터 쓰기만 담당, 출력 계산은 절대 안 함.
- * 반드시 line_buffer_compute_output을 먼저 호출한 "다음"에 불러야
- * (같은 클록 기준으로) RTL과 동일한 순서가 됨.
+ * always_ff에 대응 - RTL의 3갈래 분기를 그대로 재현.
+ * 반드시 compute_fresh로 이번 클록 fresh 값을 먼저 구한 다음 호출해야 함.
  */
-static inline void line_buffer_update_regs(line_buffer_t *lb, int16_t pixel_in, uint8_t wr_en) {
-    if (!wr_en) return;
-
-    lb->row_buf[lb->write_row_num % KSIZE][lb->write_col] = pixel_in;
-
-    lb->write_col++;
-    if (lb->write_col == IMG_WIDTH) {
+static inline void line_buffer_update_regs(line_buffer_t *lb, int16_t pixel_in, uint8_t wr_en,
+                                            uint8_t phase_clear,
+                                            const int16_t win_out_fresh[KSIZE * KSIZE],
+                                            uint8_t win_valid_fresh) {
+    if (phase_clear) {
+        lb->write_row_num = 0;
         lb->write_col = 0;
-        lb->write_row_num++;
+        memset(lb->win_out, 0, sizeof(lb->win_out));
+        lb->win_valid = 0;
+        return;
+    }
+
+    if (wr_en) {
+        memcpy(lb->win_out, win_out_fresh, sizeof(lb->win_out));
+        lb->win_valid = win_valid_fresh;
+
+        lb->row_buf[lb->write_row_num % KSIZE][lb->write_col] = pixel_in;
+
+        lb->write_col++;
+        if (lb->write_col == IMG_WIDTH) {
+            lb->write_col = 0;
+            lb->write_row_num++;
+        }
+    } else {
+        /* 새로운 window가 없으므로 valid를 0으로 만듦 (win_out은 그대로 유지) */
+        lb->win_valid = 0;
     }
 }
 
 /* WBS 2.3: 한 클록 전체 동작. 위 두 단계를 올바른 순서로 묶어서 호출한다. */
-static inline void line_buffer_step(line_buffer_t *lb, int16_t pixel_in, uint8_t wr_en) {
-    line_buffer_compute_output(lb, pixel_in, wr_en); /* always_comb: 이번 클록 결과 계산 */
-    line_buffer_update_regs(lb, pixel_in, wr_en);    /* always_ff  : 다음 클록을 위한 레지스터 갱신 */
+static inline void line_buffer_step(line_buffer_t *lb, int16_t pixel_in, uint8_t wr_en, uint8_t phase_clear) {
+    int16_t win_out_fresh[KSIZE * KSIZE];
+    uint8_t win_valid_fresh;
+    line_buffer_compute_fresh(lb, pixel_in, win_out_fresh, &win_valid_fresh); /* always_comb */
+    line_buffer_update_regs(lb, pixel_in, wr_en, phase_clear, win_out_fresh, win_valid_fresh); /* always_ff */
 }
 
 #endif /* LINE_BUFFER_H */
