@@ -4,7 +4,7 @@ module butterfly #(
     parameter integer DATA_WIDTH  = 20,
     parameter integer COEFF_WIDTH = 16,
     parameter integer FRAC_BITS   = 14,
-    parameter integer T_WIDTH     = DATA_WIDTH + 1
+    parameter integer T_WIDTH     = DATA_WIDTH
 )(
     input wire clk,
     input wire rst,
