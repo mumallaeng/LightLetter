@@ -5,8 +5,8 @@
 > 이 문서는 `Critical-mankind/BFSK_Tx` 저장소의 **TX 구현 상태, 인터페이스, 공통 통신 규격, PASS/FAIL 이력**을 관리한다.
 > 현재 저장소의 실제 파일과 검증 결과를 우선 기준으로 한다.
 >
-> **Last Updated:** 2026-09-17  
-> **Document Version:** v2.1
+> **Last Updated:** 2026-09-21  
+> **Document Version:** v2.2
 
 ---
 
@@ -375,6 +375,9 @@ tx_enable
 | TX-6 | Optical TX Top | PASS 18/0 | `D50041C0`, 816 Rising Edge, 최종 Optical 완료 | `cd0f5b5` |
 | TX-7 | AXI4-Lite Wrapper | PASS 17/0 | Register R/W, START, READY/BUSY, AW First, W First | `334e7f1` |
 | TX-8 | AXI4-Lite + Optical TX Integration | PASS 48/0 | AXI→Wrapper→Optical TX end-to-end, 3 Frame, AW/W 순서, Status | `4e7bc82` |
+| TX-9A | FPGA PMOD Hardware Output | PASS | Zybo PMOD → Oscilloscope 실제 출력 파형 확인 | 로컬 HW 작업 |
+| HW-1 | TX/RX Analog PSpice | PASS | 아날로그 송수신 회로 PSpice Simulation 통과 | 로컬 회로 검증 |
+| HW-2 | LED → BPW34 Optical Bench | PASS | Function Generator → LED → BPW34 → Oscilloscope 파형 전달 확인 | 실물 Bench 검증 |
 
 ## TX-6 Optical TX Top 핵심 보정
 
@@ -564,6 +567,82 @@ AXI Register Write에서 Optical Carrier 출력까지 End-to-End 검증 완료
 TX-9 Hardware Verification 진행 가능
 ```
 
+
+---
+
+## TX-9A FPGA PMOD Hardware Output — PASS
+
+실물 Hardware 검증:
+
+```text
+Zybo FPGA
+→ PMOD
+→ Oscilloscope
+```
+
+확인 결과:
+
+```text
+FPGA에서 생성된 TX 파형을 PMOD 핀으로 출력
+Oscilloscope에서 실제 파형 출력 확인
+Result = PASS
+```
+
+현재 TX-9 관련 Vivado / XDC / Vitis 작업물은 로컬에서 계속 작업 중이며,
+PASS RTL/TB와 분리하여 관리한다.
+
+---
+
+## HW-1 Analog Circuit PSpice — PASS
+
+주말 동안 TX/RX 아날로그 회로에 대해 PSpice Simulation을 수행하였다.
+
+```text
+Analog TX/RX Circuit PSpice Simulation
+Result = PASS
+```
+
+이 결과는 실제 광 링크 End-to-End 완료를 의미하지 않으며,
+아날로그 회로 설계의 Simulation 검증 완료로 기록한다.
+
+---
+
+## HW-2 LED → BPW34 Optical Bench Test — PASS
+
+2026-09-21 실물 Bench에서 다음 경로를 확인하였다.
+
+```text
+Function Generator
+→ LED
+~~~ Optical Link ~~~
+→ BPW34
+→ Oscilloscope
+```
+
+검증 결과:
+
+```text
+LED 광 출력 발생 확인
+BPW34 수광 후 전기 파형 출력 확인
+Oscilloscope에서 전달 파형 확인
+Result = PASS
+```
+
+이 단계에서 확인된 범위는 LED와 BPW34 사이의 실제 광 신호 전달 가능성이다.
+
+아직 남은 통합 범위:
+
+```text
+FPGA BFSK TX
+→ Driver / LED
+→ BPW34
+→ MCP6022
+→ XADC
+→ FFT
+→ RX Decoder
+```
+
+
 ---
 
 # 6. 설계 / 인터페이스 변경 이력
@@ -591,6 +670,10 @@ TX-9 Hardware Verification 진행 가능
 | 2026-09-17 | Reset 연결 | AXI active-low / TX active-high 분리 | `tx_rst = ~s_axi_aresetn` | 단일 외부 Reset으로 Wrapper + TX Core 통합 |
 | 2026-09-17 | TX-8 Simulation | 실제 1.6 ms Symbol | TB에서 FS/BFSK 주파수 100× Scaling | End-to-end Simulation 시간 단축, Symbol당 Edge 수 유지 |
 | 2026-09-17 | TX-8 End-to-End 검증 | 결과 확인 대기 | AXI → Wrapper → Optical TX 전체 PASS | PASS=48 / FAIL=0 |
+| 2026-09-21 | TX-9A FPGA HW | Simulation 완료 | PMOD → Oscilloscope 실제 출력 확인 | FPGA Hardware Output PASS |
+| 2026-09-21 | Analog Circuit | 회로 설계 / Simulation 진행 | PSpice Simulation PASS | 실물 광 링크 전 회로 검증 단계 완료 |
+| 2026-09-21 | Optical Bench | 광 링크 실물 확인 전 | Function Generator → LED → BPW34 → Scope | 실제 LED/BPW34 광 전달 PASS |
+| 2026-09-21 | PS → TX 제어 | AXI4-Lite RTL Simulation 완료 | Vitis C Firmware로 실제 Register 제어 진행 | 오늘 우선 작업 |
 
 ---
 
@@ -605,33 +688,99 @@ TX-5 TX FSM              PASS
 TX-6 Optical TX Top      PASS
 TX-7 AXI4-Lite Wrapper   PASS
 TX-8 AXI + Optical Top   PASS 48 / 0
-TX-9 Hardware            다음 단계
+TX-9A FPGA PMOD HW       PASS
+HW-1 Analog PSpice       PASS
+HW-2 LED → BPW34 Bench   PASS
+TX-9B PS AXI Firmware    오늘 작업 / 진행 예정
+SYS-1 Full Optical Link  다음 통합 단계
 ```
 
 ---
 
 # 8. 다음 작업
 
-## TX-9 Hardware Verification
+## 오늘 우선 작업 — BFSK TX C Firmware
+
+목표:
 
 ```text
-1. Zynq PS에서 AXI4-Lite Register Write
-   - 0x00 TX_DATA
-   - 0x04 TX_CTRL.START
-   - 0x08 TX_STATUS 확인
-2. XDC 작성
-   - Clock / Reset / optical_tx
-3. Zybo PMOD에 optical_tx 연결
-4. Oscilloscope Hardware 검증
-   - SYNC 25 kHz
-   - BIT0 10 kHz
-   - BIT1 20 kHz
-   - Symbol Time 1.6 ms
-   - Preamble SYNC ×4
-   - Frame 종료 후 IDLE
-5. 2N7000 Driver 연결
-6. LED / Laser Optical Source 검증
+Zynq PS
+→ AXI4-Lite
+→ optical_tx_axi_top
+→ FPGA BFSK TX
 ```
+
+C Firmware에서 사용할 Register Map:
+
+```text
+BASE + 0x00 : TX_DATA
+              [7:0] Character ID
+
+BASE + 0x04 : TX_CTRL
+              bit0 START
+
+BASE + 0x08 : TX_STATUS
+              bit0 READY
+              bit1 BUSY
+```
+
+권장 Firmware 동작 순서:
+
+```text
+1. TX_STATUS Read
+2. READY=1, BUSY=0 확인
+3. TX_DATA에 Character ID Write
+4. TX_CTRL.START = 1 Write
+5. BUSY=1 진입 확인
+6. BUSY=0 / READY=1 복귀 Polling
+7. 다음 Character 전송
+```
+
+검증 항목:
+
+```text
+- Register Read / Write 정상
+- START 1회당 Character 1회 송신
+- Busy 중 중복 START 방지
+- 송신 완료 후 READY 복귀
+- PMOD / Oscilloscope에서 FPGA TX 파형 확인
+```
+
+## TX-9B PS AXI4-Lite Hardware Control
+
+```text
+1. Vitis C Firmware 작성
+2. 실제 Zynq PS에서 TX_DATA Write
+3. TX_CTRL.START Write
+4. TX_STATUS READY/BUSY Read
+5. PMOD 출력과 AXI 제어 시점 연동 확인
+```
+
+## SYS-1 FPGA → LED → BPW34 Integration
+
+```text
+FPGA BFSK TX
+→ PMOD
+→ Driver
+→ LED
+~~~ Optical ~~~
+→ BPW34
+→ Oscilloscope
+```
+
+Function Generator 기반 LED → BPW34 Bench는 이미 PASS이므로,
+다음에는 Function Generator 자리를 FPGA BFSK TX로 교체하여 검증한다.
+
+## SYS-2 BPW34 → MCP6022 → XADC
+
+```text
+BPW34
+→ MCP6022 TIA / Gain
+→ Zybo XADC
+→ Sample 확인
+```
+
+이후 실제 FFT / RX Decoder 통합으로 진행한다.
 
 Interface Excel:
 
@@ -673,7 +822,11 @@ FAIL = 0
 TX-8 RTL / TB / XPR = 확인 완료
 TX-8 End-to-End Simulation = PASS 48 / FAIL 0
 TX-8 공식 PASS 처리 = 완료
-TX-9 Hardware Verification = 다음 단계
+TX-9A FPGA PMOD Hardware Output = PASS
+HW-1 Analog PSpice = PASS
+HW-2 LED → BPW34 Optical Bench = PASS
+TX-9B PS AXI4-Lite C Firmware = 오늘 작업
+Full Optical End-to-End = 미완료
 ```
 
 이번 문서 동기화 대상:
