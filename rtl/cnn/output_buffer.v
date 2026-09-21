@@ -70,7 +70,7 @@ module output_buffer #(
         end
     end
 
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (!rst_n) begin
             state      <= OB_IDLE;
             out_ch_cnt <= {CH_AW{1'b0}};

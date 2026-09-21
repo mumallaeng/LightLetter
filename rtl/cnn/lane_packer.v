@@ -42,7 +42,7 @@ module lane_packer #(
                 end
             end
 
-            always @(posedge clk or negedge rst_n) begin
+            always @(posedge clk) begin
                 if (!rst_n) begin
                     cnt  <= {CNT_W{1'b0}};
                     hold <= {(16*(PACK-1)){1'b0}};

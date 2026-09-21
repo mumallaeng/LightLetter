@@ -52,7 +52,7 @@ module output_fifo #(
         bram_q <= mem[rptr_next];
     end
 
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (!rst_n) begin
             wptr     <= {AW{1'b0}};
             rptr     <= {AW{1'b0}};
