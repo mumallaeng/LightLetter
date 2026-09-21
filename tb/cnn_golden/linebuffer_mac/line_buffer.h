@@ -1,27 +1,22 @@
 /*
- * line_buffer.h
+ * line_buffer_rtl_1to1.h
  * ---------------------------------------------------------------
- * line_buffer 단위 모듈 (담당: 조성재)
+ * RTL line_buffer.v와 내부 상태/갱신 순서를 1:1로 대응시킨 C 골든모델.
  *
- * 설계 원칙:
- *   - 3줄(row0~row2) 전체 저장 (k-1 최적화 대신 단순 구조로 확정)
- *   - 16bit 고정소수점 (float 미사용)
- *   - RTL 매핑을 명확히 하기 위해 두 단계로 분리:
- *       1) compute_fresh : always_comb 대응 - "이번 클록에 쓴다면 나올 값"을
- *          wr_en과 무관하게 항상 계산 (RTL의 win_out_fresh와 동일하게,
- *          조합 로직은 wr_en을 안 봄 - wr_en 게이팅은 순차 로직에서만)
- *       2) update_regs   : always_ff 대응 - 3갈래 분기 (RTL과 동일)
- *            - !rst_n || phase_clear : win_out/win_valid/카운터 전부 0
- *            - wr_en                 : fresh 값을 그대로 커밋 + 카운터 진행
- *            - else(wr_en=0)         : win_valid만 0 (win_out은 그대로 유지)
- *              -> MAC_unit이 무상태(매 클록 row_valid 보고 즉시 0/계산)라서,
- *                 line_buffer도 "새 윈도우 없음"을 즉시 알려야 파이프라인
- *                 전체에서 같은 결과가 중복 전파되는 걸 막을 수 있음
- *                 (실제 RTL 시뮬레이션으로 검증된 이유)
+ * RTL 대응:
+ *   row0_buf/row1_buf/row2_buf <-> row_buf[0]/row_buf[1]/row_buf[2]
+ *   cur_row                    <-> cur_row
+ *   rows_started               <-> rows_started
+ *   write_col                  <-> write_col
+ *   win_out                    <-> win_out
+ *   win_valid                  <-> win_valid
  *
- * 인터페이스 명세서 매핑:
- *   in : pixel_in[15:0], wr_en, phase_clear
- *   out: win_out[143:0] (9 x 16bit), win_valid
+ * 핵심:
+ *   - write_row_num을 제거하고 RTL과 동일한 cur_row(0->1->2->0) 사용
+ *   - rows_started는 RTL처럼 0->1->2에서 포화
+ *   - write_col은 0..IMG_WIDTH-1까지만 상태로 존재하고 마지막 열 뒤 즉시 0
+ *   - phase_clear 시 RTL처럼 row buffer까지 모두 0으로 초기화
+ *   - compute_fresh는 RTL always @(*)의 row*_sel 및 win_out_fresh를 그대로 재현
  */
 
 #ifndef LINE_BUFFER_H
@@ -31,56 +26,84 @@
 #include <string.h>
 
 #ifndef IMG_WIDTH
-#define IMG_WIDTH 28   /* 대상 레이어의 입력 가로 크기로 교체해서 쓰면 됨 */
+#define IMG_WIDTH 28
 #endif
 
-#define KSIZE 3        /* 3x3 커널 고정 */
+#define KSIZE 3
 
 typedef struct {
-    /* ---- 레지스터 (RTL 레지스터에 1:1 대응, always_ff에서만 갱신됨) ---- */
-    int16_t row_buf[KSIZE][IMG_WIDTH]; /* row0~row2 전체 저장 (원형 재사용) */
-    int32_t write_row_num;             /* 지금까지 시작된 행의 개수(0-index) */
-    int32_t write_col;                 /* 현재 채우고 있는 행에서의 열 위치 */
+    /* RTL row0_buf/row1_buf/row2_buf */
+    int16_t row_buf[KSIZE][IMG_WIDTH];
 
-    /* ---- 출력 (이제 진짜 레지스터, always_ff에서만 갱신됨) ---- */
-    int16_t win_out[KSIZE * KSIZE];    /* 3x3 윈도우, row-major flatten */
+    /* RTL 카운터/상태와 1:1 대응 */
+    uint8_t cur_row;       /* 0 -> 1 -> 2 -> 0 ... */
+    uint8_t rows_started;  /* 0 -> 1 -> 2, 이후 2에서 포화 */
+    int32_t write_col;     /* 0 .. IMG_WIDTH-1 */
+
+    /* RTL 출력 레지스터 */
+    int16_t win_out[KSIZE * KSIZE];
     uint8_t win_valid;
 } line_buffer_t;
 
-/* WBS 2.2: rst_n 처리 */
+/* RTL rst_n=0 상태와 동일하게 전체 상태를 0으로 초기화 */
 static inline void line_buffer_reset(line_buffer_t *lb) {
     memset(lb, 0, sizeof(*lb));
 }
 
 /*
- * always_comb에 대응 - "이번 클록에 쓴다면 나올 값"을 계산만 함, 레지스터 불변.
- * RTL의 win_out_fresh 블록과 동일하게, wr_en을 아예 보지 않는다
- * (wr_en 게이팅은 이 함수를 부르는 쪽이 아니라 update_regs 안에서만 함).
+ * RTL의 row0_sel/row1_sel/row2_sel + win_out_fresh always @(*) 대응.
+ * 레지스터는 변경하지 않고 이번 클록에서 커밋될 fresh 값만 계산한다.
  */
-static inline void line_buffer_compute_fresh(const line_buffer_t *lb, int16_t pixel_in,
+static inline void line_buffer_compute_fresh(const line_buffer_t *lb,
+                                              int16_t pixel_in,
                                               int16_t win_out_fresh[KSIZE * KSIZE],
                                               uint8_t *win_valid_fresh) {
     *win_valid_fresh = 0;
     memset(win_out_fresh, 0, KSIZE * KSIZE * sizeof(int16_t));
 
-    if (lb->write_row_num >= (KSIZE - 1) && lb->write_col >= (KSIZE - 1)) {
-        int32_t r0 = (lb->write_row_num - 2) % KSIZE;
-        int32_t r1 = (lb->write_row_num - 1) % KSIZE;
-        int32_t r2 = (lb->write_row_num - 0) % KSIZE;
-        int32_t c0 = lb->write_col - 2;
-        int32_t c1 = lb->write_col - 1;
-        int32_t c2 = lb->write_col;
+    /* RTL row*_sel case(cur_row)와 동일한 물리 buffer 선택 */
+    int r0_sel;
+    int r1_sel;
+    int r2_sel;
 
-        win_out_fresh[0] = lb->row_buf[r0][c0];
-        win_out_fresh[1] = lb->row_buf[r0][c1];
-        win_out_fresh[2] = lb->row_buf[r0][c2];
-        win_out_fresh[3] = lb->row_buf[r1][c0];
-        win_out_fresh[4] = lb->row_buf[r1][c1];
-        win_out_fresh[5] = lb->row_buf[r1][c2];
-        win_out_fresh[6] = lb->row_buf[r2][c0];
-        win_out_fresh[7] = lb->row_buf[r2][c1];
-        /* row2,c2 자리는 아직 row_buf에 안 쓰여있는 "이번 클록 픽셀" 그 자체이므로
-         * 레지스터를 안 읽고 pixel_in을 직접 우회(bypass)시켜 씀 */
+    switch (lb->cur_row) {
+        case 0:
+            r0_sel = 1;
+            r1_sel = 2;
+            r2_sel = 0;
+            break;
+
+        case 1:
+            r0_sel = 2;
+            r1_sel = 0;
+            r2_sel = 1;
+            break;
+
+        default: /* cur_row == 2 */
+            r0_sel = 0;
+            r1_sel = 1;
+            r2_sel = 2;
+            break;
+    }
+
+    /* RTL: if (rows_started == 2'd2 && write_col >= 2) */
+    if (lb->rows_started == 2 && lb->write_col >= 2) {
+        const int32_t c0 = lb->write_col - 2;
+        const int32_t c1 = lb->write_col - 1;
+        const int32_t c2 = lb->write_col;
+
+        win_out_fresh[0] = lb->row_buf[r0_sel][c0];
+        win_out_fresh[1] = lb->row_buf[r0_sel][c1];
+        win_out_fresh[2] = lb->row_buf[r0_sel][c2];
+
+        win_out_fresh[3] = lb->row_buf[r1_sel][c0];
+        win_out_fresh[4] = lb->row_buf[r1_sel][c1];
+        win_out_fresh[5] = lb->row_buf[r1_sel][c2];
+
+        win_out_fresh[6] = lb->row_buf[r2_sel][c0];
+        win_out_fresh[7] = lb->row_buf[r2_sel][c1];
+
+        /* RTL과 동일: 현재 픽셀은 아직 row_buf에 쓰이기 전이므로 직접 bypass */
         win_out_fresh[8] = pixel_in;
 
         *win_valid_fresh = 1;
@@ -88,44 +111,66 @@ static inline void line_buffer_compute_fresh(const line_buffer_t *lb, int16_t pi
 }
 
 /*
- * always_ff에 대응 - RTL의 3갈래 분기를 그대로 재현.
- * 반드시 compute_fresh로 이번 클록 fresh 값을 먼저 구한 다음 호출해야 함.
+ * RTL always @(posedge clk or negedge rst_n) 대응.
+ * C에서는 reset을 line_buffer_reset()으로 별도 처리하고,
+ * 여기서는 phase_clear / wr_en / else 세 분기를 RTL과 같은 순서로 재현한다.
  */
-static inline void line_buffer_update_regs(line_buffer_t *lb, int16_t pixel_in, uint8_t wr_en,
+static inline void line_buffer_update_regs(line_buffer_t *lb,
+                                            int16_t pixel_in,
+                                            uint8_t wr_en,
                                             uint8_t phase_clear,
                                             const int16_t win_out_fresh[KSIZE * KSIZE],
                                             uint8_t win_valid_fresh) {
     if (phase_clear) {
-        lb->write_row_num = 0;
+        /* RTL phase_clear 분기와 동일: 카운터 + 3개 row buffer + 출력 초기화 */
+        lb->cur_row = 0;
+        lb->rows_started = 0;
         lb->write_col = 0;
+
+        memset(lb->row_buf, 0, sizeof(lb->row_buf));
         memset(lb->win_out, 0, sizeof(lb->win_out));
         lb->win_valid = 0;
         return;
     }
 
     if (wr_en) {
+        /* RTL nonblocking assignment의 커밋 결과 */
         memcpy(lb->win_out, win_out_fresh, sizeof(lb->win_out));
         lb->win_valid = win_valid_fresh;
 
-        lb->row_buf[lb->write_row_num % KSIZE][lb->write_col] = pixel_in;
+        /* case(cur_row): 현재 물리 row buffer에 pixel 저장 */
+        lb->row_buf[lb->cur_row][lb->write_col] = pixel_in;
 
-        lb->write_col++;
-        if (lb->write_col == IMG_WIDTH) {
+        /* RTL과 동일: 마지막 열이면 0으로 복귀하고 cur_row 진행 */
+        if (lb->write_col == IMG_WIDTH - 1) {
             lb->write_col = 0;
-            lb->write_row_num++;
+            lb->cur_row = (lb->cur_row == 2) ? 0 : (uint8_t)(lb->cur_row + 1);
+
+            /* RTL과 동일하게 2에서 포화 */
+            if (lb->rows_started != 2)
+                lb->rows_started++;
         }
-    } else {
-        /* 새로운 window가 없으므로 valid를 0으로 만듦 (win_out은 그대로 유지) */
+        else {
+            lb->write_col++;
+        }
+    }
+    else {
+        /* RTL else: win_out은 유지하고 win_valid만 0 */
         lb->win_valid = 0;
     }
 }
 
-/* WBS 2.3: 한 클록 전체 동작. 위 두 단계를 올바른 순서로 묶어서 호출한다. */
-static inline void line_buffer_step(line_buffer_t *lb, int16_t pixel_in, uint8_t wr_en, uint8_t phase_clear) {
+/* 한 클록 전체 동작: always_comb 계산 후 always_ff 커밋 */
+static inline void line_buffer_step(line_buffer_t *lb,
+                                    int16_t pixel_in,
+                                    uint8_t wr_en,
+                                    uint8_t phase_clear) {
     int16_t win_out_fresh[KSIZE * KSIZE];
     uint8_t win_valid_fresh;
-    line_buffer_compute_fresh(lb, pixel_in, win_out_fresh, &win_valid_fresh); /* always_comb */
-    line_buffer_update_regs(lb, pixel_in, wr_en, phase_clear, win_out_fresh, win_valid_fresh); /* always_ff */
+
+    line_buffer_compute_fresh(lb, pixel_in, win_out_fresh, &win_valid_fresh);
+    line_buffer_update_regs(lb, pixel_in, wr_en, phase_clear,
+                            win_out_fresh, win_valid_fresh);
 }
 
 #endif /* LINE_BUFFER_H */
