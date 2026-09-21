@@ -5,7 +5,7 @@
  *   Line Buffer       --win_valid--> Total Control FSM --mac_start/is_ch35--> Weight Addr Ctrl
  *   Weight Addr Ctrl  --mac_done--> Total Control FSM
  *   Weight Addr Ctrl  --is_ch35/out_ch_sel--> Weight ROM --weight--> MAC Array
- *   Weight Addr Ctrl  --weight_valid--> MAC Array (win_valid[2:0] 포트에 연결)
+ *   Weight Addr Ctrl  --cal_valid--> MAC Array (win_valid[2:0] 포트에 연결)
  *   Line Buffer       --win_out--> MAC Array --ch_result0/1/2, mac_valid--> Output Buffer
  *   Output Buffer     --sum_data/sum_valid/ch_done--> ReLU & Quant --out_data/out_valid--> 다음 단 (MaxPooling)
  *
@@ -13,15 +13,15 @@
  *   conv1 : line_buffer 1개,        28 x 28 x 1ch  (ce_lb_l1.c)
  *   conv2 : line_buffer_array (3개), 13 x 13 x 6ch, 2 pass (ce_lb_l2.c)
  *
- * MAC 은 window 하나를 잡아둔 채 out_ch_sel 0..C_OUT-1 동안 weight_valid 로 돈다.
+ * MAC 은 window 하나를 잡아둔 채 out_ch_sel 0..C_OUT-1 동안 cal_valid 로 돈다.
  * (line buffer 의 win_valid 는 1clk pulse 라 MAC valid 로는 쓸 수 없음)
  */
 #ifndef CE_TOP_H
 #define CE_TOP_H
 
 #include "common.h"
-#include "total_ctrl_fsm.h"
-#include "weight_addr_ctrl.h"
+#include "total_ctrl_fsm_l2.h"
+#include "weight_addr_ctrl_l2.h"
 #include "weight_rom.h"
 #include "mac_array.h"
 #include "output_buffer.h"
@@ -75,8 +75,8 @@ typedef struct
     ce_param_t p;
 
     /* module instances */
-    total_ctrl_fsm_t   fsm;
-    weight_addr_ctrl_t wac;
+    total_ctrl_fsm_l2_t   fsm;
+    weight_addr_ctrl_l2_t wac;
     weight_rom_t       rom;
     ce_lb_port_t       lb;
     mac_array_t        mac;
@@ -84,8 +84,8 @@ typedef struct
     relu_quant_t       rq;
 
     /* module output wires (ce_top_comb 에서 갱신, seq / trace 용) */
-    total_ctrl_fsm_out_t   fsm_o;
-    weight_addr_ctrl_out_t wac_o;
+    total_ctrl_fsm_l2_out_t   fsm_o;
+    weight_addr_ctrl_l2_out_t wac_o;
     weight_rom_out_t       rom_o;
     output_buffer_in_t     ob_i;
     output_buffer_out_t    ob_o;

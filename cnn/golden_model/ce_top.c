@@ -20,8 +20,8 @@ int ce_top_init(ce_top_t *t, const ce_param_t *p, const wgt_t *weight, const int
     memset(t, 0, sizeof(*t));
     t->p = *p;
 
-    total_ctrl_fsm_reset(&t->fsm, (uint8_t)groups);
-    weight_addr_ctrl_reset(&t->wac, p->c_out);
+    total_ctrl_fsm_l2_reset(&t->fsm, (uint8_t)groups);
+    weight_addr_ctrl_l2_reset(&t->wac, p->c_out);
     weight_rom_reset(&t->rom, weight, p->c_out, p->c_in);
     mac_array_reset(&t->mac);
 
@@ -49,8 +49,8 @@ void ce_top_free(ce_top_t *t)
  */
 void ce_top_comb(ce_top_t *t, const ce_in_t *in, ce_out_t *out)
 {
-    total_ctrl_fsm_in_t   fsm_i;
-    weight_addr_ctrl_in_t wac_i;
+    total_ctrl_fsm_l2_in_t   fsm_i;
+    weight_addr_ctrl_l2_in_t wac_i;
     weight_rom_in_t       rom_i;
     relu_quant_in_t       rq_i;
 
@@ -63,12 +63,12 @@ void ce_top_comb(ce_top_t *t, const ce_in_t *in, ce_out_t *out)
     fsm_i.ch_done   = in->ch_done;
     fsm_i.win_valid = t->lb_win_valid;
     fsm_i.mac_done  = t->wac.mac_done;
-    total_ctrl_fsm_comb(&t->fsm, &fsm_i, &t->fsm_o);
+    total_ctrl_fsm_l2_comb(&t->fsm, &fsm_i, &t->fsm_o);
 
     /* Weight Addr Ctrl */
     wac_i.mac_start = t->fsm_o.mac_start;
     wac_i.is_ch35   = t->fsm_o.is_ch35;
-    weight_addr_ctrl_comb(&t->wac, &wac_i, &t->wac_o);
+    weight_addr_ctrl_l2_comb(&t->wac, &wac_i, &t->wac_o);
 
     /* Weight ROM -> MAC weight_in[431:0] */
     rom_i.is_ch35    = t->wac_o.is_ch35;
@@ -105,7 +105,7 @@ void ce_top_seq(ce_top_t *t)
 {
     /* MAC 은 line buffer 가 이번 엣지에 갱신되기 전의 win_out 을 본다 */
     int16_t win[CE_LANES][CE_KK];
-    uint8_t v = t->wac_o.weight_valid;
+    uint8_t v = t->wac_o.cal_valid;
     uint8_t valid[CE_LANES] = {v, v, v};
     int     active = t->p.c_in < CE_LANES ? t->p.c_in : CE_LANES;
 
@@ -113,8 +113,8 @@ void ce_top_seq(ce_top_t *t)
     mac_array_step(&t->mac, win, t->mac_weight, valid, active);
     t->lb.step(t->lb.inst, t->pixel_in, t->fsm_o.pixel_valid, t->fsm_o.phase_clear);
 
-    total_ctrl_fsm_seq(&t->fsm);
-    weight_addr_ctrl_seq(&t->wac);
+    total_ctrl_fsm_l2_seq(&t->fsm);
+    weight_addr_ctrl_l2_seq(&t->wac);
     weight_rom_seq(&t->rom);
     output_buffer_seq(&t->ob);
     relu_quant_seq(&t->rq);
@@ -122,7 +122,7 @@ void ce_top_seq(ce_top_t *t)
 
 int ce_top_idle(const ce_top_t *t)
 {
-    int busy = t->fsm.state != T_IDLE || t->wac.state != W_IDLE || t->mac.mac_valid_reg ||
+    int busy = t->fsm.state != T2_IDLE || t->wac.state != W2_IDLE || t->mac.mac_valid_reg ||
                t->rq.u_output_fifo.count != 0;
 
     for (int ch = 0; ch < CE_LANES; ch++)

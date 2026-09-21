@@ -5,12 +5,12 @@
  *   Line Buffer Array --win_valid--> Total Control FSM --mac_start/is_ch35--> Weight Addr Ctrl
  *   Weight Addr Ctrl  --mac_done--> Total Control FSM
  *   Weight Addr Ctrl  --is_ch35/out_ch_sel--> Weight ROM --weight_in--> MAC Array
- *   Weight Addr Ctrl  --weight_valid--> MAC Array (win_valid[2:0] 포트)
+ *   Weight Addr Ctrl  --cal_valid--> MAC Array (win_valid[2:0] 포트)
  *   Line Buffer Array --win_out--> MAC Array --ch_result0/1/2, mac_valid--> Output Buffer
  *   Output Buffer     --sum_data/sum_valid/ch_done--> ReLU & Quant (PACK 1) --out_data/out_valid--> 다음 단
  *
  * 입력 스트림: pass 0 (ch0~2) raster -> pass 1 (ch3~5) raster, 각 pass 마지막 픽셀에 ch_done.
- * MAC 은 window 하나를 잡아둔 채 out_ch_sel 0..15 동안 weight_valid 로 16번 계산한다.
+ * MAC 은 window 하나를 잡아둔 채 out_ch_sel 0..15 동안 cal_valid 로 16번 계산한다.
  */
 #ifndef CONV_L2_H
 #define CONV_L2_H
@@ -34,8 +34,8 @@
 #endif
 
 #include "common.h"
-#include "total_ctrl_fsm.h"
-#include "weight_addr_ctrl.h"
+#include "total_ctrl_fsm_l2.h"
+#include "weight_addr_ctrl_l2.h"
 #include "weight_rom.h"
 #include "line_buffer_array.h"
 #include "mac_array.h"
@@ -63,8 +63,8 @@ typedef struct
 typedef struct
 {
     /* module instances */
-    total_ctrl_fsm_t    fsm;
-    weight_addr_ctrl_t  wac;
+    total_ctrl_fsm_l2_t    fsm;
+    weight_addr_ctrl_l2_t  wac;
     weight_rom_t        rom;
     line_buffer_array_t lb;
     mac_array_t         mac;
@@ -72,8 +72,8 @@ typedef struct
     relu_quant_t        rq;
 
     /* module output wires (conv_l2_comb 에서 갱신, seq / 모니터용) */
-    total_ctrl_fsm_out_t   fsm_o;
-    weight_addr_ctrl_out_t wac_o;
+    total_ctrl_fsm_l2_out_t   fsm_o;
+    weight_addr_ctrl_l2_out_t wac_o;
     weight_rom_out_t       rom_o;
     int16_t                mac_weight[CE_LANES][CE_KK];   /* weight_in[431:0] */
     output_buffer_in_t     ob_i;                          /* MAC 출력 레지스터 */
