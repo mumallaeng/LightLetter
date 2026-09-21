@@ -1,4 +1,4 @@
-# conv_l2_real_A.csv frame 0: final outputs (FIFO out_data), 16 ch x 11 x 11
+# conv_l2_real_A.csv frame 0: final outputs (FIFO), 16 ch x 11 x 11
 # values      : 1936 / 1936
 # cycles      : 2504 .. 4939
 # out_ch_done : 16 values (last pixel x 16 och)

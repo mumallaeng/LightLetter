@@ -11,7 +11,7 @@
  *         WAIT/STOP 과 win_valid 동안 in_ready = 0 인지, phase_clear 가 pass 입력이 끝난 뒤에만
  *         뜨는지, mac_start / phase_clear 개수
  *   LB    win_valid 때 win_out 이 (pass, oy, ox) 위치의 3x3 x 3ch window 와 같은지, 3 lane valid 일치
- *   W/ROM weight_valid 때 out_ch_sel 이 0..15 순서인지, ROM 그룹이 window 의 pass 와 같은지,
+ *   W/ROM cal_valid 때 out_ch_sel 이 0..15 순서인지, ROM 그룹이 window 의 pass 와 같은지,
  *         weight_in 이 W[och][pass*3+lane] 인지, MAC 도는 동안 window 가 유지되는지
  *   MAC   mac_valid 때 ch_result0/1/2 = window x weight (lane 별 9-tap 합)
  *   OB    sum_valid 때 sum_data = bias + pass0 + pass1 합, ch_done 은 마지막 픽셀에서만
@@ -171,19 +171,19 @@ static int expect(int id, int ok, const char *fmt, ...)
     return 0;
 }
 
-static int legal_transition(total_state_t a, total_state_t b)
+static int legal_transition(total_ctrl_fsm_l2_state_t a, total_ctrl_fsm_l2_state_t b)
 {
     if (a == b)
-        return a != T_WAIT_LB_RST && a != T_STOP;   /* 1 클럭 상태 */
+        return a != T2_WAIT_LB_RST && a != T2_STOP;   /* 1 클럭 상태 */
     switch (a)
     {
-    case T_IDLE:        return b == T_CH02_IMG_IN;
-    case T_CH02_IMG_IN: return b == T_WAIT_MAC_02;
-    case T_WAIT_MAC_02: return b == T_CH02_IMG_IN || b == T_WAIT_LB_RST;   /* 2 pass: STOP 금지 */
-    case T_WAIT_LB_RST: return b == T_CH35_IMG_IN;
-    case T_CH35_IMG_IN: return b == T_WAIT_MAC_35;
-    case T_WAIT_MAC_35: return b == T_CH35_IMG_IN || b == T_STOP;
-    case T_STOP:        return b == T_IDLE;
+    case T2_IDLE:        return b == T2_CH02_IMG_IN;
+    case T2_CH02_IMG_IN: return b == T2_WAIT_MAC_02;
+    case T2_WAIT_MAC_02: return b == T2_CH02_IMG_IN || b == T2_WAIT_LB_RST;   /* 2 pass: STOP 금지 */
+    case T2_WAIT_LB_RST: return b == T2_CH35_IMG_IN;
+    case T2_CH35_IMG_IN: return b == T2_WAIT_MAC_35;
+    case T2_WAIT_MAC_35: return b == T2_CH35_IMG_IN || b == T2_STOP;
+    case T2_STOP:        return b == T2_IDLE;
     }
     return 0;
 }
@@ -224,7 +224,7 @@ static long total_errs(void)
     return e;
 }
 
-static const char *fsm_short(total_state_t s)
+static const char *fsm_short(total_ctrl_fsm_l2_state_t s)
 {
     static const char *n[] = {"IDLE", "CH02_IN", "WAIT_MAC02", "WAIT_LBRST", "CH35_IN", "WAIT_MAC35", "STOP"};
     return n[s];
@@ -241,7 +241,7 @@ static void log_header(FILE *log, FILE *csv, const scenario_t *sc, const hs_cfg_
             "#  FSM   state, ch_count, 제어 pulse: S = mac_start, C = phase_clear, D = mac_done\n"
             "#  IN    in_valid/in_ready, 받은 픽셀 f(frame) p(pass) (y,x) = lane0 lane1 lane2\n"
             "#  LB    line buffer 쓰기 위치 (row,col), win_valid 일 때 나온 window f p (oy,ox)\n"
-            "#  WAC   state, weight_valid 일 때 out_ch_sel, ROM 그룹\n"
+            "#  WAC   state, cal_valid 일 때 out_ch_sel, ROM 그룹\n"
             "#  MAC   파이프 3단 valid (곱셈 reg / FF1 / FF2), mac_valid 일 때 f p pos och: ch_result0 1 2\n"
             "#  OB    state (G0 = pass0 저장, G1 = pass1 누산 출력), 내부 pixel/och 카운터, sum_valid 일 때 pos och = sum\n"
             "#  FIFO  저장 개수, out_valid/out_ready, 나간 값 pos och = code (* = out_ch_done)\n"
@@ -256,7 +256,7 @@ static void log_header(FILE *log, FILE *csv, const scenario_t *sc, const hs_cfg_
         fprintf(csv, "cycle,fsm,ch_count,mac_start,phase_clear,mac_done,is_ch35,in_valid,in_ready,ch_done,"
                      "pixel_valid,px_frame,px_pass,px_y,px_x,pixel_in0,pixel_in1,pixel_in2,"
                      "lb_wr_row,lb_wr_col,win_valid,win_frame,win_pass,win_oy,win_ox,"
-                     "wac,weight_valid,out_ch_sel,rom_grp,"
+                     "wac,cal_valid,out_ch_sel,rom_grp,"
                      "mac_s1,mac_s2,mac_valid,mac_frame,mac_pass,mac_pos,mac_och,ch_result0,ch_result1,ch_result2,"
                      "ob_state,ob_pixel_cnt,ob_och_cnt,sum_valid,sum_frame,sum_pos,sum_och,sum_data,sum_ch_done,"
                      "fifo_count,out_valid,out_ready,out_frame,out_pos,out_och,out_data,out_ch_done,monitor_err\n");
@@ -271,7 +271,7 @@ static void log_row(FILE *log, FILE *csv, const conv_l2_t *m, const conv_l2_in_t
 
     if (log)
     {
-        char px[40] = ".", win[16] = ".", och[4] = ".", mac[64] = ".", sum[32] = ".", fo[24] = ".";
+        char px[64] = ".", win[48] = ".", och[8] = ".", mac[96] = ".", sum[48] = ".", fo[48] = ".";
         const char *obs = m->ob.state == OB_IDLE ? "ID" : m->ob.state == OB_ACCUM_G0 ? "G0" : "G1";
 
         if (r->px)
@@ -279,7 +279,7 @@ static void log_row(FILE *log, FILE *csv, const conv_l2_t *m, const conv_l2_in_t
                      in->pixel_in[0], in->pixel_in[1], in->pixel_in[2]);
         if (r->win)
             snprintf(win, sizeof win, "f%d p%d (%d,%d)", r->wf, r->wp, r->woy, r->wox);
-        if (m->wac_o.weight_valid)
+        if (m->wac_o.cal_valid)
             snprintf(och, sizeof och, "%d", m->wac_o.out_ch_sel);
         if (r->mv)
             snprintf(mac, sizeof mac, "f%d p%d %3d %2d: %lld %lld %lld", r->mf, r->mp, r->mpos, r->moch,
@@ -296,7 +296,7 @@ static void log_row(FILE *log, FILE *csv, const conv_l2_t *m, const conv_l2_in_t
                 m->fsm_o.mac_start ? 'S' : '.', m->fsm_o.phase_clear ? 'C' : '.', m->wac_o.mac_done ? 'D' : '.',
                 in->in_valid, out->in_ready, px,
                 lb0->write_row_num, lb0->write_col, win,
-                wac_state_name(m->wac.state), och, m->rom_o.grp,
+                weight_addr_ctrl_l2_state_name(m->wac.state), och, m->rom_o.grp,
                 s1, s2, m->ob_i.mac_valid, mac,
                 obs, m->ob.pixel_cnt, m->ob.out_ch_cnt, sum,
                 m->rq.u_output_fifo.count, out->out_valid, in->out_ready, fo,
@@ -306,7 +306,7 @@ static void log_row(FILE *log, FILE *csv, const conv_l2_t *m, const conv_l2_in_t
     if (csv)
     {
 #define OPT(c, v) ((c) ? (long long)(v) : 0LL)
-        fprintf(csv, "%ld,%s,%d,%d,%d,%d,%d,%d,%d,%d,", g_cycle, total_state_name(m->fsm.state),
+        fprintf(csv, "%ld,%s,%d,%d,%d,%d,%d,%d,%d,%d,", g_cycle, total_ctrl_fsm_l2_state_name(m->fsm.state),
                 m->fsm.ch_count, m->fsm_o.mac_start, m->fsm_o.phase_clear, m->wac_o.mac_done,
                 m->fsm_o.is_ch35, in->in_valid, out->in_ready, in->ch_done);
         if (r->px)
@@ -319,7 +319,7 @@ static void log_row(FILE *log, FILE *csv, const conv_l2_t *m, const conv_l2_in_t
             fprintf(csv, "1,%d,%d,%d,%d,", r->wf, r->wp, r->woy, r->wox);
         else
             fprintf(csv, "0,,,,,");
-        fprintf(csv, "%s,%d,%d,%d,", wac_state_name(m->wac.state), m->wac_o.weight_valid,
+        fprintf(csv, "%s,%d,%d,%d,", weight_addr_ctrl_l2_state_name(m->wac.state), m->wac_o.cal_valid,
                 m->wac_o.out_ch_sel, m->rom_o.grp);
         fprintf(csv, "%d,%d,%d,", s1, s2, m->ob_i.mac_valid);
         if (r->mv)
@@ -360,7 +360,7 @@ static int run(const scenario_t *sc, const hs_cfg_t *hs, FILE *log, FILE *csv, r
     int lbw = 0, wv = 0, mv = 0, sv = 0, ov = 0;       /* 모니터별 진행 카운터 */
     int n_phase_clear = 0, n_mac_start = 0;
     int16_t held[CE_LANES][CE_KK];                      /* LB 가 마지막으로 낸 window (기대값) */
-    total_state_t prev = T_IDLE;
+    total_ctrl_fsm_l2_state_t prev = T2_IDLE;
 
     log_header(log, csv, sc, hs);
 
@@ -391,40 +391,40 @@ static int run(const scenario_t *sc, const hs_cfg_t *hs, FILE *log, FILE *csv, r
         conv_l2_comb(m, &in, &out);
 
         /* ================= FSM ================= */
-        total_state_t st = m->fsm.state;
+        total_ctrl_fsm_l2_state_t st = m->fsm.state;
         if (g_cycle > 0)
             expect(M_FSM, legal_transition(prev, st), "illegal transition %s -> %s",
-                   total_state_name(prev), total_state_name(st));
+                   total_ctrl_fsm_l2_state_name(prev), total_ctrl_fsm_l2_state_name(st));
         prev = st;
 
         if (m->fsm_o.pixel_valid)
         {
-            int ok = pass == 0 ? (st == T_IDLE || st == T_CH02_IMG_IN) : st == T_CH35_IMG_IN;
+            int ok = pass == 0 ? (st == T2_IDLE || st == T2_CH02_IMG_IN) : st == T2_CH35_IMG_IN;
             expect(M_FSM, ok, "frame %d pass %d pixel %d accepted in %s", f, pass, pix,
-                   total_state_name(st));
+                   total_ctrl_fsm_l2_state_name(st));
             rec.px = 1;
             rec.pf = f;
             rec.pp = pass;
             rec.py = pix / CONV_L2_IN_W;
             rec.pxx = pix % CONV_L2_IN_W;
         }
-        if (st == T_WAIT_MAC_02 || st == T_WAIT_MAC_35 || st == T_WAIT_LB_RST || st == T_STOP ||
+        if (st == T2_WAIT_MAC_02 || st == T2_WAIT_MAC_35 || st == T2_WAIT_LB_RST || st == T2_STOP ||
             m->lb.win_valid[0])
-            expect(M_FSM, !out.in_ready, "in_ready = 1 in %s (win_valid %d)", total_state_name(st),
+            expect(M_FSM, !out.in_ready, "in_ready = 1 in %s (win_valid %d)", total_ctrl_fsm_l2_state_name(st),
                    m->lb.win_valid[0]);
         if (m->fsm_o.phase_clear)
         {
             /* pass 0 이 다 들어온 뒤 (WAIT_LB_RST) 또는 프레임이 다 들어온 뒤 (STOP) 에만 */
             int done_pass0 = sent % (CONV_L2_PASSES * NPIX) == NPIX;
             int done_frame = sent > 0 && sent % (CONV_L2_PASSES * NPIX) == 0;
-            expect(M_FSM, (st == T_WAIT_LB_RST && done_pass0) || (st == T_STOP && done_frame),
-                   "phase_clear in %s after %d pixels", total_state_name(st), sent);
+            expect(M_FSM, (st == T2_WAIT_LB_RST && done_pass0) || (st == T2_STOP && done_frame),
+                   "phase_clear in %s after %d pixels", total_ctrl_fsm_l2_state_name(st), sent);
             n_phase_clear++;
         }
         if (m->fsm_o.mac_start)
         {
-            expect(M_FSM, st == T_WAIT_MAC_02 || st == T_WAIT_MAC_35, "mac_start in %s",
-                   total_state_name(st));
+            expect(M_FSM, st == T2_WAIT_MAC_02 || st == T2_WAIT_MAC_35, "mac_start in %s",
+                   total_ctrl_fsm_l2_state_name(st));
             n_mac_start++;
         }
 
@@ -456,7 +456,7 @@ static int run(const scenario_t *sc, const hs_cfg_t *hs, FILE *log, FILE *csv, r
         }
 
         /* ================= Weight Addr Ctrl / Weight ROM ================= */
-        if (m->wac_o.weight_valid)
+        if (m->wac_o.cal_valid)
         {
             int win = wv / CONV_L2_C_OUT, och = wv % CONV_L2_C_OUT;
             int wp  = (win / CONV_L2_N) % CONV_L2_PASSES, bad = -1;
@@ -553,12 +553,12 @@ static int run(const scenario_t *sc, const hs_cfg_t *hs, FILE *log, FILE *csv, r
 
     /* ---------------- 개수 / 상태 검사 ---------------- */
     expect(M_FSM, g_cycle < MAX_CYCLES, "timeout: sent %d/%d, FSM %s, WAC %s", sent, total_in,
-           total_state_name(m->fsm.state), wac_state_name(m->wac.state));
+           total_ctrl_fsm_l2_state_name(m->fsm.state), weight_addr_ctrl_l2_state_name(m->wac.state));
     expect(M_FSM, n_mac_start == FRAMES * NWIN, "mac_start %d expect %d", n_mac_start, FRAMES * NWIN);
     expect(M_FSM, n_phase_clear == FRAMES * CONV_L2_PASSES, "phase_clear %d expect %d", n_phase_clear,
            FRAMES * CONV_L2_PASSES);
     expect(M_LB, lbw == FRAMES * NWIN, "windows %d expect %d", lbw, FRAMES * NWIN);
-    expect(M_WROM, wv == FRAMES * NWIN * CONV_L2_C_OUT, "weight_valid %d expect %d", wv,
+    expect(M_WROM, wv == FRAMES * NWIN * CONV_L2_C_OUT, "cal_valid %d expect %d", wv,
            FRAMES * NWIN * CONV_L2_C_OUT);
     expect(M_MAC, mv == FRAMES * NWIN * CONV_L2_C_OUT, "mac_valid %d expect %d", mv,
            FRAMES * NWIN * CONV_L2_C_OUT);

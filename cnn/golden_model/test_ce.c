@@ -222,7 +222,7 @@ static diff_t compare(const char *what, const uint16_t *got, const uint16_t *exp
 static void trace_header(FILE *f)
 {
     fprintf(f, "cycle,tfsm,wac,in_valid,in_ready,ch_done,pixel_valid,win_valid,phase_clear,"
-               "is_ch35,ch_count,mac_start,mac_done,out_ch_sel,weight_valid,rom_grp,"
+               "is_ch35,ch_count,mac_start,mac_done,out_ch_sel,cal_valid,rom_grp,"
                "mac_valid,ch_result0,ch_result1,ch_result2,ob_state,sum_valid,sum_data,sum_ch_done,"
                "out_valid,out_ready,out_data0,out_data1,out_data2,out_ch_done\n");
 }
@@ -231,10 +231,10 @@ static void trace_row(FILE *f, long cycle, const ce_top_t *t, const ce_in_t *in,
 {
     fprintf(f, "%ld,%s,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%lld,%lld,%lld,%s,%d,%lld,%d,"
                "%d,%d,%u,%u,%u,%d\n",
-            cycle, total_state_name(t->fsm.state), wac_state_name(t->wac.state),
+            cycle, total_ctrl_fsm_l2_state_name(t->fsm.state), weight_addr_ctrl_l2_state_name(t->wac.state),
             in->in_valid, o->in_ready, in->ch_done, t->fsm_o.pixel_valid, t->lb_win_valid,
             t->fsm_o.phase_clear, t->fsm_o.is_ch35, t->fsm.ch_count, t->fsm_o.mac_start,
-            t->wac_o.mac_done, t->wac_o.out_ch_sel, t->wac_o.weight_valid, t->rom_o.grp,
+            t->wac_o.mac_done, t->wac_o.out_ch_sel, t->wac_o.cal_valid, t->rom_o.grp,
             t->ob_i.mac_valid, (long long)t->ob_i.ch_result0, (long long)t->ob_i.ch_result1,
             (long long)t->ob_i.ch_result2, ob_state_name(t->ob.state), t->ob_o.sum_valid,
             (long long)t->ob_o.sum_data, t->ob_o.ch_done, o->out_valid, in->out_ready,
@@ -388,7 +388,7 @@ static int check_layer(const char *name, const layer_vec_t *lv, const run_cfg_t 
                st.done_err, st.extra, st.ob_ch_ovf, st.ob_acc_ovf);
     if (st.cycles >= MAX_CYCLES)
         printf("    TIMEOUT (sent %d, FSM %s, WAC %s)\n", st.sent,
-               total_state_name(g_top.fsm.state), wac_state_name(g_top.wac.state));
+               total_ctrl_fsm_l2_state_name(g_top.fsm.state), weight_addr_ctrl_l2_state_name(g_top.wac.state));
     return fail;
 }
 

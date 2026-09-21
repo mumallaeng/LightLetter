@@ -1,41 +1,62 @@
-"""Pull one frame's final outputs out of a conv_l2 clock log CSV.
+"""Pull one frame's final outputs out of a conv_l1 / conv_l2 clock log CSV.
 
     python extract_frame_out.py logs/conv_l2_real_A.csv            (frame 0)
-    python extract_frame_out.py logs/conv_l2_real_A.csv --frame 1
+    python extract_frame_out.py logs/conv_l1_real_A.csv --frame 1
 
-Reads the rows where the FIFO output was taken (out_frame == frame) and writes, next to the CSV:
+The layer is taken from the file name (conv_l1_ / conv_l2_). Reads the rows where the FIFO output
+was taken (out_frame == frame) and writes, next to the CSV:
 
     <name>_f<frame>_out.csv  one row per output value:
                              cycle, pos, y, x, och, code, out_ch_done, python, diff
-    <name>_f<frame>_out.txt  the same values as 16 channel maps of 11 x 11, plus a summary
+    <name>_f<frame>_out.txt  the same values as channel maps (conv_l1: 6 x 26 x 26, conv_l2: 16 x 11 x 11)
+                             plus a summary
 
-Python expected codes (vectors/conv_l2.txt) exist only for the real input, frame 0; for any other
-run the python / diff columns stay empty.
+conv_l1 FIFO entries carry 3 values (och 0-2 / 3-5, out_data0..2); conv_l2 entries carry 1 (out_data).
+Python expected codes (vectors/conv_l1.txt, conv_l2.txt) exist only for the real input, frame 0;
+for any other run the python / diff columns stay empty.
 """
 import argparse
 import csv
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-C_OUT, OUT_H, OUT_W = 16, 11, 11
-N = OUT_H * OUT_W
+LAYERS = {
+    "conv_l1": dict(c_out=6, out_h=26, out_w=26, vectors=HERE / "vectors/conv_l1.txt"),
+    "conv_l2": dict(c_out=16, out_h=11, out_w=11, vectors=HERE / "vectors/conv_l2.txt"),
+}
 
 
 def load_python_codes(path):
-    """conv codes [16][11][11] from vectors/conv_l2.txt, as {(och, pos): code}"""
+    """conv codes [c_out][h-2][w-2] from a vector file, as {(och, pos): code}"""
     t = [int(v) for v in path.read_text().split()]
     c_in, h, w, c_out = t[0:4]
+    n = (h - 2) * (w - 2)
     start = 6 + c_in * h * w + c_out * c_in * 9 + c_out
-    codes = t[start:start + c_out * N]
-    return {(oc, p): codes[oc * N + p] for oc in range(c_out) for p in range(N)}
+    codes = t[start:start + c_out * n]
+    return {(oc, p): codes[oc * n + p] for oc in range(c_out) for p in range(n)}
+
+
+def output_values(r):
+    """(och, code) pairs carried by one CSV row's FIFO entry"""
+    if "out_data0" in r:
+        base = int(r["out_och"])
+        return [(base + j, int(r[f"out_data{j}"])) for j in range(3)]
+    return [(int(r["out_och"]), int(r["out_data"]))]
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("csv", type=Path)
     ap.add_argument("--frame", type=int, default=0)
-    ap.add_argument("--vectors", type=Path, default=HERE / "vectors/conv_l2.txt")
+    ap.add_argument("--vectors", type=Path, help="Python expected codes (default: by layer)")
     a = ap.parse_args()
+
+    layer = next((k for k in LAYERS if a.csv.name.startswith(k + "_")), None)
+    if layer is None:
+        raise SystemExit(f"{a.csv.name}: file name must start with conv_l1_ or conv_l2_")
+    L = LAYERS[layer]
+    c_out, out_h, out_w = L["c_out"], L["out_h"], L["out_w"]
+    vectors = a.vectors or L["vectors"]
 
     rows = []
     with open(a.csv, newline="") as f:
@@ -44,21 +65,23 @@ def main():
                 rows.append(r)
 
     py = None
-    if "_real_" in a.csv.name and a.frame == 0 and a.vectors.exists():
-        py = load_python_codes(a.vectors)
+    if "_real_" in a.csv.name and a.frame == 0 and vectors.exists():
+        py = load_python_codes(vectors)
 
-    grid = [[["  ."] * OUT_W for _ in range(OUT_H)] for _ in range(C_OUT)]
-    out_rows, exact, diff_cnt = [], 0, 0
+    grid = [[["  ."] * out_w for _ in range(out_h)] for _ in range(c_out)]
+    out_rows, exact, diff_cnt, done_cnt = [], 0, 0, 0
     for r in rows:
-        pos, och, code = int(r["out_pos"]), int(r["out_och"]), int(r["out_data"])
-        y, x = divmod(pos, OUT_W)
-        grid[och][y][x] = code
-        p = py[(och, pos)] if py else None
-        d = code - p if py else None
-        exact += d == 0
-        diff_cnt += d is not None and d != 0
-        out_rows.append([r["cycle"], pos, y, x, och, code, r["out_ch_done"],
-                         "" if p is None else p, "" if d is None else d])
+        pos = int(r["out_pos"])
+        y, x = divmod(pos, out_w)
+        for och, code in output_values(r):
+            grid[och][y][x] = code
+            p = py[(och, pos)] if py else None
+            d = code - p if py else None
+            exact += d == 0
+            diff_cnt += d is not None and d != 0
+            done_cnt += r["out_ch_done"] == "1"
+            out_rows.append([r["cycle"], pos, y, x, och, code, r["out_ch_done"],
+                             "" if p is None else p, "" if d is None else d])
 
     stem = a.csv.with_suffix("")
     out_csv = Path(f"{stem}_f{a.frame}_out.csv")
@@ -71,10 +94,10 @@ def main():
 
     cycles = [int(r["cycle"]) for r in rows]
     summary = [
-        f"# {a.csv.name} frame {a.frame}: final outputs (FIFO out_data), 16 ch x 11 x 11",
-        f"# values      : {len(rows)} / {C_OUT * N}",
+        f"# {a.csv.name} frame {a.frame}: final outputs (FIFO), {c_out} ch x {out_h} x {out_w}",
+        f"# values      : {len(out_rows)} / {c_out * out_h * out_w}",
         f"# cycles      : {min(cycles)} .. {max(cycles)}" if cycles else "# cycles      : -",
-        f"# out_ch_done : {sum(r['out_ch_done'] == '1' for r in rows)} values (last pixel x 16 och)",
+        f"# out_ch_done : {done_cnt} values (last pixel x {c_out} och)",
     ]
     if py:
         summary.append(f"# vs Python   : {exact} exact, {diff_cnt} different")
@@ -82,10 +105,10 @@ def main():
         summary.append("# vs Python   : no Python reference for this run / frame")
 
     lines = summary + [""]
-    for oc in range(C_OUT):
+    for oc in range(c_out):
         lines.append(f"och {oc:2d}")
-        lines.append("      " + " ".join(f"x{x:<4d}" for x in range(OUT_W)))
-        for y in range(OUT_H):
+        lines.append("      " + " ".join(f"x{x:<4d}" for x in range(out_w)))
+        for y in range(out_h):
             lines.append(f"  y{y:<2d} " + " ".join(f"{v:>5}" for v in grid[oc][y]))
         lines.append("")
     out_txt.write_text("\n".join(lines), encoding="utf-8")

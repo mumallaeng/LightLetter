@@ -14,10 +14,10 @@ TARGET  := $(BUILD)/test_ce
 VECTORS := vectors/ce_lenet5.txt
 
 SRCS    := test_ce.c ce_top.c ce_lb_l1.c ce_lb_l2.c \
-           total_ctrl_fsm.c weight_addr_ctrl.c weight_rom.c \
+           total_ctrl_fsm_l2.c weight_addr_ctrl_l2.c weight_rom.c \
            output_buffer.c partial_sum.c buffer_ctrl.c bias_rom.c \
            relu_quant.c lane_packer.c output_fifo.c
-HDRS    := common.h ce_top.h total_ctrl_fsm.h weight_addr_ctrl.h weight_rom.h \
+HDRS    := common.h ce_top.h total_ctrl_fsm_l2.h weight_addr_ctrl_l2.h weight_rom.h \
            line_buffer.h line_buffer_array.h mac_unit.h mac_array.h \
            ob_common.h output_buffer.h partial_sum.h buffer_ctrl.h bias_rom.h \
            relu_quant.h lane_packer.h output_fifo.h
