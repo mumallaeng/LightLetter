@@ -10,9 +10,10 @@ const char *total_state_name(total_state_t s)
     return name[s];
 }
 
-void total_ctrl_fsm_reset(total_ctrl_fsm_t *m)
+void total_ctrl_fsm_reset(total_ctrl_fsm_t *m, uint8_t num_passes)
 {
     memset(m, 0, sizeof(*m));
+    m->num_passes = num_passes;
 }
 
 /* always @(*) */
@@ -64,7 +65,12 @@ void total_ctrl_fsm_comb(total_ctrl_fsm_t *m, const total_ctrl_fsm_in_t *in,
         m->mac_start_next = 0;
         if (in->mac_done)
         {
-            if (m->ch_count == 1)
+            if (m->ch_count == m->num_passes)
+            {
+                m->phase_clear_next = 1;
+                m->state_next       = T_STOP;
+            }
+            else if (m->ch_count == 1)
             {
                 m->phase_clear_next = 1;
                 m->state_next       = T_WAIT_LB_RST;

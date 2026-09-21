@@ -1,18 +1,16 @@
 #include <string.h>
 #include "weight_rom.h"
 
-void weight_rom_reset(weight_rom_t *m,
-                      const wgt_t weight[L2_OUT_CH][L2_IN_CH][L2_K][L2_K])
+void weight_rom_reset(weight_rom_t *m, const wgt_t *weight, int c_out, int c_in)
 {
     memset(m, 0, sizeof(*m));
 
-    for (int oc = 0; oc < L2_OUT_CH; oc++)
-        for (int grp = 0; grp < L2_NUM_PASSES; grp++)
-            for (int lane = 0; lane < L2_LANES; lane++)
-                for (int ky = 0; ky < L2_K; ky++)
-                    for (int kx = 0; kx < L2_K; kx++)
-                        m->data[oc][grp][lane * 9 + ky * 3 + kx] =
-                            weight[oc][grp * L2_LANES + lane][ky][kx];
+    /* 입력 채널 ic -> 그룹 ic / 3, lane ic % 3 */
+    for (int oc = 0; oc < c_out; oc++)
+        for (int ic = 0; ic < c_in; ic++)
+            for (int k = 0; k < CE_KK; k++)
+                m->data[oc][ic / CE_LANES][(ic % CE_LANES) * CE_KK + k] =
+                    weight[(oc * c_in + ic) * CE_KK + k];
 }
 
 /* always @(*) */
