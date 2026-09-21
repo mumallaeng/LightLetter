@@ -37,6 +37,7 @@ module fft_core_controller (
     reg [2:0] bf_stg_reg, bf_stg_next;
     reg       c_step, n_step;
     reg       out_sel_reg, out_sel_next;
+    reg       out_last_reg, out_last_next;
 
     assign o_sys_state = c_state;
     assign o_bf_count = bf_cnt_reg;
@@ -45,17 +46,19 @@ module fft_core_controller (
 
     always @(posedge clk, posedge rst) begin
         if (rst) begin
-            c_state     <= ST_IDLE;
-            bf_cnt_reg  <= 0;
-            bf_stg_reg  <= 0;
-            c_step      <= 0;
-            out_sel_reg <= 0;
+            c_state      <= ST_IDLE;
+            bf_cnt_reg   <= 0;
+            bf_stg_reg   <= 0;
+            c_step       <= 0;
+            out_sel_reg  <= 0;
+            out_last_reg <= 1'b0;
         end else begin
-            c_state     <= n_state;
-            bf_cnt_reg  <= bf_cnt_next;
-            bf_stg_reg  <= bf_stg_next;
-            c_step      <= n_step;
-            out_sel_reg <= out_sel_next;
+            c_state      <= n_state;
+            bf_cnt_reg   <= bf_cnt_next;
+            bf_stg_reg   <= bf_stg_next;
+            c_step       <= n_step;
+            out_sel_reg  <= out_sel_next;
+            out_last_reg <= out_last_next;
         end
     end
 
@@ -65,6 +68,7 @@ module fft_core_controller (
         bf_stg_next = bf_stg_reg;
         n_step      = c_step;
         out_sel_next = out_sel_reg;
+        out_last_next = out_last_reg;
 
         o_frame_ready      = 1'b0;
         
@@ -173,6 +177,7 @@ module fft_core_controller (
                     0: begin // 초기 memory read
                         o_core_out_en  = 0;
                         out_sel_next   = 0;
+                        out_last_next  = 0;
                         n_step         = 1;
                     end 
                     1: begin // 매 클럭 memory data 연속 출력
@@ -181,11 +186,14 @@ module fft_core_controller (
                             out_sel_next = 1;
                             if (bf_cnt_reg < 63) begin
                                 bf_cnt_next = bf_cnt_next + 1;
+                            end else begin
+					            out_last_next = 1'b1;
                             end
                         end else begin // odd 출력 (1, 3, 5, ...)
                             out_sel_next = 0;
-                            if (bf_cnt_reg == 63) begin
+                            if (out_last_reg) begin
                                 bf_cnt_next = 0;
+                                out_last_next = 1'b0;
                                 n_step = 0;
                                 n_state = ST_DONE;
                             end

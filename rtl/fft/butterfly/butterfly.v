@@ -20,7 +20,7 @@ module butterfly #(
     output reg signed [DATA_WIDTH-1:0] y0_im,
     output reg signed [DATA_WIDTH-1:0] y1_re,
     output reg signed [DATA_WIDTH-1:0] y1_im,
-    output wire o_bf_read_data_valid
+    output wire o_bf_out_valid
 );
 
     /******************** Input registers ********************/
@@ -65,7 +65,7 @@ module butterfly #(
 
     /******************** Output valid ********************/
 
-    assign o_bf_read_data_valid = (state == DONE);
+    assign o_bf_out_valid = (state == DONE);
 
     /******************** FSM and storage ********************/
 
