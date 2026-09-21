@@ -17,6 +17,7 @@
 
 #define IMG_HEIGHT 28
 #define NUM_CH 3
+#define PIPE_DEPTH 4   /* line_buffer(1) + mac_unit(1) + mac_array FF#1/FF#2(2) */
 
 static int16_t image[NUM_CH][IMG_HEIGHT][IMG_WIDTH];
 static int16_t weight[NUM_CH][3][3];
@@ -58,12 +59,12 @@ int main(void) {
     }
 
     fprintf(fp, "=== golden_log.txt : line_buffer_array + mac_array 클록별 기록 ===\n");
-    fprintf(fp, "=== mac_array 파이프라인 2클록 지연 반영됨 (line_buffer 포함 총 3클록) ===\n\n");
+    fprintf(fp, "=== 전체 파이프라인 3클록 지연 반영됨 (line_buffer 포함 총 4클록) ===\n\n");
 
     long clk = 0;
     int out_count = 0, fail_count = 0;
 
-    int pos_row[3] = {0}, pos_col[3] = {0};
+    int pos_row[PIPE_DEPTH] = {0}, pos_col[PIPE_DEPTH] = {0};
     int pos_valid_count = 0;
 
     for (int row = 0; row < IMG_HEIGHT; row++) {
@@ -87,8 +88,8 @@ int main(void) {
                 fprintf(fp, "  ch_result0=%-8lld ch_result1=%-8lld ch_result2=%-8lld",
                         (long long)c0, (long long)c1, (long long)c2);
 
-                if (pos_valid_count >= 2) {
-                    int out_r = pos_row[1] - 2, out_c = pos_col[1] - 2;
+                if (pos_valid_count >= PIPE_DEPTH - 1) {
+                    int out_r = pos_row[PIPE_DEPTH - 2] - 2, out_c = pos_col[PIPE_DEPTH - 2] - 2;
                     if (out_r >= 0 && out_c >= 0) {
                         int64_t w0 = naive_conv_ref_ch(0, out_r, out_c);
                         int64_t w1 = naive_conv_ref_ch(1, out_r, out_c);
@@ -104,15 +105,14 @@ int main(void) {
 
             line_buffer_array_step(&arr, image[0][row][col], image[1][row][col], image[2][row][col], 1, 0);
 
-            pos_row[2] = pos_row[1]; pos_col[2] = pos_col[1];
-            pos_row[1] = pos_row[0]; pos_col[1] = pos_col[0];
+            for (int k = PIPE_DEPTH - 1; k > 0; k--) { pos_row[k] = pos_row[k-1]; pos_col[k] = pos_col[k-1]; }
             pos_row[0] = row; pos_col[0] = col;
-            if (pos_valid_count < 3) pos_valid_count++;
+            if (pos_valid_count < PIPE_DEPTH) pos_valid_count++;
         }
     }
 
-    /* drain: 마지막 2클록 */
-    for (int d = 0; d < 2; d++) {
+    /* drain: 늘어난 파이프라인 깊이만큼 (PIPE_DEPTH-1클록) */
+    for (int d = 0; d < PIPE_DEPTH - 1; d++) {
         clk++;
         mac_array_step(&mac, arr.win_out, weight_in, arr.win_valid, 3);
         uint8_t mv = mac_array_valid(&mac);
@@ -125,8 +125,8 @@ int main(void) {
         if (mv) {
             fprintf(fp, "  ch_result0=%-8lld ch_result1=%-8lld ch_result2=%-8lld",
                     (long long)c0, (long long)c1, (long long)c2);
-            if (pos_valid_count >= 2) {
-                int out_r = pos_row[1] - 2, out_c = pos_col[1] - 2;
+            if (pos_valid_count >= PIPE_DEPTH - 1) {
+                int out_r = pos_row[PIPE_DEPTH - 2] - 2, out_c = pos_col[PIPE_DEPTH - 2] - 2;
                 if (out_r >= 0 && out_c >= 0) {
                     int64_t w0 = naive_conv_ref_ch(0, out_r, out_c);
                     int64_t w1 = naive_conv_ref_ch(1, out_r, out_c);
@@ -140,8 +140,7 @@ int main(void) {
         }
         fprintf(fp, "\n");
         line_buffer_array_step(&arr, 0, 0, 0, 0, 0);
-        pos_row[2] = pos_row[1]; pos_col[2] = pos_col[1];
-        pos_row[1] = pos_row[0]; pos_col[1] = pos_col[0];
+        for (int k = PIPE_DEPTH - 1; k > 0; k--) { pos_row[k] = pos_row[k-1]; pos_col[k] = pos_col[k-1]; }
     }
 
     fprintf(fp, "\n=== 총 %ld클록, 검증 출력 %d개, 실패 %d개 ===\n", clk, out_count, fail_count);
