@@ -6,9 +6,10 @@ const char *wac_state_name(wac_state_t s)
     return s == W_IDLE ? "IDLE" : "WEIGHT_CAL";
 }
 
-void weight_addr_ctrl_reset(weight_addr_ctrl_t *m)
+void weight_addr_ctrl_reset(weight_addr_ctrl_t *m, uint8_t c_out)
 {
     memset(m, 0, sizeof(*m));
+    m->c_out = c_out;
 }
 
 /* always @(*) */
@@ -36,7 +37,7 @@ void weight_addr_ctrl_comb(weight_addr_ctrl_t *m, const weight_addr_ctrl_in_t *i
         break;
 
     case W_WEIGHT_CAL:
-        if (m->out_ch_sel == L2_OUT_CH - 1)
+        if (m->out_ch_sel == m->c_out - 1)
         {
             m->mac_done_next = 1;
             m->out_ch_sel_next = 0;

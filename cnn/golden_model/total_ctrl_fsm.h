@@ -3,6 +3,8 @@
  *
  *   IDLE -> CH02_IMG_IN <-> WAIT_MAC_02 -> WAIT_LB_RST
  *        -> CH35_IMG_IN <-> WAIT_MAC_35 -> STOP -> IDLE
+ *
+ *   num_passes = 1 (conv1, 입력 1ch) 이면 WAIT_MAC_02 -> STOP 으로 바로 끝난다.
  */
 #ifndef TOTAL_CTRL_FSM_H
 #define TOTAL_CTRL_FSM_H
@@ -42,13 +44,15 @@ typedef struct
 /* registers: reg / reg_next */
 typedef struct
 {
+    uint8_t       num_passes;                       /* parameter: 1 (conv1), 2 (conv2) */
+
     total_state_t state,       state_next;
     uint8_t       mac_start,   mac_start_next;
     uint8_t       phase_clear, phase_clear_next;
     uint8_t       ch_count,    ch_count_next;
 } total_ctrl_fsm_t;
 
-void total_ctrl_fsm_reset(total_ctrl_fsm_t *m);
+void total_ctrl_fsm_reset(total_ctrl_fsm_t *m, uint8_t num_passes);
 void total_ctrl_fsm_comb(total_ctrl_fsm_t *m, const total_ctrl_fsm_in_t *in,
                          total_ctrl_fsm_out_t *out);
 void total_ctrl_fsm_seq(total_ctrl_fsm_t *m);

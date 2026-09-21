@@ -33,12 +33,14 @@ typedef struct
 /* registers: reg / reg_next */
 typedef struct
 {
+    uint8_t     c_out;                              /* parameter: 6 (conv1), 16 (conv2) */
+
     wac_state_t state,      state_next;
     uint8_t     out_ch_sel, out_ch_sel_next;
     uint8_t     mac_done,   mac_done_next;
 } weight_addr_ctrl_t;
 
-void weight_addr_ctrl_reset(weight_addr_ctrl_t *m);
+void weight_addr_ctrl_reset(weight_addr_ctrl_t *m, uint8_t c_out);
 void weight_addr_ctrl_comb(weight_addr_ctrl_t *m, const weight_addr_ctrl_in_t *in,
                            weight_addr_ctrl_out_t *out);
 void weight_addr_ctrl_seq(weight_addr_ctrl_t *m);
