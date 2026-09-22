@@ -7,10 +7,11 @@
  *   Weight Addr Ctrl  --out_ch_sel--> Weight ROM (OUT_CH 별 144bit x 3, INT16) --weight_in--> MAC Array
  *   Weight Addr Ctrl  --cal_valid--> MAC Array (win_valid[2:0] 포트)
  *   Line Buffer       --win_out--> MAC Array (lane 0, lane 1/2 = 0) --ch_result0, mac_valid--> Output Buffer
- *   Output Buffer     --sum_data/sum_valid/ch_done--> ReLU & Quant (PACK 3) --out_data0..2/out_valid--> 다음 단
+ *   Output Buffer     --sum_data/sum_valid (레지스터)--> ReLU & Quant (PACK 3) + Reorder Buffer --out_data0..2/out_valid/out_ch_done--> 다음 단
  *
  * 입력 스트림: 28 x 28 raster, 마지막 픽셀에 ch_done.
- * 출력: 픽셀마다 FIFO entry 2개 {och0, och1, och2}, {och3, och4, och5}, 마지막 픽셀에 out_ch_done.
+ * 출력 (팀원 out_reorder): group 0 = {och0,1,2} 26x26 raster -> group 1 = {och3,4,5} 26x26 raster,
+ *       group 마다 마지막 픽셀에 out_ch_done. reorder 는 한 프레임을 담고, 다 읽혀야 다음 프레임을 받는다.
  * MAC 은 window 하나를 잡아둔 채 out_ch_sel 0..5 동안 cal_valid 로 6번 계산한다.
  */
 #ifndef CONV_L1_H

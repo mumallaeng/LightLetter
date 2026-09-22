@@ -7,7 +7,10 @@
  *   Weight Addr Ctrl  --is_ch35/out_ch_sel--> Weight ROM --weight_in--> MAC Array
  *   Weight Addr Ctrl  --cal_valid--> MAC Array (win_valid[2:0] 포트)
  *   Line Buffer Array --win_out--> MAC Array --ch_result0/1/2, mac_valid--> Output Buffer
- *   Output Buffer     --sum_data/sum_valid/ch_done--> ReLU & Quant (PACK 1) --out_data/out_valid--> 다음 단
+ *   Output Buffer     --sum_data/sum_valid (레지스터)--> ReLU & Quant (PACK 1) + Reorder Buffer --out_data/out_valid/out_ch_done--> 다음 단
+ *
+ * 출력 (팀원 out_reorder): och 0 의 11x11 raster -> och 1 -> ... -> och 15 (PyTorch flatten 순서),
+ *       채널마다 마지막 픽셀에 out_ch_done. reorder 는 한 프레임을 담고, 다 읽혀야 다음 프레임을 받는다.
  *
  * 입력 스트림: pass 0 (ch0~2) raster -> pass 1 (ch3~5) raster, 각 pass 마지막 픽셀에 ch_done.
  * MAC 은 window 하나를 잡아둔 채 out_ch_sel 0..15 동안 cal_valid 로 16번 계산한다.

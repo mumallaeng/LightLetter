@@ -4,7 +4,7 @@
     python extract_frame_out.py logs/conv_l1_real_A.csv --frame 1
     python extract_frame_out.py logs/pool_l1_real_A.csv
 
-The layer is taken from the file name (conv_l1_ / conv_l2_ / pool_l1_). Reads the rows where an output
+The layer is taken from the file name (conv_l1_ / conv_l2_ / pool_l1_ / cnn_chain_ = final conv_l2 output). Reads the rows where an output
 was taken (out_frame == frame) and writes, next to the CSV:
 
     <name>_f<frame>_out.csv  one row per output value:
@@ -27,6 +27,7 @@ LAYERS = {
     "conv_l1": dict(c_out=6, out_h=26, out_w=26, vectors=HERE / "vectors/conv_l1.txt"),
     "conv_l2": dict(c_out=16, out_h=11, out_w=11, vectors=HERE / "vectors/conv_l2.txt"),
     "pool_l1": dict(c_out=6, out_h=13, out_w=13, vectors=HERE / "vectors/conv_l1.txt", pool=True),
+    "cnn_chain": dict(c_out=16, out_h=11, out_w=11, vectors=HERE / "vectors/conv_l2.txt"),   # 최종 conv_l2 출력
 }
 
 
@@ -70,7 +71,7 @@ def main():
 
     layer = next((k for k in LAYERS if a.csv.name.startswith(k + "_")), None)
     if layer is None:
-        raise SystemExit(f"{a.csv.name}: file name must start with conv_l1_, conv_l2_ or pool_l1_")
+        raise SystemExit(f"{a.csv.name}: file name must start with conv_l1_, conv_l2_, pool_l1_ or cnn_chain_")
     L = LAYERS[layer]
     c_out, out_h, out_w = L["c_out"], L["out_h"], L["out_w"]
     vectors = a.vectors or L["vectors"]

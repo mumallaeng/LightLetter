@@ -14,8 +14,10 @@
  *   W/ROM cal_valid 때 out_ch_sel 이 0..15 순서인지, ROM 그룹이 window 의 pass 와 같은지,
  *         weight_in 이 W[och][pass*3+lane] 인지, MAC 도는 동안 window 가 유지되는지
  *   MAC   mac_valid 때 ch_result0/1/2 = window x weight (lane 별 9-tap 합)
- *   OB    sum_valid 때 sum_data = bias + pass0 + pass1 합, ch_done 은 마지막 픽셀에서만
- *   OUT   FIFO 출력 = ReLU -> round-half-even >> SCALE_EXP -> clip 32767 (정수 레퍼런스, bit-exact)
+ *   OB    sum_valid 때 sum_data = bias + pass0 + pass1 합 (Output Buffer 출력은 레지스터, 1 클럭 뒤)
+ *   OUT   Reorder Buffer 출력: och 0 의 11x11 raster -> och 1 -> ... -> och 15 (채널 우선),
+ *         값 = ReLU -> round-half-even >> SCALE_EXP -> clip 32767 (정수 레퍼런스, bit-exact),
+ *         out_ch_done 은 채널마다 마지막 픽셀
  *         real 입력 첫 프레임은 Python 결과와도 비교 (float32 라 +-1 허용)
  *
  * 입력 시나리오 (run 마다 2 프레임 연속, 프레임마다 다른 입력):
@@ -26,6 +28,8 @@
  *   rounding  shift 2 로 .5 경계가 자주 나옴 (round-half-even 검증)
  *   extreme   누산 최대 / 최소 (Output Buffer 비트폭), 32767 clip, ReLU
  * handshake 조건: A 연속, B 입력 bubble, C 출력 backpressure, D 둘 다
+ * 프레임 게이팅: 팀원 out_reorder 는 한 프레임만 담고 conv FSM 으로 가는 backpressure 가 없으므로,
+ *   다음 프레임 입력은 앞 프레임이 다 출력된 뒤 (conv_l2_idle) 시작한다.
  */
 #include <stdarg.h>
 #include <stdio.h>
@@ -244,13 +248,13 @@ static void log_header(FILE *log, FILE *csv, const scenario_t *sc, const hs_cfg_
             "#  WAC   state, cal_valid 일 때 out_ch_sel, ROM 그룹\n"
             "#  MAC   파이프 3단 valid (곱셈 reg / FF1 / FF2), mac_valid 일 때 f p pos och: ch_result0 1 2\n"
             "#  OB    state (G0 = pass0 저장, G1 = pass1 누산 출력), 내부 pixel/och 카운터, sum_valid 일 때 pos och = sum\n"
-            "#  FIFO  저장 개수, out_valid/out_ready, 나간 값 pos och = code (* = out_ch_done)\n"
+            "#  RB    Reorder Buffer 에 이번 프레임 쓴 entry 수, out_valid/out_ready, 나간 값 pos och = code (* = out_ch_done)\n"
             "#  !!    이 클럭에 모니터 오류 (콘솔에 내용 출력)\n"
             "#\n",
             sc->name, sc->desc, hs->name, hs->in_pct, hs->ready_pct, FRAMES);
         fprintf(log, "%6s | %-10s cc SCD | %-3s %-27s | %-7s %-12s | %-10s och g | %-3s %-44s | %-2s %-7s %-22s | %4s %-3s %-16s\n",
                 "cycle", "FSM", "IN", "pixel", "LB wr", "window", "WAC", "MAC", "out (f p pos och: ch_result0 1 2)",
-                "OB", "pix,och", "sum", "FIFO", "v/r", "out");
+                "OB", "pix,och", "sum", "RB", "v/r", "out");
     }
     if (csv)
         fprintf(csv, "cycle,fsm,ch_count,mac_start,phase_clear,mac_done,is_ch35,in_valid,in_ready,ch_done,"
@@ -258,8 +262,8 @@ static void log_header(FILE *log, FILE *csv, const scenario_t *sc, const hs_cfg_
                      "lb_wr_row,lb_wr_col,win_valid,win_frame,win_pass,win_oy,win_ox,"
                      "wac,cal_valid,out_ch_sel,rom_grp,"
                      "mac_s1,mac_s2,mac_valid,mac_frame,mac_pass,mac_pos,mac_och,ch_result0,ch_result1,ch_result2,"
-                     "ob_state,ob_pixel_cnt,ob_och_cnt,sum_valid,sum_frame,sum_pos,sum_och,sum_data,sum_ch_done,"
-                     "fifo_count,out_valid,out_ready,out_frame,out_pos,out_och,out_data,out_ch_done,monitor_err\n");
+                     "ob_state,ob_pixel_cnt,ob_och_cnt,sum_valid,sum_frame,sum_pos,sum_och,sum_data,"
+                     "reorder_wr_cnt,out_valid,out_ready,out_frame,out_pos,out_och,out_data,out_ch_done,monitor_err\n");
 }
 
 static void log_row(FILE *log, FILE *csv, const conv_l2_t *m, const conv_l2_in_t *in,
@@ -299,7 +303,7 @@ static void log_row(FILE *log, FILE *csv, const conv_l2_t *m, const conv_l2_in_t
                 weight_addr_ctrl_l2_state_name(m->wac.state), och, m->rom_o.grp,
                 s1, s2, m->ob_i.mac_valid, mac,
                 obs, m->ob.pixel_cnt, m->ob.out_ch_cnt, sum,
-                m->rq.u_output_fifo.count, out->out_valid, in->out_ready, fo,
+                m->rq.u_out_reorder.wr_cnt, out->out_valid, in->out_ready, fo,
                 r->err ? "  !!" : "");
     }
 
@@ -334,8 +338,8 @@ static void log_row(FILE *log, FILE *csv, const conv_l2_t *m, const conv_l2_in_t
             fprintf(csv, "%d,%d,%d,", r->sf, r->spos, r->soch);
         else
             fprintf(csv, ",,,");
-        fprintf(csv, "%lld,%d,%d,%d,%d,", OPT(r->sv, m->ob_o.sum_data), m->ob_o.ch_done,
-                m->rq.u_output_fifo.count, out->out_valid, in->out_ready);
+        fprintf(csv, "%lld,%d,%d,%d,", OPT(r->sv, m->ob_o.sum_data),
+                m->rq.u_out_reorder.wr_cnt, out->out_valid, in->out_ready);
         if (taken)
             fprintf(csv, "%d,%d,%d,%u,%d,", r->of, r->opos, r->ooch, out->out_data, out->out_ch_done);
         else
@@ -374,7 +378,9 @@ static int run(const scenario_t *sc, const hs_cfg_t *hs, FILE *log, FILE *csv, r
         memset(&rec, 0, sizeof rec);
 
         /* ---------------- 이전 단: valid 는 받아갈 때까지 유지 ---------------- */
-        if (!cur_valid && sent < total_in)
+        /* 새 프레임 첫 픽셀은 앞 프레임이 다 출력된 뒤 (reorder 가 비어야 다음 프레임을 받음) */
+        int frame_gate = sent > 0 && sent % (CONV_L2_PASSES * NPIX) == 0 && !cur_valid && !conv_l2_idle(m);
+        if (!cur_valid && sent < total_in && !frame_gate)
             cur_valid = (int)(rnd_next(&seed) % 100) < hs->in_pct;
 
         int i    = sent < total_in ? sent : total_in - 1;
@@ -504,8 +510,6 @@ static int run(const scenario_t *sc, const hs_cfg_t *hs, FILE *log, FILE *csv, r
             expect(M_OB, of < FRAMES && m->ob_o.sum_data == g_sum[of][pos][och],
                    "frame %d pos %d och %d: sum %lld expect %lld", of, pos, och,
                    (long long)m->ob_o.sum_data, of < FRAMES ? (long long)g_sum[of][pos][och] : 0LL);
-            expect(M_OB, m->ob_o.ch_done == (pos == CONV_L2_N - 1), "ch_done %d at pos %d",
-                   m->ob_o.ch_done, pos);
             rec.sv   = 1;
             rec.sf   = of;
             rec.spos = pos;
@@ -516,7 +520,8 @@ static int run(const scenario_t *sc, const hs_cfg_t *hs, FILE *log, FILE *csv, r
         /* ================= FIFO 출력 ================= */
         if (out.out_valid && in.out_ready)
         {
-            int of = ov / NVAL, pos = (ov / CONV_L2_C_OUT) % CONV_L2_N, och = ov % CONV_L2_C_OUT;
+            /* 출력 순서: frame -> och -> pixel (채널 우선) */
+            int of = ov / NVAL, och = (ov / CONV_L2_N) % CONV_L2_C_OUT, pos = ov % CONV_L2_N;
             expect(M_OUT, of < FRAMES && out.out_data == g_code[of][pos][och],
                    "frame %d pos %d och %d: code %u expect %u", of, pos, och, out.out_data,
                    of < FRAMES ? g_code[of][pos][och] : 0);
@@ -566,11 +571,11 @@ static int run(const scenario_t *sc, const hs_cfg_t *hs, FILE *log, FILE *csv, r
     expect(M_OB, m->ob.dbg_ch_ovf_cnt == 0 && m->ob.dbg_acc_ovf_cnt == 0,
            "width overflow ch %u acc %u", m->ob.dbg_ch_ovf_cnt, m->ob.dbg_acc_ovf_cnt);
     expect(M_OUT, ov == FRAMES * NVAL, "outputs %d expect %d", ov, FRAMES * NVAL);
-    expect(M_OUT, m->rq.u_output_fifo.dbg_overflow_cnt == 0, "FIFO overflow %u",
-           m->rq.u_output_fifo.dbg_overflow_cnt);
+    expect(M_OUT, m->rq.u_out_reorder.dbg_overrun_cnt == 0, "reorder overrun %u (next frame pushed before read-out)",
+           m->rq.u_out_reorder.dbg_overrun_cnt);
 
     res->cycles    = g_cycle;
-    res->fifo_peak = m->rq.u_output_fifo.dbg_max_count;
+    res->fifo_peak = m->rq.u_out_reorder.dbg_max_fill;
 
     int errs = 0;
     for (int id = 0; id < N_MON; id++)
@@ -825,7 +830,7 @@ int main(int argc, char **argv)
                 sum_checks[id] += g_mon[id].checks;
                 sum_errs[id]   += g_mon[id].errs;
             }
-            printf(" | %ld cyc, FIFO peak %u", r.cycles, r.fifo_peak);
+            printf(" | %ld cyc, reorder fill peak %u", r.cycles, r.fifo_peak);
             if (g_sc[s].py_frames)
                 printf(" | Python exact %d, +-1 %d, worse %d", r.py_exact, r.py_off1, r.py_worse);
             printf("\n");

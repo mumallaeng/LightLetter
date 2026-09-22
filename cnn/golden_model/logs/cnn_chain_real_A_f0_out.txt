@@ -1,8 +1,8 @@
-# conv_l2_real_A.csv frame 0: final outputs, 16 ch x 11 x 11
+# cnn_chain_real_A.csv frame 0: final outputs, 16 ch x 11 x 11
 # values      : 1936 / 1936
-# cycles      : 2505 .. 6740
+# cycles      : 7012 .. 11347
 # out_ch_done : 16 values (last pixel of each pass/frame)
-# vs Python   : 1936 exact, 0 different
+# vs Python   : 1935 exact, 1 different
 
 och  0
       x0    x1    x2    x3    x4    x5    x6    x7    x8    x9    x10  
@@ -148,7 +148,7 @@ och 10
       x0    x1    x2    x3    x4    x5    x6    x7    x8    x9    x10  
   y0      0     0     0     0     0     0     0   239     0     0     0
   y1      0     0     0     0     0     0     0     0     0     0     0
-  y2      0     0     0   267     0     0     0     0     0     0     0
+  y2      0     0     0   268     0     0     0     0     0     0     0
   y3      0     0    58   276     0     0     0     0     0     0     0
   y4      0     0   348     0    56     0     0     0     0     0     0
   y5      0   389   153     0  1590   198     0     0   454     0     0
