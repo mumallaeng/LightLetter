@@ -1,5 +1,0 @@
-# Exclude Jupyter notebooks from GitHub's repo-level "Languages" stats bar,
-# without marking them as generated/vendored -- that would also disable
-# GitHub's rich notebook renderer (cells/markdown/outputs) when browsing the
-# file, which we still want.
-*.ipynb linguist-detectable=false
