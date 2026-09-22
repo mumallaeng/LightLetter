@@ -1,7 +1,7 @@
-# conv_l1_real_A.csv frame 0: final outputs (FIFO), 6 ch x 26 x 26
+# conv_l1_real_A.csv frame 0: final outputs, 6 ch x 26 x 26
 # values      : 4056 / 4056
 # cycles      : 67 .. 6870
-# out_ch_done : 6 values (last pixel x 6 och)
+# out_ch_done : 6 values (last pixel of each pass/frame)
 # vs Python   : 4055 exact, 1 different
 
 och  0
