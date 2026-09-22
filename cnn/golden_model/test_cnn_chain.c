@@ -255,7 +255,7 @@ static int run(const hs_cfg_t *hs, FILE *log, FILE *csv, run_res_t *res)
     memset(g_t, -1, sizeof g_t);
     chain_l1_init(g_w1, g_b1, g_s1);
     chain_l2_init(g_w2, g_b2, g_s2);
-    pool_l1_reset(&g_pool);
+    pool_l1_init(&g_pool, POOL_L1_IN_H, POOL_L1_IN_W, POOL_L1_LANES);
 
     if (log)
         fprintf(log,

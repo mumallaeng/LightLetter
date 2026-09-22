@@ -8,7 +8,11 @@
  *   출력 순서: pass 0 13x13 raster -> pass 1 13x13 raster, pass 마지막 (12,12) 에 pool_ch_done
  *
  *   pool_l1_ctrl     : row_cnt / col_cnt, handshake, prev_we / mem_we / pool_mem_addr
- *   pool_l1_datapath : lane 3개, prev_reg + pool_mem (반쪽 행 버퍼) + max 2단
+ *   pool_l1_datapath : lane LANES 개, prev_reg + pool_mem (반쪽 행 버퍼) + max 2단
+ *
+ *   parameter (IN_H, IN_W, LANES) 로 pool_l2 에도 그대로 쓴다: pool_l1_init(m, POOL_L2_IN_H, POOL_L2_IN_W, POOL_L2_LANES)
+ *   pool_l2 : conv_l2 -> 다음 단 (11 x 11 x 16 -> 5 x 5 x 16, floor), och0 raster -> ... -> och15 raster,
+ *             채널마다 마지막 행 / 열 (row 10, col 10) 은 출력 없이 흘려보내고 (9,9) 출력에 pool_ch_done
  */
 #ifndef POOL_L1_H
 #define POOL_L1_H
@@ -18,6 +22,8 @@
 
 #define POOL_L1_OUT_H   (POOL_L1_IN_H / 2)
 #define POOL_L1_OUT_W   (POOL_L1_IN_W / 2)
+#define POOL_L2_OUT_H   (POOL_L2_IN_H / 2)
+#define POOL_L2_OUT_W   (POOL_L2_IN_W / 2)
 
 /* top input ports */
 typedef struct
@@ -48,7 +54,8 @@ typedef struct
     pool_l1_datapath_out_t dp_o;
 } pool_l1_t;
 
-void pool_l1_reset(pool_l1_t *m);
+void pool_l1_init(pool_l1_t *m, uint8_t in_h, uint8_t in_w, uint8_t lanes);   /* parameter 설정 + reset */
+void pool_l1_reset(pool_l1_t *m);                                               /* parameter 유지 */
 void pool_l1_comb(pool_l1_t *m, const pool_l1_in_t *in, pool_l1_out_t *out);   /* always @(*) */
 void pool_l1_seq(pool_l1_t *m);                                               /* posedge clk */
 

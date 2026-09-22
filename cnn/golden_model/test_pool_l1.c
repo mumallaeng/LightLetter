@@ -5,6 +5,9 @@
  *   make -f pool_l1.mk log                     logs/pool_l1_real_A.log / .csv (1 클럭 = 1 줄)
  *   make -f pool_l1.mk log SC=maxpos HS=E      원하는 run 의 로그 (SC, HS 에 all 가능)
  *   (or: build/test_pool_l1 [vectors/conv_l1.txt] [-l] [-s scenario|all] [-h A|B|C|D|E|all])
+ *   make -f pool_l1.mk test_l2                 같은 DUT 를 pool_l2 parameter (11x11, LANES 1, 16 채널) 로 검사
+ *                                              (-DPOOL_TB_L2, vectors/conv_l2.txt, logs/pool_l2_*)
+ *   pool_l2 는 IN 이 홀수라 마지막 행 / 열이 버려진다: maxpos / extreme 은 그 픽셀을 32767 로 채워 섞이면 바로 틀리게 함
  *
  * 입력 스트림 (팀원 FIFO 변경 후 conv_l1 출력): pass 0 (och0~2) 26x26 raster -> pass 1 (och3~5) 26x26 raster,
  * entry = out_data0..2, pass 마지막 픽셀에 ch_done, valid 는 받아갈 때까지 유지, run 마다 2 프레임.
@@ -34,15 +37,36 @@
 #define MKDIR(p) mkdir(p, 0755)
 #endif
 
-#define FRAMES      2
+/* 같은 DUT 를 parameter 만 바꿔 검사: 기본 pool_l1, -DPOOL_TB_L2 면 pool_l2 */
+#ifdef POOL_TB_L2
+#define TB_NAME     "pool_l2"
+#define TB_VECTORS  "vectors/conv_l2.txt"
+#define LANES       POOL_L2_LANES                           /* 1 */
+#define PASSES      16                                      /* och0 .. och15 */
+#define IN_H        POOL_L2_IN_H
+#define IN_W        POOL_L2_IN_W
+#define OUT_H       POOL_L2_OUT_H
+#define OUT_W       POOL_L2_OUT_W
+#define PAT_CH      1800                                    /* pattern: 채널 간격 (값 <= 32767) */
+#define PAT_INV     32767
+#else
+#define TB_NAME     "pool_l1"
+#define TB_VECTORS  "vectors/conv_l1.txt"
+#define LANES       POOL_L1_LANES                           /* 3 */
 #define PASSES      2
-#define C_ALL       (POOL_L1_LANES * PASSES)                /* 6 */
 #define IN_H        POOL_L1_IN_H
 #define IN_W        POOL_L1_IN_W
 #define OUT_H       POOL_L1_OUT_H
 #define OUT_W       POOL_L1_OUT_W
-#define NPIX        (IN_H * IN_W)                           /* 676 / pass */
-#define NOUT        (OUT_H * OUT_W)                         /* 169 / pass */
+#define PAT_CH      4000
+#define PAT_INV     30000
+#endif
+
+#define FRAMES      2
+#define C_ALL       (LANES * PASSES)                        /* 6 / 16 */
+#define NPIX        (IN_H * IN_W)                           /* 676 / 121 per pass */
+#define NOUT        (OUT_H * OUT_W)                         /* 169 / 25 per pass */
+#define SENTINEL    32767                                   /* floor 로 버려지는 픽셀 값 (출력에 섞이면 바로 보이게) */
 #define MAX_CYCLES  400000L
 
 /* ================================================================
@@ -162,7 +186,7 @@ static void log_header(FILE *log, FILE *csv, const scenario_t *sc, const hs_cfg_
     if (log)
     {
         fprintf(log,
-            "# pool_l1 clock log | scenario %s (%s) | handshake %s: out_valid %d%% / pool_ready %d%%%s | %d frames\n"
+            "# " TB_NAME " clock log | scenario %s (%s) | handshake %s: out_valid %d%% / pool_ready %d%%%s | %d frames\n"
             "#\n"
             "# 한 줄 = 한 클럭, posedge 직전 값. '.' = 비활성\n"
             "#  IN    out_valid/out_ready, FIFO 맨 앞 픽셀 f(frame) p(pass) (y,x) = out_data0,1,2, C = ch_done\n"
@@ -262,7 +286,7 @@ static int run(const scenario_t *sc, const hs_cfg_t *hs, FILE *log, FILE *csv, r
     memset(g_mon, 0, sizeof g_mon);
     memset(res, 0, sizeof *res);
     make_reference(sc);
-    pool_l1_reset(m);
+    pool_l1_init(m, IN_H, IN_W, LANES);
 
     uint32_t seed = hs->seed;
     int sent = 0, cur_valid = 0, ov = 0, busy = 0, n_ch_done = 0;
@@ -293,7 +317,7 @@ static int run(const scenario_t *sc, const hs_cfg_t *hs, FILE *log, FILE *csv, r
         in.out_valid = (uint8_t)cur_valid;
         in.ch_done   = (uint8_t)(cur_valid && pix == NPIX - 1 - sc->chdone_early);
         for (int l = 0; l < POOL_L1_LANES; l++)
-            in.out_data[l] = sc->in[f][p * POOL_L1_LANES + l][y][x];
+            in.out_data[l] = l < LANES ? sc->in[f][p * LANES + l][y][x] : SENTINEL;   /* 안 쓰는 lane 입력은 무시돼야 함 */
 
         /* ---------------- 다음 단 (conv_l2) ready ---------------- */
         if (hs->busy)
@@ -326,17 +350,19 @@ static int run(const scenario_t *sc, const hs_cfg_t *hs, FILE *log, FILE *csv, r
             expect(M_CTRL, !out.pool_valid, "pool_valid without input");
 
         /* ================= DP ================= */
+        expect(M_DP, c->pool_mem_addr < m->dp.mem_depth, "pool_mem_addr %d >= depth %d", c->pool_mem_addr,
+               m->dp.mem_depth);
         if (c->pixel_valid)
         {
-            const uint16_t (*img)[IN_H][IN_W] = sc->in[f] + p * POOL_L1_LANES;
+            const uint16_t (*img)[IN_H][IN_W] = sc->in[f] + p * LANES;
             if (x & 1)
-                for (int l = 0; l < POOL_L1_LANES; l++)
+                for (int l = 0; l < LANES; l++)
                     expect(M_DP, m->dp.prev_reg[l] == img[l][y][x - 1], "lane %d prev_reg %u expect %u (y %d x %d)",
                            l, m->dp.prev_reg[l], img[l][y][x - 1], y, x);
             if (c->mem_we)
             {
                 expect(M_DP, !(y & 1) && (x & 1), "mem_we at (%d,%d)", y, x);
-                for (int l = 0; l < POOL_L1_LANES; l++)
+                for (int l = 0; l < LANES; l++)
                     expect(M_DP, d->pair[l] == max2(img[l][y][x - 1], img[l][y][x]),
                            "lane %d pool_mem[%d] <- %u expect %u", l, c->pool_mem_addr, d->pair[l],
                            max2(img[l][y][x - 1], img[l][y][x]));
@@ -344,31 +370,33 @@ static int run(const scenario_t *sc, const hs_cfg_t *hs, FILE *log, FILE *csv, r
         }
         if (out.pool_valid && sent < total_in)
         {
-            const uint16_t (*img)[IN_H][IN_W] = sc->in[f] + p * POOL_L1_LANES;
-            for (int l = 0; l < POOL_L1_LANES; l++)
+            const uint16_t (*img)[IN_H][IN_W] = sc->in[f] + p * LANES;
+            for (int l = 0; l < LANES; l++)
                 expect(M_DP, d->mem_rd[l] == max2(img[l][y - 1][x - 1], img[l][y - 1][x]),
                        "lane %d mem_rd %u expect %u (y %d x %d)", l, d->mem_rd[l],
                        max2(img[l][y - 1][x - 1], img[l][y - 1][x]), y, x);
         }
 
         /* ================= OUT ================= */
+        for (int l = LANES; l < POOL_L1_LANES; l++)
+            expect(M_OUT, out.pool_data[l] == 0, "unused lane %d pool_data %u", l, out.pool_data[l]);
         if (hold)
         {
             expect(M_OUT, out.pool_valid, "pool_valid dropped before pool_ready");
-            for (int l = 0; l < POOL_L1_LANES; l++)
+            for (int l = 0; l < LANES; l++)
                 expect(M_OUT, out.pool_data[l] == hold_data[l], "lane %d data changed while waiting", l);
         }
         hold = out.pool_valid && !in.pool_ready;
-        for (int l = 0; l < POOL_L1_LANES; l++)
+        for (int l = 0; l < LANES; l++)
             hold_data[l] = out.pool_data[l];
 
         if (out.pool_valid && in.pool_ready)
         {
             int of = ov / (PASSES * NOUT), op = (ov / NOUT) % PASSES, q = ov % NOUT;
             int py = q / OUT_W, px = q % OUT_W;
-            for (int l = 0; l < POOL_L1_LANES; l++)
+            for (int l = 0; l < LANES; l++)
             {
-                int ch = op * POOL_L1_LANES + l;
+                int ch = op * LANES + l;
                 expect(M_OUT, of < FRAMES && out.pool_data[l] == g_ref[of][ch][py][px],
                        "frame %d pass %d (%d,%d) lane %d: %u expect %u", of, op, py, px, l, out.pool_data[l],
                        of < FRAMES ? g_ref[of][ch][py][px] : 0);
@@ -429,11 +457,12 @@ static int load_real(const char *path, scenario_t *sc)
 
     for (int i = 0; ok && i < 6; i++)
         ok = fscanf(f, "%d", &hdr[i]) == 1;
-    ok = ok && hdr[0] == 1 && hdr[1] == IN_H + 2 && hdr[2] == IN_W + 2 && hdr[3] == C_ALL;
-    int skip = ok ? hdr[1] * hdr[2] + hdr[3] * 9 + hdr[3] : 0;     /* input, weight, bias */
+    /* header: c_in h w c_out pack scale_exp (h, w = conv 입력 = pool 입력 + 2) */
+    ok = ok && hdr[1] == IN_H + 2 && hdr[2] == IN_W + 2 && hdr[3] == C_ALL;
+    int skip = ok ? hdr[0] * hdr[1] * hdr[2] + hdr[3] * hdr[0] * 9 + hdr[3] : 0;   /* input, weight, bias */
     for (int i = 0; ok && i < skip; i++)
         ok = fscanf(f, "%d", &v) == 1;
-    for (int c = 0; ok && c < C_ALL; c++)                           /* conv1 + ReLU codes [6][26][26] */
+    for (int c = 0; ok && c < C_ALL; c++)                           /* convN + ReLU codes [C][IN_H][IN_W] */
         for (int p = 0; ok && p < NPIX; p++)
         {
             ok = fscanf(f, "%d", &v) == 1;
@@ -441,7 +470,7 @@ static int load_real(const char *path, scenario_t *sc)
             /* frame 1: 좌우 반전 (Python 기대값 없음) */
             sc->in[1][c][p / IN_W][IN_W - 1 - p % IN_W] = (uint16_t)v;
         }
-    for (int c = 0; ok && c < C_ALL; c++)                           /* conv1 + MaxPool [6][13][13] */
+    for (int c = 0; ok && c < C_ALL; c++)                           /* convN + MaxPool [C][OUT_H][OUT_W] */
         for (int p = 0; ok && p < NOUT; p++)
         {
             ok = fscanf(f, "%d", &v) == 1;
@@ -451,11 +480,11 @@ static int load_real(const char *path, scenario_t *sc)
         fclose(f);
     if (!ok)
     {
-        printf("%s: missing or malformed (run: make -f conv_l1.mk vectors)\n", path);
+        printf("%s: missing or malformed (run: python export_conv_vectors.py)\n", path);
         return 1;
     }
     sc->name      = "real";
-    sc->desc      = "Python conv1 + ReLU output (frame 2 = mirrored)";
+    sc->desc      = "Python conv + ReLU output (frame 2 = mirrored)";
     sc->py_frames = 1;
     return 0;
 }
@@ -463,15 +492,26 @@ static int load_real(const char *path, scenario_t *sc)
 static void make_pattern(scenario_t *sc)
 {
     sc->name = "pattern";
-    sc->desc = "unique value per pixel (ch*4000 + y*64 + x*2 + 1)";
+    sc->desc = "unique value per pixel (ch*PAT_CH + y*64 + x*2 + 1)";
     for (int c = 0; c < C_ALL; c++)
         for (int y = 0; y < IN_H; y++)
             for (int x = 0; x < IN_W; x++)
             {
-                int v = c * 4000 + y * 64 + x * 2 + 1;
+                int v = c * PAT_CH + y * 64 + x * 2 + 1;
                 sc->in[0][c][y][x] = (uint16_t)v;
-                sc->in[1][c][y][x] = (uint16_t)(30000 - v);
+                sc->in[1][c][y][x] = (uint16_t)(PAT_INV - v);
             }
+}
+
+/* IN 이 홀수일 때 2x2 윈도우에 안 들어가는 마지막 행 / 열 (floor 로 버려짐) 을 SENTINEL 로 채운다 */
+static void fill_discard(scenario_t *sc)
+{
+    for (int f = 0; f < FRAMES; f++)
+        for (int c = 0; c < C_ALL; c++)
+            for (int y = 0; y < IN_H; y++)
+                for (int x = 0; x < IN_W; x++)
+                    if (y >= 2 * OUT_H || x >= 2 * OUT_W)
+                        sc->in[f][c][y][x] = SENTINEL;
 }
 
 static void make_maxpos(scenario_t *sc)
@@ -490,6 +530,7 @@ static void make_maxpos(scenario_t *sc)
                         sc->in[f][c][2 * py + j / 2][2 * px + j % 2] =
                             (uint16_t)(j == k ? 1000 + rnd_next(&s) % 1000 : rnd_next(&s) % 1000);
                 }
+    fill_discard(sc);
 }
 
 static void make_random(scenario_t *sc)
@@ -531,6 +572,7 @@ static void make_extreme(scenario_t *sc)
                     sc->in[0][c][y][x] = ((py + px + c) & 1) ? 32767 : 0;
                     sc->in[1][c][y][x] = (j == ((py + px) & 3)) ? 32767 : 0;
                 }
+    fill_discard(sc);
 }
 
 /* ================================================================
@@ -540,17 +582,17 @@ static scenario_t g_sc[7];
 
 static void usage(void)
 {
-    printf("usage: test_pool_l1 [vectors/conv_l1.txt] [-l] [-s scenario|all] [-h A|B|C|D|E|all]\n"
+    printf("usage: test_" TB_NAME " [" TB_VECTORS "] [-l] [-s scenario|all] [-h A|B|C|D|E|all]\n"
            "  (no option)  run every scenario x handshake condition\n"
            "  -s, -h       run only the selected scenario / handshake condition\n"
-           "  -l           write logs/pool_l1_<scenario>_<cond>.log (readable) and .csv per run;\n"
+           "  -l           write logs/" TB_NAME "_<scenario>_<cond>.log (readable) and .csv per run;\n"
            "               with -l alone, only real / A is run\n"
            "  scenarios: real pattern maxpos random ties extreme ch_done_off\n");
 }
 
 int main(int argc, char **argv)
 {
-    const char *path = "vectors/conv_l1.txt", *sel_sc = NULL, *sel_hs = NULL;
+    const char *path = TB_VECTORS, *sel_sc = NULL, *sel_hs = NULL;
     int want_log = 0, fail_runs = 0, runs = 0;
     long sum_checks[N_MON] = {0}, sum_errs[N_MON] = {0};
 
@@ -595,8 +637,8 @@ int main(int argc, char **argv)
     g_sc[6].chdone_early = 1;
     const int n_sc = (int)(sizeof g_sc / sizeof g_sc[0]);
 
-    printf("pool_l1: %dx%dx%d -> %dx%dx%d (2 pass x 3 lanes), %d frames per run\n", IN_H, IN_W, C_ALL,
-           OUT_H, OUT_W, C_ALL, FRAMES);
+    printf(TB_NAME ": %dx%dx%d -> %dx%dx%d (%d pass x %d lanes), %d frames per run\n", IN_H, IN_W, C_ALL,
+           OUT_H, OUT_W, C_ALL, PASSES, LANES, FRAMES);
     printf("handshake: A continuous, B out_valid 60%%, C pool_ready 35%%, D 35%% / 45%%, E conv_l2-like busy 19\n\n");
 
     for (int s = 0; s < n_sc; s++)
@@ -613,9 +655,9 @@ int main(int argc, char **argv)
             char  name[96];
             if (want_log)
             {
-                snprintf(name, sizeof name, "logs/pool_l1_%s_%s.log", g_sc[s].name, g_hs[h].name);
+                snprintf(name, sizeof name, "logs/" TB_NAME "_%s_%s.log", g_sc[s].name, g_hs[h].name);
                 log = fopen(name, "w");
-                snprintf(name, sizeof name, "logs/pool_l1_%s_%s.csv", g_sc[s].name, g_hs[h].name);
+                snprintf(name, sizeof name, "logs/" TB_NAME "_%s_%s.csv", g_sc[s].name, g_hs[h].name);
                 csv = fopen(name, "w");
                 if (!log || !csv)
                 {
@@ -643,7 +685,7 @@ int main(int argc, char **argv)
                 printf(" | Python exact %d, diff %d", r.py_exact, r.py_diff);
             printf("\n");
             if (want_log)
-                printf("         -> logs/pool_l1_%s_%s.log / .csv (%ld lines)\n", g_sc[s].name, g_hs[h].name,
+                printf("         -> logs/" TB_NAME "_%s_%s.log / .csv (%ld lines)\n", g_sc[s].name, g_hs[h].name,
                        r.cycles + 1);
             fail_runs += fail;
             runs++;
