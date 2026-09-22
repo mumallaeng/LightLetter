@@ -134,7 +134,7 @@ module tx_frame_generator #(
                 // 이 상태에서는 Frame ID와 DATA가 반영된 crc_out이 준비되어 있다.
                 // SFD, Frame ID, DATA, CRC를 묶어 완성된 32비트 프레임을 만든다.
                 ST_LOAD: begin
-                    frame_shift = {SFD, frame_id_reg, data_reg, crc_out};
+                    frame_shift <= {SFD, frame_id_reg, data_reg, crc_out};
 
                     // 31부터 0까지 현재 비트를 포함하여 총 32번 전송한다.
                     // 6비트로 선언했지만 값은 0~31만 사용하므로 최상위 비트는 항상 0이다.
