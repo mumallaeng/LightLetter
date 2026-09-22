@@ -11,3 +11,8 @@ create_clock -period 10.000 -name clk [get_ports clk]
 # Out-of-context: tell the tools which global buffer will drive clk in the real design,
 # so clock delay / skew can be estimated ([Timing 38-242], [Route 35-197]).
 set_property HD.CLK_SRC BUFGCTRL_X0Y0 [get_ports clk]
+
+# Module-only check: a Zynq part expects a processing_system7 (PS7) instance, which a
+# stand-alone CNN block does not have ([DRC ZPS7-1]). Do not reuse this file in the
+# integrated design - there a missing PS7 is a real error.
+set_property IS_ENABLED false [get_drc_checks ZPS7-1]
