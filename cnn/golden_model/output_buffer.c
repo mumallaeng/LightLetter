@@ -23,6 +23,8 @@ void output_buffer_reset(output_buffer_t *m)
     m->pixel_cnt  = 0;        m->pixel_cnt_next  = 0;
     m->group_cnt  = 0;        m->group_cnt_next  = 0;
     m->buf_addr   = 0;        m->buf_addr_next   = 0;
+    m->sum_data   = 0;        m->sum_data_next   = 0;
+    m->sum_valid  = 0;        m->sum_valid_next  = 0;
 
     m->w_dbg_ch_ovf    = 0;   m->w_dbg_acc_ovf   = 0;
     m->dbg_ch_ovf_cnt  = 0;   m->dbg_acc_ovf_cnt = 0;
@@ -109,9 +111,11 @@ void output_buffer_comb(output_buffer_t *m, const output_buffer_in_t *in,
 
     // ========== Output Logic ==========
     out->ch3_5_en  = (m->group_cnt != 0);
-    out->ch_done   = ps_out.sum_valid && pixel_last;
-    out->sum_data  = ps_out.sum_data;
-    out->sum_valid = ps_out.sum_valid;
+    out->sum_data  = m->sum_data;
+    out->sum_valid = m->sum_valid;
+
+    m->sum_data_next  = ps_out.sum_data;
+    m->sum_valid_next = ps_out.sum_valid;
 
     m->w_dbg_ch_ovf  = mac_fire && ps_out.dbg_ch_ovf;
     m->w_dbg_acc_ovf = mac_fire && ps_out.dbg_acc_ovf;
@@ -125,6 +129,8 @@ void output_buffer_seq(output_buffer_t *m)
     m->pixel_cnt  = m->pixel_cnt_next;
     m->group_cnt  = m->group_cnt_next;
     m->buf_addr   = m->buf_addr_next;
+    m->sum_data   = m->sum_data_next;
+    m->sum_valid  = m->sum_valid_next;
 
     if (m->p.num_groups > 1)
         buffer_ctrl_seq(&m->u_buffer_ctrl);

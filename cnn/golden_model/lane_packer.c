@@ -30,7 +30,6 @@ void lane_packer_comb(lane_packer_t *m, const lane_packer_in_t *in, lane_packer_
     for (int i = 0; i < m->pack - 1; i++)
         data |= (uint64_t)m->hold[i] << (16 * i);
     data |= (uint64_t)in->q_in   << (16 * (m->pack - 1));
-    data |= (uint64_t)in->q_done << (16 * m->pack);
 
     out->pack_data  = data;
     out->pack_valid = in->q_valid && last;

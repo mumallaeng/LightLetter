@@ -13,13 +13,13 @@ BUILD   := build
 TARGET  := $(BUILD)/test_output_buffer
 
 SRCS    := test_output_buffer.c output_buffer.c partial_sum.c buffer_ctrl.c bias_rom.c \
-           relu_quant.c lane_packer.c output_fifo.c
-MODEL   := output_buffer.c partial_sum.c buffer_ctrl.c bias_rom.c relu_quant.c lane_packer.c output_fifo.c
+           relu_quant.c lane_packer.c out_reorder.c
+MODEL   := output_buffer.c partial_sum.c buffer_ctrl.c bias_rom.c relu_quant.c lane_packer.c out_reorder.c
 RTL_VEC := ../../tb/cnn/vectors
 RTL_MEM := ../../rtl/cnn/mem
 
 HDRS    := ob_common.h output_buffer.h partial_sum.h buffer_ctrl.h bias_rom.h \
-           relu_quant.h lane_packer.h output_fifo.h
+           relu_quant.h lane_packer.h out_reorder.h
 
 .PHONY: all test vectors rtl-vectors clean
 

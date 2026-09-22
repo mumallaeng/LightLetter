@@ -18,9 +18,8 @@ module output_buffer #(
     input  wire signed [CH_W-1:0]  ch_result2,   // 0 in conv1
     input  wire                    mac_valid,
     output wire                    ch3_5_en,     // processing the second group
-    output wire                    ch_done,      // travels with sum_data: 1 on values of the last pixel
-    output wire signed [ACC_W-1:0] sum_data,
-    output wire                    sum_valid
+    output reg  signed [ACC_W-1:0] sum_data,     // registered: one clock after the mac_valid that completes it
+    output reg                     sum_valid
 );
 
     localparam CH_AW = (C_OUT > 1) ? $clog2(C_OUT) : 1;
@@ -91,6 +90,8 @@ module output_buffer #(
     wire signed [ACC_W-1:0] buf_rdata;
     wire signed [ACC_W-1:0] ps_sum;
     wire                    ps_we;
+    wire signed [ACC_W-1:0] ps_sum_data;
+    wire                    ps_sum_valid;
 
     bias_rom #(
         .C_OUT    (C_OUT),
@@ -133,12 +134,22 @@ module output_buffer #(
         .bias_rdata (bias_rdata),
         .sum        (ps_sum),
         .we         (ps_we),
-        .sum_data   (sum_data),
-        .sum_valid  (sum_valid)
+        .sum_data   (ps_sum_data),
+        .sum_valid  (ps_sum_valid)
     );
 
     // ========== Output Logic ==========
     assign ch3_5_en = (group_cnt != {GRP_AW{1'b0}});
-    assign ch_done  = sum_valid & pixel_last;
+
+    // output register: cuts the accumulate path from the ReLU / quantizer path
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            sum_data  <= {ACC_W{1'b0}};
+            sum_valid <= 1'b0;
+        end else begin
+            sum_data  <= ps_sum_data;
+            sum_valid <= ps_sum_valid;
+        end
+    end
 
 endmodule

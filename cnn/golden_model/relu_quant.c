@@ -31,13 +31,14 @@ void relu_quant_init(relu_quant_t *m, const rq_param_t *p)
 {
     m->p = *p;
     lane_packer_init(&m->u_lane_packer, p->pack);
+    out_reorder_init(&m->u_out_reorder, p->n, (uint8_t)(p->c_out / p->pack));
     relu_quant_reset(m);
 }
 
 void relu_quant_reset(relu_quant_t *m)
 {
     lane_packer_reset(&m->u_lane_packer);
-    output_fifo_reset(&m->u_output_fifo);
+    out_reorder_reset(&m->u_out_reorder);
 
     m->w_dbg_sat   = 0;
     m->dbg_sat_cnt = 0;
@@ -56,23 +57,22 @@ void relu_quant_comb(relu_quant_t *m, const relu_quant_in_t *in, relu_quant_out_
     lane_packer_out_t lp_out;
     lp_in.q_in    = quant_y;
     lp_in.q_valid = in->sum_valid;
-    lp_in.q_done  = in->ch_done;
     lane_packer_comb(&m->u_lane_packer, &lp_in, &lp_out);
 
-    // ========== Output FIFO ==========
-    output_fifo_in_t  ff_in;
-    output_fifo_out_t ff_out;
-    ff_in.push  = lp_out.pack_valid;
-    ff_in.din   = lp_out.pack_data;
-    ff_in.rd_en = in->out_ready;
-    output_fifo_comb(&m->u_output_fifo, &ff_in, &ff_out);
+    // ========== Reorder Buffer ==========
+    out_reorder_in_t  rb_in;
+    out_reorder_out_t rb_out;
+    rb_in.push  = lp_out.pack_valid;
+    rb_in.din   = lp_out.pack_data;
+    rb_in.rd_en = in->out_ready;
+    out_reorder_comb(&m->u_out_reorder, &rb_in, &rb_out);
 
     // ========== Output Logic ==========
-    out->out_data0   = (uint16_t)(ff_out.dout & 0xFFFF);
-    out->out_data1   = (m->p.pack > 1) ? (uint16_t)((ff_out.dout >> 16) & 0xFFFF) : 0;
-    out->out_data2   = (m->p.pack > 2) ? (uint16_t)((ff_out.dout >> 32) & 0xFFFF) : 0;
-    out->out_ch_done = (uint8_t)((ff_out.dout >> (16 * m->p.pack)) & 1);
-    out->out_valid   = !ff_out.empty;
+    out->out_data0   = (uint16_t)(rb_out.dout & 0xFFFF);
+    out->out_data1   = (m->p.pack > 1) ? (uint16_t)((rb_out.dout >> 16) & 0xFFFF) : 0;
+    out->out_data2   = (m->p.pack > 2) ? (uint16_t)((rb_out.dout >> 32) & 0xFFFF) : 0;
+    out->out_ch_done = rb_out.avail && rb_out.last_pixel;
+    out->out_valid   = rb_out.avail;
 
     m->w_dbg_sat = in->sum_valid && sat;
 }
@@ -81,7 +81,7 @@ void relu_quant_comb(relu_quant_t *m, const relu_quant_in_t *in, relu_quant_out_
 void relu_quant_seq(relu_quant_t *m)
 {
     lane_packer_seq(&m->u_lane_packer);
-    output_fifo_seq(&m->u_output_fifo);
+    out_reorder_seq(&m->u_out_reorder);
 
     m->dbg_sat_cnt += m->w_dbg_sat;
 }

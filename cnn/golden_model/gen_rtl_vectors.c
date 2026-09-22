@@ -6,8 +6,8 @@
  * and, for the RTL testbench (tb/cnn/tb_output_buffer.v):
  *
  *   <out>/convN_stim.mem   {ch_result2, ch_result1, ch_result0}, 36 bits each, arrival order
- *   <out>/convN_sum.mem    golden Output Buffer stream: {ch_done, sum_data[39:0]}
- *   <out>/convN_out.mem    golden FIFO entries: {out_ch_done, out_data2, out_data1, out_data0}
+ *   <out>/convN_sum.mem    golden Output Buffer stream: sum_data[39:0]
+ *   <out>/convN_out.mem    golden output entries (group-major): {out_ch_done, out_data2, out_data1, out_data0}
  *   <out>/convN_params.txt  parameters and entry counts
  *
  * Frame 1 is the real image from the Python golden model. Frame 2 is synthetic and hits what real
@@ -119,7 +119,7 @@ static int convert(const char *in_path, const char *out_dir, const char *mem_dir
     }
 
     ob_param_t op = {(uint8_t)layer, (uint16_t)n, (uint8_t)co, (uint8_t)groups};
-    rq_param_t rp = {(uint8_t)pack, (uint8_t)shift};
+    rq_param_t rp = {(uint16_t)n, (uint8_t)co, (uint8_t)pack, (uint8_t)shift};
     output_buffer_init(&ob, &op, bias, (uint8_t)co);
     relu_quant_init(&rq, &rp);
 
@@ -128,10 +128,13 @@ static int convert(const char *in_path, const char *out_dir, const char *mem_dir
     relu_quant_in_t     rin = {0};
     relu_quant_out_t    rout;
     int fed = 0, nsum = 0, nout = 0, idle = 0;
+    int per_frame_stim = groups * n * co, per_frame_out = n * co / pack;
 
     while (idle < 8)                                    /* run until the pipeline drains */
     {
-        int fire = (ob.state != OB_IDLE) && fed < nstim;
+        /* a new frame starts only after the previous one has been fully read out */
+        int frame_gap = (fed % per_frame_stim == 0) && (nout < (fed / per_frame_stim) * per_frame_out);
+        int fire = (ob.state != OB_IDLE) && fed < nstim && !frame_gap;
         oin.mac_valid  = (uint8_t)fire;
         oin.ch_result0 = fire ? stim[fed][0] : 0;
         oin.ch_result1 = fire ? stim[fed][1] : 0;
@@ -140,14 +143,12 @@ static int convert(const char *in_path, const char *out_dir, const char *mem_dir
 
         rin.sum_data  = oout.sum_data;
         rin.sum_valid = oout.sum_valid;
-        rin.ch_done   = oout.ch_done;
         rin.out_ready = 1;
         relu_quant_comb(&rq, &rin, &rout);
 
         if (oout.sum_valid)
         {
-            uint64_t v = ((uint64_t)oout.sum_data & (((uint64_t)1 << OB_ACC_W) - 1)) | ((uint64_t)oout.ch_done << OB_ACC_W);
-            put_hex(fg, 0, v, OB_ACC_W + 1);
+            put_hex(fg, 0, (uint64_t)oout.sum_data & (((uint64_t)1 << OB_ACC_W) - 1), OB_ACC_W);
             nsum++;
         }
         if (rout.out_valid)

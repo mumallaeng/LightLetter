@@ -30,8 +30,7 @@ typedef struct
 typedef struct
 {
     uint8_t  ch3_5_en; /* processing the second group */
-    uint8_t  ch_done;  /* travels with sum_data: 1 on values of the last pixel */
-    ob_acc_t sum_data;
+    ob_acc_t sum_data; /* registered: one clock after the mac_valid that completes it */
     uint8_t  sum_valid;
 } output_buffer_out_t;
 
@@ -45,6 +44,10 @@ typedef struct
     uint16_t   pixel_cnt,  pixel_cnt_next;
     uint8_t    group_cnt,  group_cnt_next;
     uint16_t   buf_addr,   buf_addr_next;   /* = pixel_cnt * C_OUT + out_ch_cnt */
+
+    /* output registers: cut the accumulate path from the ReLU / quantizer path */
+    ob_acc_t   sum_data,   sum_data_next;
+    uint8_t    sum_valid,  sum_valid_next;
 
     /* submodule instances */
     bias_rom_t    u_bias_rom;

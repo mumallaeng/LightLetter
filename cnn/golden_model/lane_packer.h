@@ -11,13 +11,12 @@ typedef struct
 {
     uint16_t q_in;
     uint8_t  q_valid;
-    uint8_t  q_done; /* last-pixel flag */
 } lane_packer_in_t;
 
 /* output ports */
 typedef struct
 {
-    uint64_t pack_data; /* {done, v[PACK-1], ..., v[0]}, first value in [15:0] */
+    uint64_t pack_data; /* {v[PACK-1], ..., v[0]}, first value in [15:0] */
     uint8_t  pack_valid;
 } lane_packer_out_t;
 

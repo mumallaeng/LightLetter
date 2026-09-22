@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
-// Lane Packer: gathers PACK quantized values into one FIFO entry.
-//   pack_data = {done, v[PACK-1], ..., v[0]}, first value in [15:0]
+// Lane Packer: gathers PACK quantized values into one reorder-buffer entry.
+//   pack_data = {v[PACK-1], ..., v[0]}, first value in [15:0]
 
 module lane_packer #(
     parameter PACK = 3  // 1..3
@@ -9,8 +9,7 @@ module lane_packer #(
     input  wire             rst_n,
     input  wire [15:0]      q_in,
     input  wire             q_valid,
-    input  wire             q_done,       // last-pixel flag
-    output wire [16*PACK:0] pack_data,
+    output wire [16*PACK-1:0] pack_data,
     output wire             pack_valid
 );
 
@@ -18,8 +17,7 @@ module lane_packer #(
 
     generate
         if (PACK == 1) begin : GEN_PASS
-            assign pack_data[15:0]    = q_in;
-            assign pack_data[16*PACK] = q_done;
+            assign pack_data  = q_in;
             assign pack_valid         = q_valid;
         end else begin : GEN_PACK
             // registers: reg / reg_next
@@ -29,7 +27,7 @@ module lane_packer #(
             wire last = (cnt == $unsigned(PACK - 1));
 
             // held values in the low lanes, the incoming value in the top lane
-            assign pack_data  = {q_done, q_in, hold};
+            assign pack_data  = {q_in, hold};
             assign pack_valid = q_valid & last;
 
             always @(*) begin

@@ -1,20 +1,22 @@
 /*
- * ReLU & Quantization (top) : Output Buffer -> ReLU -> Quantizer -> Lane Packer -> Output FIFO -> MaxPooling
+ * ReLU & Quantization (top) : Output Buffer -> ReLU -> Quantizer -> Lane Packer -> Reorder Buffer -> MaxPooling
  */
 #ifndef RELU_QUANT_H
 #define RELU_QUANT_H
 
 #include "ob_common.h"
 #include "lane_packer.h"
-#include "output_fifo.h"
+#include "out_reorder.h"
 
 #define RQ_OUT_MAX 32767
 
 /* parameter */
 typedef struct
 {
-    uint8_t pack;      /* values per output entry: conv1 = 3, conv2 = 1 */
-    uint8_t scale_exp; /* quantizer right shift (0..31) */
+    uint16_t n;         /* pixels per frame */
+    uint8_t  c_out;     /* output channels */
+    uint8_t  pack;      /* values per output entry: conv1 = 3, conv2 = 1 */
+    uint8_t  scale_exp; /* quantizer right shift (0..31) */
 } rq_param_t;
 
 /* input ports */
@@ -22,7 +24,6 @@ typedef struct
 {
     ob_acc_t sum_data;
     uint8_t  sum_valid;
-    uint8_t  ch_done;
     uint8_t  out_ready; /* <- MaxPooling */
 } relu_quant_in_t;
 
@@ -30,9 +31,9 @@ typedef struct
 typedef struct
 {
     uint16_t out_data0;
-    uint16_t out_data1; /* 0 if PACK < 2 */
-    uint16_t out_data2; /* 0 if PACK < 3 */
-    uint8_t  out_ch_done;
+    uint16_t out_data1;   /* 0 if PACK < 2 */
+    uint16_t out_data2;   /* 0 if PACK < 3 */
+    uint8_t  out_ch_done; /* entry belongs to the last pixel of its channel group */
     uint8_t  out_valid;
 } relu_quant_out_t;
 
@@ -42,7 +43,7 @@ typedef struct
 
     /* submodule instances */
     lane_packer_t u_lane_packer;
-    output_fifo_t u_output_fifo;
+    out_reorder_t u_out_reorder;
 
     /* debug: values clipped at RQ_OUT_MAX */
     uint8_t  w_dbg_sat;

@@ -129,7 +129,7 @@ static void test_output_buffer(const ob_param_t *p, unsigned seed)
     output_buffer_out_t out;
     output_buffer_init(&ob, p, bias, (uint8_t)co);
 
-    int fed = 0, got = 0, done = 0, exp_en = 0;
+    int fed = 0, got = 0, exp_en = 0;
     for (int cyc = 0; (fed < frames * per_frame || got < nref) && cyc < 40 * MAX_STIM; cyc++)
     {
         int fire = (ob.state != OB_IDLE) && fed < frames * per_frame && (rand() % 4 != 0);
@@ -142,9 +142,6 @@ static void test_output_buffer(const ob_param_t *p, unsigned seed)
         output_buffer_comb(&ob, &in, &out); /* comb must be repeatable */
 
         CHECK(out.ch3_5_en == exp_en, "cycle %d: ch3_5_en %d want %d", cyc, out.ch3_5_en, exp_en);
-        int want_done = out.sum_valid && ((got % per_pass) / co == n - 1);
-        CHECK(out.ch_done == want_done, "cycle %d: ch_done %d want %d", cyc, out.ch_done, want_done);
-        done += out.ch_done;
 
         if (out.sum_valid)
         {
@@ -162,7 +159,6 @@ static void test_output_buffer(const ob_param_t *p, unsigned seed)
     }
 
     CHECK(got == nref, "outputs %d want %d", got, nref);
-    CHECK(done == frames * co, "ch_done count %d want %d", done, frames * co);
     CHECK(!ob.out_ch_cnt && !ob.pixel_cnt && !ob.group_cnt && !ob.buf_addr, "counters not back at 0");
     CHECK(!ob.dbg_ch_ovf_cnt && !ob.dbg_acc_ovf_cnt, "unexpected width overflow");
 
@@ -198,35 +194,42 @@ static void test_width_counters(void)
 /* ------------------------------------------------------ relu & quantization */
 static int64_t rq_x[MAX_OUT];
 
-static void test_relu_quant(int pack, int shift, int nvals, int ready_pct, unsigned seed)
+/* read order of the reorder buffer: group g (PACK channels) outer, pixel inner */
+static int rq_src_index(int entry, int n, int c_out, int pack, int lane)
+{
+    int g = entry / n, pix = entry % n;
+    return pix * c_out + g * pack + lane;
+}
+
+static void test_relu_quant(int n, int c_out, int pack, int shift, int ready_pct, unsigned seed)
 {
     int before = g_fail;
-    char name[96];
-    rq_param_t p = {(uint8_t)pack, (uint8_t)shift};
+    char name[128];
+    rq_param_t p = {(uint16_t)n, (uint8_t)c_out, (uint8_t)pack, (uint8_t)shift};
+    int nvals = n * c_out, entries = nvals / pack;
 
     srand(seed);
     for (int i = 0; i < nvals; i++)
         rq_x[i] = rand_signed(shift + 16);
     relu_quant_init(&rq, &p);
 
-    relu_quant_in_t in = {0};
+    relu_quant_in_t  in = {0};
     relu_quant_out_t out, prev = {0};
-    int fed = 0, got = 0, stalled = 0, entries = nvals / pack;
+    int fed = 0, got = 0, stalled = 0;
 
     for (int cyc = 0; got < entries && cyc < 400000; cyc++)
     {
         int v = fed < nvals && (rand() % 3 != 0);
         in.sum_valid = (uint8_t)v;
-        in.sum_data = v ? rq_x[fed] : 0x123456;
-        in.ch_done = (uint8_t)(v && fed / pack == entries - 1);
+        in.sum_data  = v ? rq_x[fed] : 0x123456;
         in.out_ready = (uint8_t)((rand() % 100) < ready_pct);
 
         relu_quant_comb(&rq, &in, &out);
         relu_quant_comb(&rq, &in, &out);
 
-        if (stalled) /* valid must hold with stable data until taken */
+        if (stalled)                                    /* valid must hold with stable data until taken */
             CHECK(out.out_valid && out.out_data0 == prev.out_data0 && out.out_data1 == prev.out_data1 &&
-                      out.out_data2 == prev.out_data2 && out.out_ch_done == prev.out_ch_done,
+                  out.out_data2 == prev.out_data2 && out.out_ch_done == prev.out_ch_done,
                   "cycle %d: output changed while out_ready = 0", cyc);
 
         if (out.out_valid && in.out_ready)
@@ -234,10 +237,10 @@ static void test_relu_quant(int pack, int shift, int nvals, int ready_pct, unsig
             uint16_t lane[3] = {out.out_data0, out.out_data1, out.out_data2};
             for (int k = 0; k < 3; k++)
             {
-                uint16_t want = k < pack ? ref_quant(rq_x[got * pack + k], shift) : 0;
+                uint16_t want = k < pack ? ref_quant(rq_x[rq_src_index(got, n, c_out, pack, k)], shift) : 0;
                 CHECK(lane[k] == want, "entry %d lane %d: got %u want %u", got, k, lane[k], want);
             }
-            CHECK(out.out_ch_done == (got == entries - 1), "entry %d: out_ch_done %d", got, out.out_ch_done);
+            CHECK(out.out_ch_done == (got % n == n - 1), "entry %d: out_ch_done %d", got, out.out_ch_done);
             got++;
         }
         stalled = out.out_valid && !in.out_ready;
@@ -247,46 +250,48 @@ static void test_relu_quant(int pack, int shift, int nvals, int ready_pct, unsig
     }
 
     CHECK(got == entries, "entries %d want %d", got, entries);
-    CHECK(rq.u_output_fifo.dbg_overflow_cnt == 0, "FIFO overflow");
+    CHECK(rq.u_out_reorder.dbg_overrun_cnt == 0, "reorder buffer overrun");
 
-    snprintf(name, sizeof name, "relu_quant PACK=%d shift=%d out_ready=%d%%: %d entries, peak fill %u",
-             pack, shift, ready_pct, entries, rq.u_output_fifo.dbg_max_count);
+    snprintf(name, sizeof name, "relu_quant N=%d C_OUT=%d PACK=%d shift=%d out_ready=%d%%: %d entries group-major",
+             n, c_out, pack, shift, ready_pct, entries);
     end_test(name, before);
 }
 
-static void test_fifo_full(void)
+static void test_reorder_overrun(void)
 {
     int before = g_fail;
-    rq_param_t p = {1, 0};
-    relu_quant_in_t in = {0};
+    rq_param_t p = {4, 2, 1, 0};                        /* 8 entries: 4 pixels x 2 channels */
+    relu_quant_in_t  in = {0};
     relu_quant_out_t out;
 
     relu_quant_init(&rq, &p);
-    for (int i = 0; i < OF_DEPTH + 10; i++) /* never ready: fills up, then drops */
+    for (int i = 0; i < 8 + 3; i++)                     /* never ready: frame fills, 3 extra pushes are dropped */
     {
         in.sum_valid = 1;
-        in.sum_data = i % 30000;
+        in.sum_data  = 100 + i;
         relu_quant_comb(&rq, &in, &out);
         relu_quant_seq(&rq);
     }
-    CHECK(rq.u_output_fifo.dbg_overflow_cnt == 10, "dropped %u want 10", rq.u_output_fifo.dbg_overflow_cnt);
+    CHECK(rq.u_out_reorder.dbg_overrun_cnt == 3, "overrun %u want 3", rq.u_out_reorder.dbg_overrun_cnt);
 
     in.sum_valid = 0;
     in.out_ready = 1;
+    static const int want[8] = {100, 102, 104, 106, 101, 103, 105, 107};   /* ch0 all pixels, then ch1 */
     int n = 0;
-    for (int i = 0; i < OF_DEPTH + 5; i++)
+    for (int i = 0; i < 12; i++)
     {
         relu_quant_comb(&rq, &in, &out);
         if (out.out_valid)
         {
-            CHECK(out.out_data0 == n % 30000, "entry %d: got %u", n, out.out_data0);
+            CHECK(n < 8 && out.out_data0 == want[n], "entry %d: got %u", n, out.out_data0);
+            CHECK(out.out_ch_done == (n % 4 == 3), "entry %d: out_ch_done %d", n, out.out_ch_done);
             n++;
         }
         relu_quant_seq(&rq);
     }
-    CHECK(n == OF_DEPTH, "drained %d want %d", n, OF_DEPTH);
+    CHECK(n == 8, "drained %d want 8", n);
 
-    end_test("output FIFO: full -> drops new pushes, keeps stored order", before);
+    end_test("reorder buffer: group-major read-out, done at last pixel, overrun counted", before);
 }
 
 /* ------------------------------------- full chain against the Python golden model */
@@ -326,7 +331,7 @@ static void test_python_vectors(const char *dir, const char *file, int ready_pct
     }
 
     ob_param_t op = {(uint8_t)layer, (uint16_t)n, (uint8_t)co, (uint8_t)groups};
-    rq_param_t rp = {(uint8_t)pack, (uint8_t)shift};
+    rq_param_t rp = {(uint16_t)n, (uint8_t)co, (uint8_t)pack, (uint8_t)shift};
     output_buffer_init(&ob, &op, bias, (uint8_t)co);
     relu_quant_init(&rq, &rp);
 
@@ -348,21 +353,22 @@ static void test_python_vectors(const char *dir, const char *file, int ready_pct
 
         rin.sum_data = oout.sum_data;
         rin.sum_valid = oout.sum_valid;
-        rin.ch_done = oout.ch_done;
         rin.out_ready = (uint8_t)((rand() % 100) < ready_pct);
         relu_quant_comb(&rq, &rin, &rout);
 
         if (rout.out_valid && rin.out_ready)
         {
             uint16_t lane[3] = {rout.out_data0, rout.out_data1, rout.out_data2};
+            int entry = got / pack;
             for (int k = 0; k < pack; k++, got++)
             {
-                int d = abs((int)lane[k] - vec_exp[got]);
+                int src = rq_src_index(entry, n, co, pack, k);      /* python vectors are pixel-major */
+                int d = abs((int)lane[k] - vec_exp[src]);
                 exact += (d == 0);
-                off1 += (d == 1);
+                off1  += (d == 1);
                 worse += (d > 1);
                 if (d > 1 && worse <= 5)
-                    printf("    value %d: got %u python %d\n", got, lane[k], vec_exp[got]);
+                    printf("    value %d: got %u python %d\n", src, lane[k], vec_exp[src]);
             }
             done_seen += rout.out_ch_done;
         }
@@ -376,10 +382,10 @@ static void test_python_vectors(const char *dir, const char *file, int ready_pct
     CHECK(worse == 0, "%d values differ from Python by more than 1", worse);
     CHECK(done_seen == co / pack, "out_ch_done entries %d want %d", done_seen, co / pack);
     CHECK(!ob.dbg_ch_ovf_cnt && !ob.dbg_acc_ovf_cnt, "width overflow: ch %u acc %u", ob.dbg_ch_ovf_cnt, ob.dbg_acc_ovf_cnt);
-    CHECK(rq.u_output_fifo.dbg_overflow_cnt == 0, "FIFO overflow");
+    CHECK(rq.u_out_reorder.dbg_overrun_cnt == 0, "reorder buffer overrun");
 
-    snprintf(name, sizeof name, "%s out_ready=%d%%: %d values vs Python: %d exact, %d off by 1, %d worse | sat %u, peak fill %u",
-             file, ready_pct, nexp, exact, off1, worse, rq.dbg_sat_cnt, rq.u_output_fifo.dbg_max_count);
+    snprintf(name, sizeof name, "%s out_ready=%d%%: %d values vs Python (group-major): %d exact, %d off by 1, %d worse | sat %u",
+             file, ready_pct, nexp, exact, off1, worse, rq.dbg_sat_cnt);
     end_test(name, before);
 }
 
@@ -394,13 +400,13 @@ int main(int argc, char **argv)
         test_output_buffer(&OB_PARAM_CONV2, seed);
     }
     test_width_counters();
-    test_relu_quant(3, 14, 4056, 100, 11);
-    test_relu_quant(3, 14, 4056, 30, 12);
-    test_relu_quant(3, 15, 4056, 5, 13);
-    test_relu_quant(1, 13, 1936, 100, 14);
-    test_relu_quant(1, 13, 1936, 40, 15);
-    test_relu_quant(2, 0, 1000, 60, 16);
-    test_fifo_full();
+    test_relu_quant(676, 6, 3, 14, 100, 11);
+    test_relu_quant(676, 6, 3, 14, 30, 12);
+    test_relu_quant(676, 6, 3, 15, 5, 13);
+    test_relu_quant(121, 16, 1, 13, 100, 14);
+    test_relu_quant(121, 16, 1, 13, 40, 15);
+    test_relu_quant(50, 4, 2, 0, 60, 16);
+    test_reorder_overrun();
     test_python_vectors(dir, "ob_conv1.txt", 100);
     test_python_vectors(dir, "ob_conv1.txt", 35);
     test_python_vectors(dir, "ob_conv2.txt", 100);
