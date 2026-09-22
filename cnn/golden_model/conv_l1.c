@@ -14,7 +14,7 @@ void conv_l1_init(conv_l1_t *m, const wgt_t *weight, const int32_t *bias, uint8_
     ob_param_t op = {1, CONV_L1_N, CONV_L1_C_OUT, 1};
     output_buffer_init(&m->ob, &op, bias, CONV_L1_C_OUT);
 
-    rq_param_t rp = {CONV_L1_PACK, scale_exp};
+    rq_param_t rp = {CONV_L1_N, CONV_L1_C_OUT, CONV_L1_PACK, scale_exp};
     relu_quant_init(&m->rq, &rp);
 }
 
@@ -60,7 +60,6 @@ void conv_l1_comb(conv_l1_t *m, const conv_l1_in_t *in, conv_l1_out_t *out)
     /* ReLU & Quantization */
     rq_i.sum_data  = m->ob_o.sum_data;
     rq_i.sum_valid = m->ob_o.sum_valid;
-    rq_i.ch_done   = m->ob_o.ch_done;
     rq_i.out_ready = in->out_ready;
     relu_quant_comb(&m->rq, &rq_i, &m->rq_o);
 
@@ -95,7 +94,7 @@ void conv_l1_seq(conv_l1_t *m)
 int conv_l1_idle(const conv_l1_t *m)
 {
     int busy = m->fsm.state != T1_IDLE || m->wac.state != W1_IDLE || m->mac.mac_valid_reg ||
-               m->rq.u_output_fifo.count != 0;
+               m->ob.sum_valid || m->rq.u_out_reorder.wr_cnt != 0;   /* reorder 가 프레임을 다 내보내면 wr_cnt = 0 */
 
     for (int ch = 0; ch < CE_LANES; ch++)
     {
