@@ -20,6 +20,19 @@
 *.fst
 *.out
 
+# Vitis/Eclipse generated workspace data
+vitis/.analytics
+vitis/.metadata/
+vitis/RemoteSystemsTempFiles/
+vitis/IDE.log
+vitis/**/Debug/
+vitis/**/.log/
+vitis/**/logs/
+vitis/**/_ide/bitstream/
+vitis/**/export/
+vitis/**/hw/
+vitis/**/zynq_fsbl/
+
 # OS/editor
 .DS_Store
 Thumbs.db
@@ -33,4 +46,13 @@ Thumbs.db
 *.runs/
 *.sim/
 *.gen/
-*.srcs/
+
+# *.srcs may contain authored Block Design/IP configuration sources.
+# Do not ignore the whole directory; review and track required BD/XCI files.
+
+# Regenerated Vitis BSP and temporary launch scripts
+vitis/**/bsp/
+vitis/**/Release/
+vitis/temp_xsdb_launch_script.tcl
+vitis/BFSK_TX_Test_system/_ide/scripts/systemdebugger_*.tcl
+
