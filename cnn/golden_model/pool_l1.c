@@ -1,5 +1,11 @@
 #include "pool_l1.h"
 
+void pool_l1_init(pool_l1_t *m, uint8_t in_h, uint8_t in_w, uint8_t lanes)
+{
+    pool_l1_ctrl_init(&m->ctrl, in_h, in_w);
+    pool_l1_datapath_init(&m->dp, lanes, in_w);
+}
+
 void pool_l1_reset(pool_l1_t *m)
 {
     pool_l1_ctrl_reset(&m->ctrl);
