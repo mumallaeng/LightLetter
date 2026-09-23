@@ -56,7 +56,6 @@ module conv_l1 #(
     wire [143:0] weight_out;
 
     weight_rom_l1 U_WEIGHT_ROM_L1 (
-        .clk       (clk),
         .out_ch_sel(out_ch_sel),
         .weight_out(weight_out)
     );
