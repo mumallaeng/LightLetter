@@ -3,6 +3,8 @@
 #   make -f cnn_chain.mk test     run handshake conditions A B C D (real image, 2 frames per run, frame gate on conv_l1)
 #   make -f cnn_chain.mk log      clock log logs/cnn_chain_real_<HS>.log / .csv (default HS=A)
 #   make -f cnn_chain.mk out      log + final conv_l2 output maps logs/cnn_chain_real_<HS>_f0_out.txt
+#   make -f cnn_chain.mk rtl-vectors  모든 RTL 비교용 파일을 cnn/rtl_ref/ 한 폴더에 생성
+#                                     (weight/bias ROM + 단계 경계 golden 스트림)
 #   make -f cnn_chain.mk clean
 #
 # conv_l1 / conv_l2 are wrapped in separate translation units (cnn_chain_l1.c: IMG_WIDTH 28,
@@ -15,6 +17,9 @@ HS      ?= A
 
 BUILD   := build
 TARGET  := $(BUILD)/test_cnn_chain
+GENVEC  := $(BUILD)/gen_ce_vectors
+RTL_VEC := ../rtl_ref
+RTL_MEM := ../rtl_ref
 
 SRCS    := test_cnn_chain.c cnn_chain_l1.c cnn_chain_l2.c \
            conv_l1.c conv_l2.c pool_l1.c pool_l1_ctrl.c pool_l1_datapath.c \
@@ -25,7 +30,9 @@ HDRS    := cnn_chain.h conv_l1.h conv_l2.h pool_l1.h pool_l1_ctrl.h pool_l1_data
            line_buffer.h line_buffer_array.h mac_unit.h mac_array.h \
            ob_common.h output_buffer.h partial_sum.h buffer_ctrl.h bias_rom.h relu_quant.h lane_packer.h out_reorder.h
 
-.PHONY: all test log out clean
+MODEL   := $(filter-out test_cnn_chain.c,$(SRCS))
+
+.PHONY: all test log out rtl-vectors clean
 
 all: $(TARGET)
 
@@ -42,5 +49,13 @@ log: $(TARGET)
 out: log
 	$(PYTHON) extract_frame_out.py logs/cnn_chain_real_$(HS).csv
 
+$(GENVEC): gen_ce_vectors.c $(MODEL) $(HDRS)
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS) gen_ce_vectors.c $(MODEL) -o $@
+
+rtl-vectors: $(GENVEC)
+	@mkdir -p $(RTL_VEC) $(RTL_MEM)
+	./$(GENVEC) vectors $(RTL_VEC) $(RTL_MEM)
+
 clean:
-	rm -f $(TARGET) logs/cnn_chain_*
+	rm -f $(TARGET) $(GENVEC) logs/cnn_chain_*
