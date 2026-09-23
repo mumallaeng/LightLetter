@@ -11,7 +11,7 @@ module weight_rom_l1 #(
 
     // initialize
     initial begin
-        $readmemh("l1_weight.mem", rom);
+        $readmemh("conv1_weight_144.mem", rom);
     end
 
     always @(posedge clk) begin
