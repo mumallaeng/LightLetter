@@ -10,10 +10,10 @@ module fft_buffer #(
 	input  wire [ADC_BIT - 1:0] i_adc_data,
 	input  wire                 i_adc_data_valid,
 	// Frame handshake
-	output reg                  o_frame_valid,
+	output wire                 o_frame_valid,
 	input  wire                 i_frame_ready,
 	// Data pair handshake
-	output reg                  o_buf_data_valid,
+	output wire                 o_buf_data_valid,
 	input  wire                 i_buf_data_ready,
 
 	output wire [FFT_W - 1:0]   o_buf_data0,
@@ -73,6 +73,8 @@ module fft_buffer #(
 	assign o_buf_data0 = {{(REAL_W-ADC_BIT){1'b0}}, sample0, {REAL_W{1'b0}}};
 	assign o_buf_data1 = {{(REAL_W-ADC_BIT){1'b0}},	sample1, {REAL_W{1'b0}}};
 	assign o_overflow = overflow_reg;
+    assign o_frame_valid = !rst && (c_state == ST_IDLE) && read_buf_full;
+	assign o_buf_data_valid = !rst && (c_state == ST_SEND);
 
 	// ========================================
 	// 1. 현재값 갱신
@@ -126,8 +128,8 @@ module fft_buffer #(
 
 		overflow_next = overflow_reg;
 
-		o_frame_valid    = 1'b0;
-		o_buf_data_valid = 1'b0;
+		//o_frame_valid    = 1'b0;
+		//o_buf_data_valid = 1'b0;
 
 		w_mem0_wen = 1'b0;
 		w_mem1_wen = 1'b0;
@@ -177,7 +179,7 @@ module fft_buffer #(
 			case (c_state)
 				ST_IDLE: begin
 					pair_cnt_next = 6'd0;
-					o_frame_valid = read_buf_full;
+					//o_frame_valid = read_buf_full;
 					if (o_frame_valid && i_frame_ready) begin
 						n_state = ST_READ;
 					end
@@ -194,7 +196,7 @@ module fft_buffer #(
 				end
 
 				ST_SEND: begin
-					o_buf_data_valid = 1'b1;
+					//o_buf_data_valid = 1'b1;
 
 					// 가져갈 때까지 데이터와 valid 유지
 					if (o_buf_data_valid && i_buf_data_ready) begin
