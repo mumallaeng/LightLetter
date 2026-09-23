@@ -25,6 +25,12 @@ module out_reorder #(
     localparam PIX_AW = (N > 1) ? $clog2(N) : 1;
     localparam GRP_AW = (GROUPS > 1) ? $clog2(GROUPS) : 1;
 
+    // 32-bit constants, sliced at the use sites so every compare and add keeps the counter width
+    localparam [31:0] PIX_LAST = N - 1;
+    localparam [31:0] GRP_LAST = GROUPS - 1;
+    localparam [31:0] FULL_CNT = DEPTH;
+    localparam [31:0] GRP_STEP = GROUPS;
+
     (* ram_style = "block" *)
     reg [WIDTH-1:0] mem [0:DEPTH-1];
 
@@ -38,10 +44,10 @@ module out_reorder #(
     reg [WIDTH-1:0]  byp_data, byp_data_next;
 
     wire pop        = rd_en & avail;
-    wire pix_last   = (rd_pix == $unsigned(N - 1));
-    wire grp_last   = (rd_grp == $unsigned(GROUPS - 1));
+    wire pix_last   = (rd_pix == PIX_LAST[PIX_AW-1:0]);
+    wire grp_last   = (rd_grp == GRP_LAST[GRP_AW-1:0]);
     wire rd_done    = pop & pix_last & grp_last;                    // last entry of the frame leaves
-    wire frame_full = (wr_cnt == $unsigned(DEPTH));                 // slots are released when the frame is read out
+    wire frame_full = (wr_cnt == FULL_CNT[AW-1:0]);                 // slots are released when the frame is read out
     wire we         = push & ~frame_full;
 
     // ========== Output Logic ==========
@@ -61,7 +67,7 @@ module out_reorder #(
                 rd_addr_next = grp_last ? {AW{1'b0}} : {{(AW-GRP_AW){1'b0}}, rd_grp} + 1'b1;   // pixel 0 of the next group
             end else begin
                 rd_pix_next  = rd_pix + 1'b1;
-                rd_addr_next = rd_addr + $unsigned(GROUPS);
+                rd_addr_next = rd_addr + GRP_STEP[AW-1:0];
             end
         end
     end

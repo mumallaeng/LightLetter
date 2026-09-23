@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 // Synthesis / timing check only - not part of the design.
 // Registers every input and output of conv_out_stage so that all paths, including the
-// port-to-port ones (ch_result -> sum_data -> quantizer -> FIFO), become register-to-register
+// port-to-port ones (ch_result -> sum_data -> quantizer -> out_reorder), become register-to-register
 // and show up in the timing report. The input registers stand in for mac_array's output
 // registers, the output registers for MaxPooling's input registers.
 

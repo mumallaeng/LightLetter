@@ -37,13 +37,18 @@ module output_buffer #(
     reg [GRP_AW-1:0] group_cnt, group_cnt_next;
     reg [BUF_AW-1:0] buf_addr, buf_addr_next;  // = pixel_cnt * C_OUT + out_ch_cnt
 
+    // 32-bit constants, sliced at the use sites so every compare keeps the counter width
+    localparam [31:0] GRP_LAST = NUM_GROUPS - 1;
+    localparam [31:0] CH_LAST  = C_OUT - 1;
+    localparam [31:0] PIX_LAST = N - 1;
+
     wire mac_fire    = mac_valid & (state != OB_IDLE);
 
     wire first_phase = (group_cnt == {GRP_AW{1'b0}});
-    wire last_phase  = (group_cnt == $unsigned(NUM_GROUPS - 1));
+    wire last_phase  = (group_cnt == GRP_LAST[GRP_AW-1:0]);
 
-    wire ch_last     = (out_ch_cnt == $unsigned(C_OUT - 1));
-    wire pixel_last  = (pixel_cnt  == $unsigned(N - 1));
+    wire ch_last     = (out_ch_cnt == CH_LAST[CH_AW-1:0]);
+    wire pixel_last  = (pixel_cnt  == PIX_LAST[PIX_AW-1:0]);
     wire pass_last   = ch_last & pixel_last;
 
     // ========== Next State / Counter Logic ==========
