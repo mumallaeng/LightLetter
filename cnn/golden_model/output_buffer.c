@@ -12,6 +12,8 @@ void output_buffer_init(output_buffer_t *m, const ob_param_t *p,
 {
     memset(m, 0, sizeof(*m));
     m->p = *p;
+    if (m->p.acc_w == 0)           /* older callers leave acc_w unset: keep the conv width */
+        m->p.acc_w = OB_ACC_W;
     bias_rom_load(&m->u_bias_rom, bias, bias_depth);
     output_buffer_reset(m);
 }
@@ -99,6 +101,7 @@ void output_buffer_comb(output_buffer_t *m, const output_buffer_in_t *in,
     ps_in.last_phase  = last_phase;
     ps_in.buf_rdata   = buf_out.rdata;
     ps_in.bias_rdata  = rom_out.rdata;
+    ps_in.acc_w       = m->p.acc_w;
     partial_sum_comb(&ps_in, &ps_out);
 
     /* second pass: connect wdata / we once rdata is known (plain wires in RTL) */
