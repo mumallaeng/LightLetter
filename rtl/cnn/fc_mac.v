@@ -1,7 +1,8 @@
 `timescale 1ns / 1ps
 // FC MAC: L multiplies per clock, summed into one CH_W partial sum for the Output Buffer.
-// Three pipeline stages: the products register, the first half of the adder tree, then the
-// second half and the result register, so ch_result follows its mac_en by three clocks.
+// Four pipeline stages: the operands, the products, then each half of the adder tree, so
+// ch_result follows its mac_en by four clocks. Registering the operands lets Vivado use the
+// DSP's own input and multiplier registers (AREG/BREG/MREG) instead of leaving them idle.
 // x is an unsigned activation code, w is a signed weight; lane i sits in bits [16*i +: 16].
 // The adder tree is balanced (log2(L) levels) and split in half by a register, so no clock
 // carries more than half of it - a chain would have put L-1 adders in one.
@@ -20,9 +21,12 @@ module fc_mac #(
 );
     integer i;
 
+    reg in_valid;
     reg prod_valid;
     reg mid_valid;
     reg sum_valid;
+
+    reg [16*L-1:0] x_r, w_r;  // operand registers: absorbed into the DSP inputs
 
     reg signed [31:0] prod[0:L-1];  // products of the L multiplies, 32 bits to hold the signed result
     reg signed [CH_W-1:0] sum;  // adder tree result, CH_W bits like the conv mac_array
@@ -86,22 +90,32 @@ module fc_mac #(
     // ========== Sequential Logic ==========
     always @(posedge clk) begin : fc_mac_seq
         if (!rst_n) begin
+            x_r <= {(16 * L) {1'b0}};
+            w_r <= {(16 * L) {1'b0}};
             for (i = 0; i < L; i = i + 1) prod[i] <= 32'sd0;
             for (i = 0; i < MIDN; i = i + 1) mid[i] <= {CH_W{1'sb0}};
+            in_valid   <= 1'b0;
             prod_valid <= 1'b0;
             mid_valid  <= 1'b0;
             sum        <= {CH_W{1'sb0}};
             sum_valid  <= 1'b0;
         end else begin
-            // stage 1: one product per lane
-            if (mac_en) for (i = 0; i < L; i = i + 1) prod[i] <= $signed({1'b0, x_in[16*i+:16]}) * $signed(w_in[16*i+:16]);
-            prod_valid <= mac_en;
+            // stage 1: hold the operands, so the multiply starts from registers
+            if (mac_en) begin
+                x_r <= x_in;
+                w_r <= w_in;
+            end
+            in_valid <= mac_en;
 
-            // stage 2: the first half of the tree over the products latched last clock
+            // stage 2: one product per lane
+            if (in_valid) for (i = 0; i < L; i = i + 1) prod[i] <= $signed({1'b0, x_r[16*i+:16]}) * $signed(w_r[16*i+:16]);
+            prod_valid <= in_valid;
+
+            // stage 3: the first half of the tree over the products latched last clock
             for (i = 0; i < MIDN; i = i + 1) mid[i] <= lo[SPLIT][i];
             mid_valid <= prod_valid;
 
-            // stage 3: the rest of the tree
+            // stage 4: the rest of the tree
             sum       <= hi[LEVELS][0];
             sum_valid <= mid_valid;
         end
