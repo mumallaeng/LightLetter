@@ -14,7 +14,7 @@ module fc_staging #(
     input  wire            in_valid,
     input  wire            chunk_done,
     output reg             in_ready,
-    output reg             comp_full,
+    output reg             calc_full,
     output reg             next_full,
     output reg  [16*L-1:0] x_out
 );
@@ -81,7 +81,7 @@ module fc_staging #(
     // ========== Output Logic ==========
     always @(*) begin : fc_staging_out
         in_ready  = ~full[fill_sel];
-        comp_full = full[calc_sel];
+        calc_full = full[calc_sel];
         next_full = full[~calc_sel];
         x_out     = calc_sel ? sbuf1 : sbuf0;
     end

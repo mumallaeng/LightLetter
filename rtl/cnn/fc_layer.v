@@ -57,7 +57,7 @@ module fc_layer #(
         .in_valid  (in_valid),
         .chunk_done(ctrl_chunk_done),
         .in_ready  (in_ready),
-        .comp_full (stg_calc_full),
+        .calc_full (stg_calc_full),
         .next_full (stg_next_full),
         .x_out     (stg_x)
     );
