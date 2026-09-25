@@ -6,7 +6,7 @@
 //   run_sim.bat          batch 실행 -> work/ 에 report / trace txt + 파형(wdb)
 //   run_sim.bat gui      XSim GUI 로 실행 (wave.tcl 의 신호 그룹이 뜬 상태로 run all)
 //   run_sim.bat wave     batch 실행 후 저장된 파형(work/tb_conv_l2_sim.wdb)을 GUI 로 연다
-//   options: set XELAB_OPTS=-generic_top "VALID_PCT=70" -generic_top "READY_PCT=60" -generic_top "FRAME_GATE=0"
+//   options: set XELAB_OPTS=-generic_top "VALID_PCT=70" -generic_top "READY_PCT=60"
 //
 // 입력 / 기대값 (rtl_ref/, run_sim.bat 이 work/ 로 복사)
 //   pool1_out.mem  : 49bit {ch_done, d2, d1, d0} x 676  (frame 당 pass0 = in_ch0~2 169개 -> pass1 = in_ch3~5 169개)
@@ -23,11 +23,8 @@
 //   [B] 최종 출력 - {out_ch_done, out_data} 를 ce2_out.mem 과 transfer 단위로 비교
 //   [C] reorder overrun - out_reorder 가 꽉 찬 상태에서 push 가 들어와 버려진 횟수
 //
-// 프레임 게이트 (FRAME_GATE = 1, 기본)
-//   out_reorder 는 한 프레임만 담고 conv FSM 쪽으로 backpressure 가 없어서, 앞 프레임이 다 빠지기 전에
-//   다음 프레임 결과가 오면 버려진다 (rtl_ref/README.md "프레임 게이트"). 그래서 TB 는 frame f 출력을
-//   전부 받은 뒤에 frame f+1 입력을 보낸다. FRAME_GATE = 0 이면 입력을 쉬지 않고 밀어 넣고,
-//   out_ready 를 낮추면 [C] 에서 overrun 이 잡힌다.
+// 입력 방식: 버튼을 누를 때마다 이미지 한 장 (실제 사용과 같음)
+//   다음 이미지는 앞 이미지의 결과가 다 나온 뒤에 넣는다. 이미지 사이에 리셋은 하지 않는다.
 //
 // 결과 파일 (xsim 실행 디렉터리 = work/)
 //   REPORT_FILE : frame / 출력 채널별 11x11 grid. 값은 TB 가 handshake 때 잡은 RTL 출력 그대로이고
@@ -52,7 +49,6 @@ module tb_conv_l2;
     parameter VALID_PCT  = 100;  // pool_valid 을 올릴 확률
     parameter READY_PCT  = 100;  // out_ready 를 올릴 확률
     parameter SEED       = 1;
-    parameter FRAME_GATE = 1;    // 1: 앞 프레임 출력을 다 받은 뒤 다음 프레임 입력
     parameter MAX_CYCLES = 200000;
     parameter MAX_REPORT = 10;   // 콘솔에 찍을 불일치 최대 개수
 
@@ -108,7 +104,7 @@ module tb_conv_l2;
     integer out_errs, out_shown;
     integer rom_checks, rom_errs, rom_shown;
     integer overruns;
-    integer o_q;  // o 의 nonblocking 사본 - 입력 쪽 프레임 게이트가 race 없이 읽는다
+    integer img_done;  // 결과가 다 나온 이미지 수
     integer fd_trace;
     integer i;
 
@@ -116,9 +112,6 @@ module tb_conv_l2;
     // valid 는 한 번 올리면 받을 때까지 유지 (AXIS 규칙). 데이터는 in_idx 에서 조합으로 뽑는다.
     reg [31:0] roll_v, roll_r;
     wire in_fire = pool_valid && pool_ready;
-    wire [31:0] in_next = in_idx + in_fire;
-    wire in_allow = (in_next < N_IN) &&
-                    (FRAME_GATE == 0 || in_next / IN_FRAME <= o_q / OUT_FRAME);
 
     always @(*) begin
         pool_data0   = (in_idx < N_IN) ? stim[in_idx][15:0]  : 16'd0;
@@ -137,7 +130,8 @@ module tb_conv_l2;
             roll_r = $unsigned($random(seed)) % 100;
             if (in_fire) in_idx <= in_idx + 1;
             if (!pool_valid || pool_ready)
-                pool_valid <= in_allow && (roll_v < VALID_PCT);
+                pool_valid <= ((in_idx + in_fire) < N_IN) &&
+                              ((in_idx + in_fire) / IN_FRAME <= img_done) && (roll_v < VALID_PCT);
             out_ready <= (roll_r < READY_PCT);
         end
     end
@@ -195,7 +189,7 @@ module tb_conv_l2;
             end
             o = o + 1;
         end
-        o_q <= o;
+        img_done <= o / OUT_FRAME;
     end
 
     // ---------------- [C] reorder overrun ----------------
@@ -222,7 +216,7 @@ module tb_conv_l2;
             $fdisplay(fd, "conv_l2 test report  (13x13x6 -> 11x11x16, values in signed decimal)");
             $fdisplay(fd, "  input  : %s  (%0d entries, 3 in_ch per entry)", STIM_FILE, N_IN);
             $fdisplay(fd, "  golden : %s  (%0d entries, {ch_done, data})", GOLD_FILE, N_OUT);
-            $fdisplay(fd, "  VALID_PCT=%0d READY_PCT=%0d SEED=%0d FRAME_GATE=%0d", VALID_PCT, READY_PCT, SEED, FRAME_GATE);
+            $fdisplay(fd, "  VALID_PCT=%0d READY_PCT=%0d SEED=%0d", VALID_PCT, READY_PCT, SEED);
             $fdisplay(fd, "  input %0d / %0d, output %0d / %0d, %0d cycles", in_idx, N_IN, o, N_OUT, cyc);
             $fdisplay(fd, "  [A] weight ROM : %0d / %0d cal_valid cycles wrong", rom_errs, rom_checks);
             $fdisplay(fd, "  [B] output     : %0d / %0d entries wrong", out_errs, N_OUT);
@@ -322,7 +316,7 @@ module tb_conv_l2;
         rom_errs   = 0;
         rom_shown  = 0;
         overruns   = 0;
-        o_q        = 0;
+        img_done   = 0;
         for (i = 0; i < N_OUT; i = i + 1) got[i] = 17'bx;
 
         $readmemh(STIM_FILE, stim);
@@ -344,8 +338,8 @@ module tb_conv_l2;
 
         // (W-bias) RTL 이 conv2_bias.mem 을 박아 넣어서 TB 가 덮어쓴다
         $readmemh(BIAS_FILE, dut.U_OUTPUT_STAGE_L1.GEN_CONV2.u_output_buffer.u_bias_rom.mem);
-        $display("conv_l2 TB: %0d input entries -> %0d output entries (%0d frame), VALID_PCT=%0d READY_PCT=%0d FRAME_GATE=%0d",
-                 N_IN, N_OUT, FRAMES, VALID_PCT, READY_PCT, FRAME_GATE);
+        $display("conv_l2 TB: %0d input entries -> %0d output entries (%0d frame), VALID_PCT=%0d READY_PCT=%0d",
+                 N_IN, N_OUT, FRAMES, VALID_PCT, READY_PCT);
 
         @(negedge clk);
         running = 1;

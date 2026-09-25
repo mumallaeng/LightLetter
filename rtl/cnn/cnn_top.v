@@ -10,10 +10,10 @@ module cnn_top (
     input         s_axis_tuser,
     input         s_axis_tlast,
     // connecting
-    output [15:0] l2_out_data,
-    output        l2_out_valid,
-    input         l2_out_ready,
-    output        l2_out_ch_done
+    output [15:0] l2_pool_data,
+    output        l2_pool_valid,
+    input         l2_pool_ready,
+    output        l2_pool_ch_done
 );
 
     // Convolution Layer 1
@@ -66,8 +66,8 @@ module cnn_top (
 
     // Convolution Layer 2
     // ===============================
-    // wire l2_out_valid, l2_out_ready, l2_out_ch_done;
-    // wire [15:0] l2_out_data0, l2_out_data1, l2_out_data2;
+    wire l2_out_valid, l2_out_ready, l2_out_ch_done;
+    wire [15:0] l2_out_data;
 
     conv_l2 #(
         .OCH(16)
@@ -84,5 +84,26 @@ module cnn_top (
         .out_ready   (l2_out_ready),
         .out_ch_done (l2_out_ch_done),
         .out_data    (l2_out_data)
+    );
+
+    // Pooling Layer 2 - Temporal
+    // ===============================
+    // wire l2_pool_valid, l2_pool_ready, l2_pool_ch_done;
+    // wire [15:0] l2_pool_data0, l2_pool_data1, l2_pool_data2;
+
+    pool_l2 #(
+        .IF_H(11),
+        .IF_W(11)
+    ) U_POOL_L2 (
+        .clk         (clk),
+        .rst_n       (rst_n),
+        .out_data    (l2_out_data),
+        .out_valid   (l2_out_valid),
+        .out_ready   (l2_out_ready),
+        .out_ch_done (l2_out_ch_done),
+        .pool_data   (l2_pool_data),
+        .pool_valid  (l2_pool_valid),
+        .pool_ready  (l2_pool_ready),
+        .pool_ch_done(l2_pool_ch_done)
     );
 endmodule
