@@ -68,7 +68,7 @@ const char *fc_state_name(fc_state_t s)
 {
     switch (s)
     {
-        case FC_IDLE: return "WAIT";
+        case FC_IDLE: return "IDLE";
         case FC_RUN:  return "RUN";
         default:      return "?";
     }

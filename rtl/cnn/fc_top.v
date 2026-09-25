@@ -4,7 +4,15 @@
 // so each layer's out_ready comes from the next layer's in_ready.
 // FC3 ends the Fully Connected scope: 36 signed logits in class order.
 
-module fc_top (
+module fc_top #(
+    // ROM contents; the testbench overrides these with paths relative to tb/cnn
+    parameter FC1_WEIGHT = "fc1_weight.mem",
+    parameter FC1_BIAS   = "fc1_bias.mem",
+    parameter FC2_WEIGHT = "fc2_weight.mem",
+    parameter FC2_BIAS   = "fc2_bias.mem",
+    parameter FC3_WEIGHT = "fc3_weight.mem",
+    parameter FC3_BIAS   = "fc3_bias.mem"
+) (
     input  wire        clk,
     input  wire        rst_n,
     input  wire [15:0] fc_in_data,   // <- MaxPooling, PyTorch flatten order (c*25+y*5+x)
@@ -27,8 +35,8 @@ module fc_top (
         .ACC_W      (40),
         .RELU       (1),
         .SCALE_EXP  (15),
-        .WEIGHT_FILE("fc1_weight.mem"),
-        .BIAS_FILE  ("fc1_bias.mem")
+        .WEIGHT_FILE(FC1_WEIGHT),
+        .BIAS_FILE  (FC1_BIAS)
     ) u_fc1 (
         .clk      (clk),
         .rst_n    (rst_n),
@@ -48,8 +56,8 @@ module fc_top (
         .ACC_W      (38),
         .RELU       (1),
         .SCALE_EXP  (14),
-        .WEIGHT_FILE("fc2_weight.mem"),
-        .BIAS_FILE  ("fc2_bias.mem")
+        .WEIGHT_FILE(FC2_WEIGHT),
+        .BIAS_FILE  (FC2_BIAS)
     ) u_fc2 (
         .clk      (clk),
         .rst_n    (rst_n),
@@ -69,8 +77,8 @@ module fc_top (
         .ACC_W      (38),
         .RELU       (0),                 // signed quantizer, no ReLU
         .SCALE_EXP  (13),
-        .WEIGHT_FILE("fc3_weight.mem"),
-        .BIAS_FILE  ("fc3_bias.mem")
+        .WEIGHT_FILE(FC3_WEIGHT),
+        .BIAS_FILE  (FC3_BIAS)
     ) u_fc3 (
         .clk      (clk),
         .rst_n    (rst_n),
