@@ -1,8 +1,9 @@
 `timescale 1ns / 1ps
 // FC MAC: L multiplies per clock, summed into one CH_W partial sum for the Output Buffer.
-// Four pipeline stages: the operands, the products, then each half of the adder tree, so
-// ch_result follows its mac_en by four clocks. Registering the operands lets Vivado use the
-// DSP's own input and multiplier registers (AREG/BREG/MREG) instead of leaving them idle.
+// Five pipeline stages: the operands, the products, the products again, then each half of the
+// adder tree, so ch_result follows its mac_en by five clocks. The operand and the two product
+// registers are what Vivado folds into the DSP's own AREG/BREG, MREG and PREG; back-to-back
+// product registers with no logic between them are what let it use MREG as well as PREG.
 // x is an unsigned activation code, w is a signed weight; lane i sits in bits [16*i +: 16].
 // The adder tree is balanced (log2(L) levels) and split in half by a register, so no clock
 // carries more than half of it - a chain would have put L-1 adders in one.
@@ -23,12 +24,14 @@ module fc_mac #(
 
     reg in_valid;
     reg prod_valid;
+    reg prod2_valid;
     reg mid_valid;
     reg sum_valid;
 
     reg [16*L-1:0] x_r, w_r;  // operand registers: absorbed into the DSP inputs
 
     reg signed [31:0] prod[0:L-1];  // products of the L multiplies, 32 bits to hold the signed result
+    reg signed [31:0] prod2[0:L-1];  // second product register, so the DSP uses MREG and PREG
     reg signed [CH_W-1:0] sum;  // adder tree result, CH_W bits like the conv mac_array
 
     // Balanced adder tree, cut in half by a register. Level 0 holds the sign-extended products
@@ -49,7 +52,7 @@ module fc_mac #(
     genvar lv, g;
     generate
         for (g = 0; g < L; g = g + 1) begin : GEN_LEAF
-            assign lo[0][g] = $signed({{(CH_W - 32) {prod[g][31]}}, prod[g]});
+            assign lo[0][g] = $signed({{(CH_W - 32) {prod2[g][31]}}, prod2[g]});
         end
 
         for (lv = 1; lv <= SPLIT; lv = lv + 1) begin : GEN_LO_LEVEL
@@ -93,9 +96,11 @@ module fc_mac #(
             x_r <= {(16 * L) {1'b0}};
             w_r <= {(16 * L) {1'b0}};
             for (i = 0; i < L; i = i + 1) prod[i] <= 32'sd0;
+            for (i = 0; i < L; i = i + 1) prod2[i] <= 32'sd0;
             for (i = 0; i < MIDN; i = i + 1) mid[i] <= {CH_W{1'sb0}};
-            in_valid   <= 1'b0;
-            prod_valid <= 1'b0;
+            in_valid    <= 1'b0;
+            prod_valid  <= 1'b0;
+            prod2_valid <= 1'b0;
             mid_valid  <= 1'b0;
             sum        <= {CH_W{1'sb0}};
             sum_valid  <= 1'b0;
@@ -111,11 +116,15 @@ module fc_mac #(
             if (in_valid) for (i = 0; i < L; i = i + 1) prod[i] <= $signed({1'b0, x_r[16*i+:16]}) * $signed(w_r[16*i+:16]);
             prod_valid <= in_valid;
 
-            // stage 3: the first half of the tree over the products latched last clock
-            for (i = 0; i < MIDN; i = i + 1) mid[i] <= lo[SPLIT][i];
-            mid_valid <= prod_valid;
+            // stage 3: hold the products again, with no logic in between
+            for (i = 0; i < L; i = i + 1) prod2[i] <= prod[i];
+            prod2_valid <= prod_valid;
 
-            // stage 4: the rest of the tree
+            // stage 4: the first half of the tree over the products latched last clock
+            for (i = 0; i < MIDN; i = i + 1) mid[i] <= lo[SPLIT][i];
+            mid_valid <= prod2_valid;
+
+            // stage 5: the rest of the tree
             sum       <= hi[LEVELS][0];
             sum_valid <= mid_valid;
         end
