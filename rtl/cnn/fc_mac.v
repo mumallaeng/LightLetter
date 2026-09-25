@@ -3,8 +3,8 @@
 // Two pipeline stages: the products register, then the adder tree and the result register,
 // so ch_result follows its mac_en by two clocks.
 // x is an unsigned activation code, w is a signed weight; lane i sits in bits [16*i +: 16].
-// The adder tree is built from continuous assignments rather than an always @(*) over the
-// prod array, which simulation, lint and synthesis tools each read differently.
+// The adder tree is a balanced tree of continuous assignments: log2(L) levels deep, so the
+// FC1 path is 5 adders rather than the 24 a chain would put in one clock.
 
 module fc_mac #(
     parameter L    = 25,  // FC1=25; FC2=10; FC3=5
@@ -26,15 +26,32 @@ module fc_mac #(
     reg signed [31:0] prod[0:L-1];  // products of the L multiplies, 32 bits to hold the signed result
     reg signed [CH_W-1:0] sum;  // adder tree result, CH_W bits like the conv mac_array
 
-    // adder tree as continuous assignments: chain[g] holds the sum of lanes 0..g,
-    // each product sign-extended to the accumulate width like partial_sum does
-    wire signed [CH_W-1:0] chain[0:L-1];
+    // Balanced adder tree: level 0 holds the sign-extended products, each level pairs them up,
+    // so the depth is log2(L) instead of the L-1 of a chain. An odd node moves up untouched.
+    localparam LEVELS = (L > 1) ? $clog2(L) : 1;
 
-    genvar g;
+    /* verilator lint_off UNOPTFLAT */
+    // each level reads the one below it, which Verilator sees as the array depending on itself
+    wire signed [CH_W-1:0] node[0:LEVELS][0:L-1];
+    /* verilator lint_on UNOPTFLAT */
+
+    genvar lv, g;
     generate
-        assign chain[0] = $signed({{(CH_W - 32) {prod[0][31]}}, prod[0]});
-        for (g = 1; g < L; g = g + 1) begin : GEN_ADDER_TREE
-            assign chain[g] = chain[g-1] + $signed({{(CH_W - 32) {prod[g][31]}}, prod[g]});
+        for (g = 0; g < L; g = g + 1) begin : GEN_LEAF
+            assign node[0][g] = $signed({{(CH_W - 32) {prod[g][31]}}, prod[g]});
+        end
+
+        for (lv = 1; lv <= LEVELS; lv = lv + 1) begin : GEN_LEVEL
+            localparam integer PREV = (L + (1 << (lv - 1)) - 1) >> (lv - 1);  // nodes one level down
+            localparam integer CUR = (PREV + 1) >> 1;
+
+            for (g = 0; g < CUR; g = g + 1) begin : GEN_NODE
+                if (2 * g + 1 < PREV) begin : GEN_PAIR
+                    assign node[lv][g] = node[lv-1][2*g] + node[lv-1][2*g+1];
+                end else begin : GEN_ODD
+                    assign node[lv][g] = node[lv-1][2*g];
+                end
+            end
         end
     endgenerate
 
@@ -55,7 +72,7 @@ module fc_mac #(
             prod_valid <= mac_en;
 
             // stage 2: register the adder tree over the products latched last clock
-            sum        <= chain[L-1];
+            sum        <= node[LEVELS][0];
             sum_valid  <= prod_valid;
         end
     end
