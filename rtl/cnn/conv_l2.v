@@ -16,9 +16,7 @@ module conv_l2 #(
     output        out_valid,
     input         out_ready,
     output        out_ch_done,
-    output [15:0] out_data0,
-    output [15:0] out_data1,
-    output [15:0] out_data2
+    output [15:0] out_data
 );
     // CE controller
     // ----------------------------------
@@ -128,9 +126,9 @@ module conv_l2 #(
         .out_valid  (out_valid),
         .out_ready  (out_ready),
         .out_ch_done(out_ch_done),
-        .out_data0  (out_data0),
-        .out_data1  (out_data1),
-        .out_data2  (out_data2)
+        .out_data0  (out_data),
+        .out_data1  (),
+        .out_data2  ()
     );
 
 endmodule

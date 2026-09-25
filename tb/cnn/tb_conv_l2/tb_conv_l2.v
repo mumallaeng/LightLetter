@@ -20,7 +20,7 @@
 //
 // 확인하는 것
 //   [A] weight ROM 타이밍 - cal_valid 인 매 사이클 weight_out == conv2_weight[out_ch_sel*2 + is_ch35]
-//   [B] 최종 출력 - {out_ch_done, out_data0} 를 ce2_out.mem 과 transfer 단위로 비교
+//   [B] 최종 출력 - {out_ch_done, out_data} 를 ce2_out.mem 과 transfer 단위로 비교
 //   [C] reorder overrun - out_reorder 가 꽉 찬 상태에서 push 가 들어와 버려진 횟수
 //
 // 프레임 게이트 (FRAME_GATE = 1, 기본)
@@ -73,7 +73,7 @@ module tb_conv_l2;
     wire        out_valid;
     reg         out_ready;
     wire        out_ch_done;
-    wire [15:0] out_data0, out_data1, out_data2;
+    wire [15:0] out_data;
 
     conv_l2 #(
         .OCH(OCH)
@@ -89,9 +89,7 @@ module tb_conv_l2;
         .out_valid   (out_valid),
         .out_ready   (out_ready),
         .out_ch_done (out_ch_done),
-        .out_data0   (out_data0),
-        .out_data1   (out_data1),
-        .out_data2   (out_data2)
+        .out_data    (out_data)
     );
 
     always #5 clk = ~clk;
@@ -163,7 +161,7 @@ module tb_conv_l2;
     end
 
     // ---------------- [B] 출력 capture / 비교 + trace ----------------
-    wire [16:0] out_word = {out_ch_done, out_data0};
+    wire [16:0] out_word = {out_ch_done, out_data};
 
     always @(posedge clk) begin
         if (rst_n && in_fire)
@@ -178,7 +176,7 @@ module tb_conv_l2;
                 $fdisplay(fd_trace, "%10t  %7d  OUT  %4d  f%0d och%2d r%2d c%2d   %6d (%04x) done=%b  exp %6d (%04x) done=%b  %0s",
                           $realtime, cyc, o, o / OUT_FRAME, (o % OUT_FRAME) / OUT_CH,
                           (o % OUT_CH) / OUT_W, o % OUT_W,
-                          $signed(out_data0), out_data0, out_ch_done,
+                          $signed(out_data), out_data, out_ch_done,
                           $signed(gold[o][15:0]), gold[o][15:0], gold[o][16],
                           (out_word === gold[o]) ? "OK" : "MISMATCH");
                 if (out_word !== gold[o]) begin
@@ -188,12 +186,12 @@ module tb_conv_l2;
                         $display("[FAIL][out] entry %0d (frame %0d och %0d r%0d c%0d) @ %t: got %0d done=%b / exp %0d done=%b",
                                  o, o / OUT_FRAME, (o % OUT_FRAME) / OUT_CH,
                                  (o % OUT_CH) / OUT_W, o % OUT_W, $realtime,
-                                 $signed(out_data0), out_ch_done, $signed(gold[o][15:0]), gold[o][16]);
+                                 $signed(out_data), out_ch_done, $signed(gold[o][15:0]), gold[o][16]);
                     end
                 end
             end else begin
                 $fdisplay(fd_trace, "%10t  %7d  OUT  %4d  EXTRA  %6d (%04x) done=%b", $realtime, cyc, o,
-                          $signed(out_data0), out_data0, out_ch_done);
+                          $signed(out_data), out_data, out_ch_done);
             end
             o = o + 1;
         end
@@ -232,7 +230,7 @@ module tb_conv_l2;
             $fdisplay(fd, "  RESULT : %0s",
                       (rom_errs == 0 && out_errs == 0 && overruns == 0 && o == N_OUT) ? "PASS" : "FAIL");
             $fdisplay(fd, "");
-            $fdisplay(fd, "  값 = RTL 출력 out_data0 (TB 가 out_valid & out_ready 에서 잡은 값)");
+            $fdisplay(fd, "  값 = RTL 출력 out_data (TB 가 out_valid & out_ready 에서 잡은 값)");
             $fdisplay(fd, "  '*' = 골든과 불일치 (값 또는 ch_done), '!' = ch_done 위치 오류, ---- = 출력 안 나옴");
             $fdisplay(fd, "  값은 INT16 을 signed 10진수로 찍었다. hex 는 %s 에 같이 있다", TRACE_FILE);
             $fdisplay(fd, "  각 출력의 sim time 은 %s 참고", TRACE_FILE);
