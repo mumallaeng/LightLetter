@@ -8,8 +8,9 @@ module weight_addr_ctrl_l2 #(
     // ce_ctrl
     input                        mac_start,
     output reg                   mac_done,
+    input                        is_ch35,
     // weight rom
-    inout                        is_ch35,
+    output                       rom_is_ch35,
     output reg [$clog2(OCH)-1:0] out_ch_sel,
     // mac array
     output                       cal_valid
@@ -64,4 +65,7 @@ module weight_addr_ctrl_l2 #(
 
     // ----- Moore output logic -----
     assign cal_valid = c_state;  // equal to c_state = WEIGHT_CAL
+
+    // ----- is_ch35 pass-through (ce_ctrl -> weight rom) -----
+    assign rom_is_ch35 = is_ch35;
 endmodule
