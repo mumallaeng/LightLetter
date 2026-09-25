@@ -1,7 +1,8 @@
 /*
  * fc_mac: LANES multiplies per clock, summed to one partial sum.
- * Three pipeline stages: the products register, the first half of the balanced adder tree,
- * then the second half and the result register, so ch_result follows its mac_en by three clocks.
+ * Five pipeline stages: the operands, the products, the products again, then each half of the
+ * balanced adder tree, so ch_result follows its mac_en by five clocks. The operand and the two
+ * product registers are what Vivado folds into the DSP's own AREG/BREG, MREG and PREG.
  */
 #ifndef FC_MAC_H
 #define FC_MAC_H
@@ -32,8 +33,13 @@ typedef struct
     uint8_t midn;   /* nodes at the split */
 
     /* registers: reg / reg_next */
+    uint16_t x_r[FC_MAX_LANES],  x_r_next[FC_MAX_LANES];
+    int16_t  w_r[FC_MAX_LANES],  w_r_next[FC_MAX_LANES];
+    uint8_t  in_valid,           in_valid_next;
     int64_t prod[FC_MAX_LANES],  prod_next[FC_MAX_LANES];
     uint8_t prod_valid,          prod_valid_next;
+    int64_t prod2[FC_MAX_LANES], prod2_next[FC_MAX_LANES];
+    uint8_t prod2_valid,         prod2_valid_next;
     ob_ch_t mid[FC_MAX_LANES],   mid_next[FC_MAX_LANES];
     uint8_t mid_valid,           mid_valid_next;
     ob_ch_t sum,                 sum_next;

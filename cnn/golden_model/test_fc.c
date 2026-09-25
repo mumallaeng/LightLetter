@@ -314,13 +314,14 @@ static int test_mac(void)
     }
     in.mac_en = 1;
 
-    /* the result appears three clocks after mac_en: products, half tree, rest of the tree */
+    /* the result appears five clocks after mac_en: operands, products, products again,
+       then each half of the adder tree */
     fc_mac_comb(&mac, &in, &out);
     CHECK(!out.mac_valid, "mac_valid must be 0 in the mac_en cycle");
     fc_mac_seq(&mac);
 
     in.mac_en = 0;
-    for (int c = 1; c <= 2; c++)
+    for (int c = 1; c <= 4; c++)
     {
         fc_mac_comb(&mac, &in, &out);
         CHECK(!out.mac_valid, "mac_valid must still be 0 %d clocks after mac_en", c);
@@ -328,7 +329,7 @@ static int test_mac(void)
     }
 
     fc_mac_comb(&mac, &in, &out);
-    CHECK(out.mac_valid, "mac_valid must be 1 three clocks after mac_en");
+    CHECK(out.mac_valid, "mac_valid must be 1 five clocks after mac_en");
     CHECK(out.ch_result == want, "partial sum %lld, expected %lld",
           (long long)out.ch_result, (long long)want);
     fc_mac_seq(&mac);
@@ -338,7 +339,7 @@ static int test_mac(void)
 
     CHECK(mac.dbg_ch_ovf_cnt == 0, "CH_W overflow counter is %u", mac.dbg_ch_ovf_cnt);
 
-    return end_test("fc_mac: three-clock latency, partial sum, CH_W width", before);
+    return end_test("fc_mac: five-clock latency, partial sum, CH_W width", before);
 }
 
 /* ------------------------------------------------------------ frame tests */
