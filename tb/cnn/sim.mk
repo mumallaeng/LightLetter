@@ -25,6 +25,7 @@ CONV2 :=
 define run_fc
 	@$(IVERILOG) $(IVFLAGS) -s tb_fc -o $(BUILD)/$(1).vvp \
 	    -Ptb_fc.VALID_PCT=$(2) -Ptb_fc.READY_PCT=$(3) -Ptb_fc.SEED=$(4) \
+	    '-Ptb_fc.MEM="../../rtl/cnn/mem"' \
 	    '-Ptb_fc.VCD_FILE="$(BUILD)/$(1).vcd"' tb_fc.v $(SRCS)
 	@$(VVP) -n $(BUILD)/$(1).vvp $(5) | grep -E "^\[|FAIL|rtl "
 endef

@@ -16,12 +16,10 @@ module tb_fc;
     parameter VALID_PCT = 100;  // chance that MaxPooling offers a value each cycle
     parameter READY_PCT = 80;  // chance that Argmax accepts each cycle
     parameter SEED = 1;
-    parameter STIM_FILE = "vectors/fc_stim.mem";
-    parameter OUT1_FILE = "vectors/fc1_out.mem";
-    parameter OUT2_FILE = "vectors/fc2_out.mem";
-    parameter OUT3_FILE = "vectors/fc3_out.mem";
     parameter VCD_FILE = "build/tb_fc.vcd";
-    parameter MEM = "../../rtl/cnn/mem";  // ROM files, relative to tb/cnn
+    // ROM files: "." is where Vivado puts the project's .mem files for a run; sim.mk points
+    // iverilog at rtl/cnn/mem instead
+    parameter MEM = ".";
 
     reg         clk;
     reg         rst_n;
@@ -84,11 +82,43 @@ module tb_fc;
         end
     endtask
 
+    // $readmemh resolves a relative path against the simulator's working directory, which
+    // differs per flow, and it leaves the array at x rather than failing when the file is not
+    // there. Try each place the vectors can sit and keep the set that loaded, so no flow needs
+    // a path override, and say so plainly if none of them held the files.
+    task load_vectors;
+        begin
+            // tb/cnn, where iverilog runs
+            $readmemh("vectors/fc_stim.mem", stim_mem);
+            $readmemh("vectors/fc1_out.mem", out1_mem);
+            $readmemh("vectors/fc2_out.mem", out2_mem);
+            $readmemh("vectors/fc3_out.mem", out3_mem);
+
+            // rtl/cnn/mem, where a batch run reads the ROMs from
+            if (stim_mem[0] === 16'hxxxx) begin
+                $readmemh("../../tb/cnn/vectors/fc_stim.mem", stim_mem);
+                $readmemh("../../tb/cnn/vectors/fc1_out.mem", out1_mem);
+                $readmemh("../../tb/cnn/vectors/fc2_out.mem", out2_mem);
+                $readmemh("../../tb/cnn/vectors/fc3_out.mem", out3_mem);
+            end
+
+            // <project>.sim/sim_1/behav/xsim, where Vivado runs
+            if (stim_mem[0] === 16'hxxxx) begin
+                $readmemh("../../../../tb/cnn/vectors/fc_stim.mem", stim_mem);
+                $readmemh("../../../../tb/cnn/vectors/fc1_out.mem", out1_mem);
+                $readmemh("../../../../tb/cnn/vectors/fc2_out.mem", out2_mem);
+                $readmemh("../../../../tb/cnn/vectors/fc3_out.mem", out3_mem);
+            end
+
+            if (stim_mem[0] === 16'hxxxx) begin
+                $display("  FAIL: vectors not found - run make -f fc.mk rtl-vectors");
+                $finish;
+            end
+        end
+    endtask
+
     initial begin
-        $readmemh(STIM_FILE, stim_mem);
-        $readmemh(OUT1_FILE, out1_mem);
-        $readmemh(OUT2_FILE, out2_mem);
-        $readmemh(OUT3_FILE, out3_mem);
+        load_vectors;
         if ($test$plusargs("vcd")) begin
             $dumpfile(VCD_FILE);
             $dumpvars(0, tb_fc);
