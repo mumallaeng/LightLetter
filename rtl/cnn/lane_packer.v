@@ -15,11 +15,11 @@ module lane_packer #(
 
     localparam CNT_W  = (PACK > 1) ? $clog2(PACK) : 1;
     localparam HOLD_W = (PACK > 1) ? 16*(PACK-1) : 16;   // GEN_PACK only
-    localparam ENTRY_W = 16*PACK;
 
     generate
         if (PACK == 1) begin : GEN_PASS
-            assign pack_data  = {{(ENTRY_W-16){1'b0}}, q_in};
+            // pack_data is 16 bits wide in this branch, so the value passes straight through
+            assign pack_data  = q_in;
             assign pack_valid = q_valid;
         end else begin : GEN_PACK
             // registers: reg / reg_next

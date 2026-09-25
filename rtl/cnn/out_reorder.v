@@ -23,7 +23,6 @@ module out_reorder #(
     localparam DEPTH  = N * GROUPS;
     localparam AW     = $clog2(DEPTH + 1);
     localparam PIX_AW = (N > 1) ? $clog2(N) : 1;
-    localparam GRP_AW = (GROUPS > 1) ? $clog2(GROUPS) : 1;
 
     // 32-bit constants, sliced at the use sites so every compare and add keeps the counter width
     localparam [31:0] PIX_LAST = N - 1;
@@ -36,7 +35,7 @@ module out_reorder #(
 
     // registers: reg / reg_next
     reg [AW-1:0]     wr_cnt,   wr_cnt_next;     // entries written this frame; also the write address
-    reg [GRP_AW-1:0] rd_grp,   rd_grp_next;
+    reg [AW-1:0]     rd_grp,   rd_grp_next;    // kept at address width: it is also the address of pixel 0
     reg [PIX_AW-1:0] rd_pix,   rd_pix_next;
     reg [AW-1:0]     rd_addr,  rd_addr_next;    // = rd_pix * GROUPS + rd_grp
     reg [WIDTH-1:0]  bram_q;                    // BRAM read register
@@ -45,7 +44,7 @@ module out_reorder #(
 
     wire pop        = rd_en & avail;
     wire pix_last   = (rd_pix == PIX_LAST[PIX_AW-1:0]);
-    wire grp_last   = (rd_grp == GRP_LAST[GRP_AW-1:0]);
+    wire grp_last   = (rd_grp == GRP_LAST[AW-1:0]);
     wire rd_done    = pop & pix_last & grp_last;                    // last entry of the frame leaves
     wire frame_full = (wr_cnt == FULL_CNT[AW-1:0]);                 // slots are released when the frame is read out
     wire we         = push & ~frame_full;
@@ -63,8 +62,8 @@ module out_reorder #(
         if (pop) begin
             if (pix_last) begin
                 rd_pix_next  = {PIX_AW{1'b0}};
-                rd_grp_next  = grp_last ? {GRP_AW{1'b0}} : rd_grp + 1'b1;
-                rd_addr_next = grp_last ? {AW{1'b0}} : {{(AW-GRP_AW){1'b0}}, rd_grp} + 1'b1;   // pixel 0 of the next group
+                rd_grp_next  = grp_last ? {AW{1'b0}} : rd_grp + 1'b1;
+                rd_addr_next = grp_last ? {AW{1'b0}} : rd_grp + 1'b1;  // pixel 0 of the next group
             end else begin
                 rd_pix_next  = rd_pix + 1'b1;
                 rd_addr_next = rd_addr + GRP_STEP[AW-1:0];
@@ -90,7 +89,7 @@ module out_reorder #(
     always @(posedge clk) begin
         if (!rst_n) begin
             wr_cnt   <= {AW{1'b0}};
-            rd_grp   <= {GRP_AW{1'b0}};
+            rd_grp   <= {AW{1'b0}};
             rd_pix   <= {PIX_AW{1'b0}};
             rd_addr  <= {AW{1'b0}};
             byp_en   <= 1'b0;
