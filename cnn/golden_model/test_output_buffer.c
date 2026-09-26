@@ -330,7 +330,7 @@ static void test_python_vectors(const char *dir, const char *file, int ready_pct
         return;
     }
 
-    ob_param_t op = {(uint8_t)layer, (uint16_t)n, (uint8_t)co, (uint8_t)groups};
+    ob_param_t op = {(uint8_t)layer, (uint16_t)n, (uint8_t)co, (uint8_t)groups, OB_ACC_W};
     rq_param_t rp = {(uint16_t)n, (uint8_t)co, (uint8_t)pack, (uint8_t)shift};
     output_buffer_init(&ob, &op, bias, (uint8_t)co);
     relu_quant_init(&rq, &rp);
