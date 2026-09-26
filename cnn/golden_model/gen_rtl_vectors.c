@@ -118,7 +118,7 @@ static int convert(const char *in_path, const char *out_dir, const char *mem_dir
         put_hex(fs, hi, lo, 3 * OB_CH_W);
     }
 
-    ob_param_t op = {(uint8_t)layer, (uint16_t)n, (uint8_t)co, (uint8_t)groups};
+    ob_param_t op = {(uint8_t)layer, (uint16_t)n, (uint8_t)co, (uint8_t)groups, OB_ACC_W};
     rq_param_t rp = {(uint16_t)n, (uint8_t)co, (uint8_t)pack, (uint8_t)shift};
     output_buffer_init(&ob, &op, bias, (uint8_t)co);
     relu_quant_init(&rq, &rp);

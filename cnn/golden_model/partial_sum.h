@@ -15,6 +15,7 @@ typedef struct
     uint8_t  last_phase;  /* group_cnt == NUM_GROUPS-1 */
     ob_acc_t buf_rdata;
     int32_t  bias_rdata;
+    uint8_t  acc_w;       /* RTL parameter ACC_W of this instance (0 = OB_ACC_W) */
 } partial_sum_in_t;
 
 /* output ports */

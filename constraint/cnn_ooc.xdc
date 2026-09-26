@@ -13,6 +13,9 @@ create_clock -period 10.000 -name clk [get_ports clk]
 set_property HD.CLK_SRC BUFGCTRL_X0Y0 [get_ports clk]
 
 # Module-only check: a Zynq part expects a processing_system7 (PS7) instance, which a
-# stand-alone CNN block does not have ([DRC ZPS7-1]). Do not reuse this file in the
+# stand-alone CNN block does not have ([DRC ZPS7-1]). Waive it rather than disabling the
+# check: a disabled check is itself reported as a CHECK-1 violation, while a waived one
+# leaves report_drc at zero violations and one waiver. Do not reuse this file in the
 # integrated design - there a missing PS7 is a real error.
-set_property IS_ENABLED false [get_drc_checks ZPS7-1]
+create_waiver -quiet -type DRC -id {ZPS7-1} \
+    -description "module-only out-of-context check: no PS7 in a stand-alone CNN block"
