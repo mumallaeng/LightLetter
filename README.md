@@ -49,3 +49,6 @@ progress.md
 - Do not delete previously PASSed code without a recorded reason.
 - Keep PASSed testbenches for regression.
 - Update `progress.md` first when hardware values or shared communication parameters change.
+## RX UART to PC UI
+
+The September 2026 RX build sends decoded packets to the PC through PS7 UART1 as CRLF-terminated CSV at 115200 baud. See `docs/rx_uart_protocol.md` for the wire format and `vitis/BFSK_RX_UART/` for the Vitis application source.
