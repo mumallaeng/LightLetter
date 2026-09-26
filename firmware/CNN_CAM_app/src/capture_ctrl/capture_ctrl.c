@@ -62,7 +62,7 @@ int capture_ctrl_init(void)
     candidate_since = now;
     ready = 1;
 
-    xil_printf("capture: GPIO ready (BTN0 -> channel 2, request -> channel 1)\r\n");
+    xil_printf("capture: GPIO ready (external active-low button -> channel 2, request -> channel 1)\r\n");
     return XST_SUCCESS;
 }
 
@@ -89,8 +89,8 @@ void capture_ctrl_poll(void)
         ((now - candidate_since) >= DEBOUNCE_TICKS)) {
         stable_state = candidate_state;
 
-        /* Active-high button: request once on the debounced rising edge. */
-        if (stable_state) {
+        /* Active-low button module: request once on the debounced press. */
+        if (!stable_state) {
             capture_ctrl_trigger();
         }
     }

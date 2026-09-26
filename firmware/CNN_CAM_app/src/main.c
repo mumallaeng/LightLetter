@@ -89,7 +89,7 @@ VideoMode    vd_mode;
 static void menu_help()
 {
 	xil_printf("\r\n--- keys ---------------------\r\n");
-	xil_printf(" BTN0 : capture next complete frame \r\n");
+	xil_printf(" external button : capture next complete frame \r\n");
 	xil_printf(" c    : request capture from UART \r\n");
 	xil_printf(" ? : help \r\n");
 }
