@@ -9,21 +9,22 @@ class ModelTests(unittest.TestCase):
     def test_shape_and_backward(self):
         net = Net()
         output = net(torch.rand(2, 1, 28, 28))
-        self.assertEqual(tuple(output.shape), (2, 36))
+        self.assertEqual(tuple(output.shape), (2, 26))
         output.sum().backward()
         self.assertTrue(all(p.grad is not None for p in net.parameters()))
         self.assertEqual([c.in_channels for c in net.convs], [1, 6])
         self.assertEqual([c.out_channels for c in net.convs], [6, 16])
 
     def test_inventory_matches_confirmed_spec(self):
-        # LeNet-5 3x3_schedule, FC 400->120->84->36. 실측 학습 로그(inventory)와 정확히 일치해야 한다.
+        # LeNet-5 3x3_schedule, FC 400->120->84->26 (uppercase only). 36-class 실측 62022/262에서
+        # FC3의 숫자 10클래스(84*10 weight, 10 bias)를 뺀 값이다.
         net = Net()
         inv = net.inventory()
         self.assertEqual(inv['spatial_outputs'], [13, 5])
-        self.assertEqual(inv['weights'], 62022)
-        self.assertEqual(inv['weight_int16_bytes'], 124044)
-        self.assertEqual(inv['biases'], 262)
-        self.assertEqual(inv['bias_int32_bytes'], 1048)
+        self.assertEqual(inv['weights'], 61182)
+        self.assertEqual(inv['weight_int16_bytes'], 122364)
+        self.assertEqual(inv['biases'], 252)
+        self.assertEqual(inv['bias_int32_bytes'], 1008)
 
     def test_grid_rounding_clipping_and_gradient(self):
         quant = Quant16().eval()
@@ -59,19 +60,19 @@ class ModelTests(unittest.TestCase):
         torch.testing.assert_close(net._quantized_bias(0, bias), bias)
 
     def test_metric_counts(self):
-        y = np.arange(36)
+        y = np.arange(26)
         p = y.copy()
         p[0] = 1
         result = scores(y, p)
-        self.assertEqual(result['correct'], 35)
-        self.assertEqual(result['letter_accuracy'], 1.)
+        self.assertEqual(result['correct'], 25)
+        self.assertAlmostEqual(result['balanced_accuracy'], 25 / 26)
 
     @unittest.skipUnless(torch.backends.mps.is_available(), 'MPS GPU unavailable')
     def test_mps_training(self):
         net = Net().to('mps')
         optimizer = torch.optim.Adam(net.parameters(), lr=.001)
         loss = torch.nn.functional.cross_entropy(net(torch.rand(128, 1, 28, 28, device='mps')),
-                                                 torch.arange(128, device='mps') % 36)
+                                                 torch.arange(128, device='mps') % 26)
         loss.backward()
         optimizer.step()
         self.assertTrue(torch.isfinite(loss).item())

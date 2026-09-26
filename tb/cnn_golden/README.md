@@ -1,5 +1,11 @@
 # CNN 골든모델 — LeNet-5 3x3_schedule 확정
 
+> **2026-09-26 대문자 전용 전환.** 프로젝트가 대문자 A–Z만 쓰기로 해서 `data.py`가 EMNIST byclass
+> 10–35만 남기고 0–25로 재매핑하며, `model.py`의 FC3는 84→26이다(weight 61,182 / bias 252).
+> `train.py`는 숫자·문자 구분 지표와 가중 loss를 없애고 validation accuracy로 best epoch을 고른다.
+> 아래 후보 비교와 정확도 표는 전환 전 36클래스(숫자+대문자) 결과이며 그대로 둔다. 26클래스
+> 재학습 결과는 나오는 대로 여기에 추가한다.
+
 팀 논의 끝에 **`LeNet-5 3x3_schedule`**(`conv_channels=[1,6,16]`, `padding=0`,
 `pool_stride=2`, kernel 3×3, FC 400→120→84→36, ReLU+MaxPool, INT16 QAT)을 최종
 구조로 확정했다. `cnn_golden/model.py`/`train.py`/`tests/test_model.py`는 이 확정

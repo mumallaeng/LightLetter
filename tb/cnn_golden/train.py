@@ -1,4 +1,4 @@
-"""Training script for the confirmed model (LeNet-5 3x3_schedule, FC 400->120->84->36).
+"""Training script for the confirmed model (LeNet-5 3x3_schedule, FC 400->120->84->26, uppercase only).
 
 Run (from LightLetter/tb):
     .venv/bin/python -u -m cnn_golden.train --data-root results/emnist \
@@ -11,7 +11,7 @@ path at once. A manifest mismatch (different source/environment/settings) is ref
 Matches the evaluation protocol used to pick this architecture in cnn_golden.ipynb /
 README.md: 10% of train is held out as validation and tracked every epoch; test is
 evaluated exactly twice at the end (final epoch, and the epoch with the best
-validation letter_accuracy) so test never influences epoch selection.
+validation accuracy) so test never influences epoch selection.
 """
 import argparse
 import copy
@@ -25,10 +25,10 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 
-from .data import load_split
+from .data import NUM_CLASSES, load_split
 from .model import Net
 
-DATASET = 'ByClass-Uppercase-Digits'
+DATASET = 'ByClass-Uppercase'
 SEED = 261014
 EPOCHS = 50
 BATCH_SIZE = 128
@@ -58,11 +58,10 @@ def atomic_json(path, value):
 
 def scores(labels, predictions):
     # Confusion matrix rows are ground truth, columns are predictions. Balanced accuracy
-    # is the mean per-class recall over all 36 classes.
-    cm = np.bincount(labels * 36 + predictions, minlength=36 * 36).reshape(36, 36)
+    # is the mean per-class recall over all 26 classes.
+    n = NUM_CLASSES
+    cm = np.bincount(labels * n + predictions, minlength=n * n).reshape(n, n)
     return dict(accuracy=float(np.mean(labels == predictions)),
-                digit_accuracy=float(np.mean(labels[labels < 10] == predictions[labels < 10])),
-                letter_accuracy=float(np.mean(labels[labels >= 10] == predictions[labels >= 10])),
                 balanced_accuracy=float(np.mean(cm.diagonal() / cm.sum(1))),
                 correct=int((labels == predictions).sum()), count=len(labels), confusion=cm.tolist())
 
@@ -87,9 +86,9 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     source_hash = hashlib.sha256((Path(__file__).read_bytes() +
                                    Path(__file__).with_name('model.py').read_bytes())).hexdigest()
-    manifest = dict(model='lenet5-3x3-schedule-c1-6-16-p0-s2-fc400-120-84-36', dataset=DATASET, seed=SEED,
+    manifest = dict(model='lenet5-3x3-schedule-c1-6-16-p0-s2-fc400-120-84-26', dataset=DATASET, seed=SEED,
                     epochs=EPOCHS, batch_size=BATCH_SIZE, lr=LR, device=args.device,
-                    val_fraction=VAL_FRACTION, loss_weighting='equal_digit_letter_group_mass',
+                    val_fraction=VAL_FRACTION, loss_weighting='none',
                     source_sha256=source_hash, torch=torch.__version__)
     manifest_path = args.output / 'manifest.json'
     if manifest_path.exists() and json.loads(manifest_path.read_text()) != manifest:
@@ -101,12 +100,9 @@ def main():
     tx, ty = load_split(args.data_root, 'test')
     data_source = dict(loader='torchvision.datasets.EMNIST', split='byclass',
                        root=str(args.data_root))
-    counts = np.bincount(y, minlength=36)
+    counts = np.bincount(y, minlength=NUM_CLASSES)
     if np.any(counts == 0):
         raise ValueError('Training data is missing a class')
-    letter_weight = float(counts[:10].sum() / counts[10:].sum())
-    class_weights = torch.ones(36, device=args.device)
-    class_weights[10:] = letter_weight
 
     out = args.output / DATASET
     out.mkdir(parents=True, exist_ok=True)
@@ -121,7 +117,7 @@ def main():
     optimizer = torch.optim.Adam(net.parameters(), lr=LR)
     history = []
     best_epoch = None
-    best_val_letter_accuracy = -1.
+    best_val_accuracy = -1.
     best_state = None
     checkpoint = out / 'last.pt'
     previous = json.loads(result_path.read_text()) if result_path.exists() else {}
@@ -133,13 +129,12 @@ def main():
         optimizer.load_state_dict(saved['optimizer'])
         history = saved['history']
         best_epoch = saved.get('best_epoch')
-        best_val_letter_accuracy = saved.get('best_val_letter_accuracy', -1.)
+        best_val_accuracy = saved.get('best_val_accuracy', -1.)
         best_state = saved.get('best_model')
     start = time.monotonic()
     record = dict(status='TRAINING', inventory=net.inventory(),
                   training_images=len(y), val_images=len(vy), test_images=len(ty),
                   data_source=data_source, history=history, device=args.device,
-                  letter_loss_weight=letter_weight,
                   first_batch_conv_gradient_l1=previous.get('first_batch_conv_gradient_l1'))
     atomic_json(result_path, record)
 
@@ -151,7 +146,7 @@ def main():
             ids = order[offset:offset + BATCH_SIZE]
             target = torch.from_numpy(np.array(y[ids])).to(args.device)
             optimizer.zero_grad(set_to_none=True)
-            loss = F.cross_entropy(net(batch(x, ids, args.device)), target, weight=class_weights)
+            loss = F.cross_entropy(net(batch(x, ids, args.device)), target)
             loss.backward()
             if epoch == 0 and offset == 0:
                 # Abort immediately if every Conv layer's first-batch gradient is zero.
@@ -169,12 +164,10 @@ def main():
         val_scores = scores(vy, predict(net, vx, args.device))
         history.append(dict(epoch=epoch + 1, loss=loss_value,
                             val_accuracy=val_scores['accuracy'],
-                            val_digit_accuracy=val_scores['digit_accuracy'],
-                            val_letter_accuracy=val_scores['letter_accuracy'],
                             val_balanced_accuracy=val_scores['balanced_accuracy'],
                             session_seconds=round(time.monotonic() - start, 2)))
-        if val_scores['letter_accuracy'] > best_val_letter_accuracy:
-            best_val_letter_accuracy = val_scores['letter_accuracy']
+        if val_scores['accuracy'] > best_val_accuracy:
+            best_val_accuracy = val_scores['accuracy']
             best_epoch = epoch + 1
             best_state = copy.deepcopy(net.state_dict())
         # Snapshot the weight scale as of the last optimizer step. Test inputs are never used here.
@@ -182,11 +175,11 @@ def main():
             quant(layer.weight)
         temporary = out / 'last.tmp'
         torch.save(dict(model=net.state_dict(), optimizer=optimizer.state_dict(), history=history,
-                        best_epoch=best_epoch, best_val_letter_accuracy=best_val_letter_accuracy,
+                        best_epoch=best_epoch, best_val_accuracy=best_val_accuracy,
                         best_model=best_state), temporary)
         temporary.replace(checkpoint)
         record.update(history=history, best_epoch=best_epoch,
-                      best_val_letter_accuracy=best_val_letter_accuracy)
+                      best_val_accuracy=best_val_accuracy)
         atomic_json(result_path, record)
         print(DATASET, history[-1], flush=True)
 
