@@ -39,7 +39,7 @@ module conv_out_stage #(
                 .NUM_GROUPS(NUM_GROUPS),
                 .CH_W      (CH_W),
                 .ACC_W     (ACC_W),
-                .BIAS_FILE ("conv1_bias.mem")
+                .BIAS_FILE ("conv1_bias_ce.mem")
             ) u_output_buffer (
                 .clk       (clk),
                 .rst_n     (rst_n),
@@ -58,7 +58,7 @@ module conv_out_stage #(
                 .NUM_GROUPS(NUM_GROUPS),
                 .CH_W      (CH_W),
                 .ACC_W     (ACC_W),
-                .BIAS_FILE ("conv2_bias.mem")
+                .BIAS_FILE ("conv2_bias_ce.mem")
             ) u_output_buffer (
                 .clk       (clk),
                 .rst_n     (rst_n),

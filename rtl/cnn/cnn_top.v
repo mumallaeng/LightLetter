@@ -1,19 +1,19 @@
 `timescale 1ns / 1ps
 
-module cnn_top (
-    input         clk,
-    input         rst_n,
+module cnn_top #(
+    parameter NUM_CLASS = 36
+) (
+    input                          clk,
+    input                          rst_n,
     // axis - img preprocess
-    input  [15:0] s_axis_tdata,
-    input         s_axis_tvalid,
-    output        s_axis_tready,
-    input         s_axis_tuser,
-    input         s_axis_tlast,
-    // connecting
-    output [15:0] l2_pool_data,
-    output        l2_pool_valid,
-    input         l2_pool_ready,
-    output        l2_pool_ch_done
+    input  [                 15:0] s_axis_tdata,
+    input                          s_axis_tvalid,
+    output                         s_axis_tready,
+    input                          s_axis_tuser,
+    input                          s_axis_tlast,
+    // output
+    output [$clog2(NUM_CLASS)-1:0] cnn_result,
+    output                         cnn_done
 );
 
     // Convolution Layer 1
@@ -88,8 +88,8 @@ module cnn_top (
 
     // Pooling Layer 2 - Temporal
     // ===============================
-    // wire l2_pool_valid, l2_pool_ready, l2_pool_ch_done;
-    // wire [15:0] l2_pool_data0, l2_pool_data1, l2_pool_data2;
+    wire l2_pool_valid, l2_pool_ready, l2_pool_ch_done;
+    wire [15:0] l2_pool_data;
 
     pool_l2 #(
         .IF_H(11),
@@ -105,5 +105,35 @@ module cnn_top (
         .pool_valid  (l2_pool_valid),
         .pool_ready  (l2_pool_ready),
         .pool_ch_done(l2_pool_ch_done)
+    );
+
+    // Fully Connected Layer
+    // ===============================
+    wire logit_valid, logit_ready;
+    wire signed [15:0] logit_data;
+
+    fc_top U_FC (
+        .clk        (clk),
+        .rst_n      (rst_n),
+        .fc_in_data (l2_pool_data),
+        .fc_in_valid(l2_pool_valid),
+        .fc_in_ready(l2_pool_ready),
+        .logit_data (logit_data),
+        .logit_valid(logit_valid),
+        .logit_ready(logit_ready)
+    );
+
+    // Argmax
+    // ===============================
+    argmax #(
+        .NUM_CLASS(NUM_CLASS)
+    ) U_ARGMAX (
+        .clk        (clk),
+        .rst_n      (rst_n),
+        .logit_data (logit_data),
+        .logit_valid(logit_valid),
+        .logit_ready(logit_ready),
+        .cnn_result (cnn_result),
+        .cnn_done   (cnn_done)
     );
 endmodule
