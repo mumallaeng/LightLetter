@@ -15,7 +15,7 @@ BUILD := build
 SRCS  := $(wildcard $(RTL)/*.v)
 
 CONV1 := -Ptb_output_buffer.N=676 -Ptb_output_buffer.C_OUT=6 -Ptb_output_buffer.NUM_GROUPS=1 \
-         -Ptb_output_buffer.PACK=3 -Ptb_output_buffer.SCALE_EXP=16 \
+         -Ptb_output_buffer.PACK=3 -Ptb_output_buffer.SCALE_EXP=15 \
          -Ptb_output_buffer.NSTIM=8112 -Ptb_output_buffer.NSUM=8112 -Ptb_output_buffer.NOUT=2704 \
          '-Ptb_output_buffer.BIAS_FILE="../../rtl/cnn/mem/conv1_bias.mem"' '-Ptb_output_buffer.STIM_FILE="vectors/conv1_stim.mem"' \
          '-Ptb_output_buffer.SUM_FILE="vectors/conv1_sum.mem"' '-Ptb_output_buffer.OUT_FILE="vectors/conv1_out.mem"'
