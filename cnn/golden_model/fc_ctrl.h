@@ -21,7 +21,7 @@ typedef enum
 typedef struct
 {
     uint8_t fc_in_valid;
-    uint8_t mac_busy;   /* <- fc_mac_acc */
+    uint8_t mac_busy;   /* <- fc_mac */
     uint8_t hold_free;  /* <- fc_drain */
 } fc_ctrl_in_t;
 

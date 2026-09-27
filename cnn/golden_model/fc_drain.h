@@ -9,7 +9,7 @@
 
 typedef struct
 {
-    uint8_t  sum_valid;  /* <- fc_mac_acc */
+    uint8_t  sum_valid;  /* <- fc_mac */
     fc_acc_t sum[FC_P];
     uint8_t  layer, group;
     uint8_t  logit_ready;

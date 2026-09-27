@@ -1,6 +1,6 @@
 /*
  * Fully Connected golden model test (step 2, shared engine)
- *   unit tests: quantizer, act_buf, fc_ctrl order and gating, fc_mac_acc latency, drain backpressure
+ *   unit tests: quantizer, act_buf, fc_ctrl order and gating, fc_mac latency, drain backpressure
  *   frame tests: Python vectors (bit-exact), two frames back to back, synthetic corner-case frame
  *
  *   ./test_fc [vector_dir]
@@ -173,13 +173,13 @@ static int test_ctrl(void)
     return end_test("fc_ctrl: group/input order, first-input flags, arrival and drain gating, flush", before);
 }
 
-/* ------------------------------------------------------------- fc_mac_acc */
+/* ------------------------------------------------------------- fc_mac */
 static int test_mac_acc(void)
 {
     int before = g_fail;
-    fc_mac_acc_t mac;
-    fc_mac_acc_init(&mac);
-    fc_mac_acc_in_t in; fc_mac_acc_out_t out;
+    fc_mac_t mac;
+    fc_mac_init(&mac);
+    fc_mac_in_t in; fc_mac_out_t out;
     memset(&in, 0, sizeof in);
 
     fc_acc_t want[FC_P];
@@ -194,24 +194,24 @@ static int test_mac_acc(void)
         in.first = (i == 0); in.mac_en = 1; in.last = (i == N - 1);
         in.x = (uint16_t)(3000 + 700 * i);
         for (int l = 0; l < FC_P; l++) { in.w[l] = (int16_t)(-2000 + 137 * l + 11 * i); want[l] += (fc_acc_t)in.x * in.w[l]; }
-        fc_mac_acc_comb(&mac, &in, &out);
+        fc_mac_comb(&mac, &in, &out);
         CHECK(!out.sum_valid, "sum_valid must be 0 while inputs are still issued (i=%d)", i);
-        fc_mac_acc_seq(&mac);
+        fc_mac_seq(&mac);
     }
     in.mac_en = 0; in.last = 0;
-    fc_mac_acc_comb(&mac, &in, &out);                                  /* cycle 6: last input in stage 2? */
+    fc_mac_comb(&mac, &in, &out);                                  /* cycle 6: last input in stage 2? */
     CHECK(!out.sum_valid && out.busy, "one cycle after the last issue the product is still in flight");
-    fc_mac_acc_seq(&mac);
-    fc_mac_acc_comb(&mac, &in, &out);                                  /* cycle 7: accumulate stage sees it */
+    fc_mac_seq(&mac);
+    fc_mac_comb(&mac, &in, &out);                                  /* cycle 7: accumulate stage sees it */
     CHECK(out.sum_valid, "sum_valid two cycles after the last issue");
     CHECK(out.layer == 2 && out.group == 3, "layer/group tags travel with the data");
     for (int l = 0; l < FC_P; l++)
         CHECK(out.sum[l] == want[l], "lane %d sum %lld, expected %lld", l, (long long)out.sum[l], (long long)want[l]);
-    fc_mac_acc_seq(&mac);
-    fc_mac_acc_comb(&mac, &in, &out);
+    fc_mac_seq(&mac);
+    fc_mac_comb(&mac, &in, &out);
     CHECK(!out.sum_valid && !out.busy, "pipeline drains");
     CHECK(mac.dbg_acc_ovf_cnt == 0, "ACC_W overflow counter is %u", mac.dbg_acc_ovf_cnt);
-    return end_test("fc_mac_acc: bias on the first input, accumulate, two-cycle latency, tags", before);
+    return end_test("fc_mac: bias on the first input, accumulate, two-cycle latency, tags", before);
 }
 
 /* --------------------------------------------------------------- fc_drain */

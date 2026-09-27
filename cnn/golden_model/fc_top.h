@@ -9,7 +9,7 @@
 #include "fc_bias_rom.h"
 #include "fc_ctrl.h"
 #include "fc_drain.h"
-#include "fc_mac_acc.h"
+#include "fc_mac.h"
 #include "fc_weight_rom.h"
 
 typedef struct
@@ -31,7 +31,7 @@ typedef struct
     fc_act_buf_t    u_act_in, u_act_a, u_act_b;
     fc_weight_rom_t u_wrom;
     fc_bias_rom_t   u_brom;
-    fc_mac_acc_t    u_mac;
+    fc_mac_t    u_mac;
     fc_drain_t      u_drain;
     fc_ctrl_t       u_ctrl;
 

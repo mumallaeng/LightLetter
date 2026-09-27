@@ -95,7 +95,7 @@ module fc_top #(
         .addr(ctl_bias_addr), .b_out(rom_b));
 
     // ========== multiply-accumulate ==========
-    fc_mac_acc #(.P(P), .ACC_W(ACC_W)) u_mac (
+    fc_mac #(.P(P), .ACC_W(ACC_W)) u_mac (
         .clk      (clk),
         .rst_n    (rst_n),
         .x        (x),

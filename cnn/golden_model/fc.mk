@@ -13,10 +13,10 @@ DUMP    ?= ../../tb/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json
 BUILD   := build
 TARGET  := $(BUILD)/test_fc
 
-MODEL   := fc_top.c fc_ctrl.c fc_act_buf.c fc_weight_rom.c fc_bias_rom.c fc_mac_acc.c fc_drain.c fc_vec_io.c
+MODEL   := fc_top.c fc_ctrl.c fc_act_buf.c fc_weight_rom.c fc_bias_rom.c fc_mac.c fc_drain.c fc_vec_io.c
 SRCS    := test_fc.c $(MODEL)
 RTL_VEC := ../../tb/cnn/vectors
-HDRS    := fc_common.h fc_top.h fc_ctrl.h fc_act_buf.h fc_weight_rom.h fc_bias_rom.h fc_mac_acc.h fc_drain.h fc_vec_io.h
+HDRS    := fc_common.h fc_top.h fc_ctrl.h fc_act_buf.h fc_weight_rom.h fc_bias_rom.h fc_mac.h fc_drain.h fc_vec_io.h
 
 .PHONY: all test vectors rtl-vectors clean
 

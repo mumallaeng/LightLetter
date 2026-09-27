@@ -1,13 +1,13 @@
-#include "fc_mac_acc.h"
+#include "fc_mac.h"
 #include <string.h>
 
-void fc_mac_acc_init(fc_mac_acc_t *m)
+void fc_mac_init(fc_mac_t *m)
 {
-    fc_mac_acc_reset(m);
+    fc_mac_reset(m);
     m->dbg_acc_ovf_cnt = 0;
 }
 
-void fc_mac_acc_reset(fc_mac_acc_t *m)
+void fc_mac_reset(fc_mac_t *m)
 {
     memset(&m->s1, 0, sizeof m->s1);  memset(&m->s1_next, 0, sizeof m->s1_next);
     memset(&m->s2, 0, sizeof m->s2);  memset(&m->s2_next, 0, sizeof m->s2_next);
@@ -22,7 +22,7 @@ static int fits_acc_w(fc_acc_t v)
 }
 
 /* always @(*) */
-void fc_mac_acc_comb(fc_mac_acc_t *m, const fc_mac_acc_in_t *in, fc_mac_acc_out_t *out)
+void fc_mac_comb(fc_mac_t *m, const fc_mac_in_t *in, fc_mac_out_t *out)
 {
     // ========== stage 1 next: operand registers ==========
     m->s1_next.x = in->x;
@@ -67,7 +67,7 @@ void fc_mac_acc_comb(fc_mac_acc_t *m, const fc_mac_acc_in_t *in, fc_mac_acc_out_
 }
 
 /* always @(posedge clk) */
-void fc_mac_acc_seq(fc_mac_acc_t *m)
+void fc_mac_seq(fc_mac_t *m)
 {
     m->s1 = m->s1_next;
     m->s2 = m->s2_next;

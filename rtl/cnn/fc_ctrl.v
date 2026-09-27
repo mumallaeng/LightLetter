@@ -29,7 +29,7 @@ module fc_ctrl #(
     input  wire               clk,
     input  wire               rst_n,
     input  wire               fc_in_valid,
-    input  wire               mac_busy,   // <- fc_mac_acc
+    input  wire               mac_busy,   // <- fc_mac
     input  wire               hold_free,  // <- fc_drain
     output wire               fc_in_ready,
     output wire               in_we,      // act_in write of fc_in_data at in_waddr

@@ -7,7 +7,7 @@
 // announced on sum_valid in the cycle the accumulate stage handles it.
 // x is an unsigned activation code, w a signed weight; lane l sits in bits [16*l +: 16].
 
-module fc_mac_acc #(
+module fc_mac #(
     parameter P     = 20,
     parameter ACC_W = 40
 ) (

@@ -8,7 +8,7 @@ void fc_top_init(fc_top_t *m, const fc_rom_image_t *img)
     fc_act_buf_init(&m->u_act_b, FC_ACT_B);
     fc_weight_rom_init(&m->u_wrom, img->w);
     fc_bias_rom_init(&m->u_brom, img->b);
-    fc_mac_acc_init(&m->u_mac);
+    fc_mac_init(&m->u_mac);
     fc_drain_init(&m->u_drain);
     fc_ctrl_init(&m->u_ctrl);
     fc_top_reset(m);
@@ -19,7 +19,7 @@ void fc_top_reset(fc_top_t *m)
     fc_act_buf_reset(&m->u_act_in);
     fc_act_buf_reset(&m->u_act_a);
     fc_act_buf_reset(&m->u_act_b);
-    fc_mac_acc_reset(&m->u_mac);
+    fc_mac_reset(&m->u_mac);
     fc_drain_reset(&m->u_drain);
     fc_ctrl_reset(&m->u_ctrl);
     m->w_l1_fire = m->w_l2_fire = 0;
@@ -51,14 +51,14 @@ void fc_top_comb(fc_top_t *m, const fc_top_in_t *in, fc_top_out_t *out)
     fc_bias_rom_out_t bo;
     fc_bias_rom_comb(&m->u_brom, &bi, &bo);
 
-    fc_mac_acc_in_t  mi;
-    fc_mac_acc_out_t mo;
+    fc_mac_in_t  mi;
+    fc_mac_out_t mo;
     mi.x = x;
     memcpy(mi.w, wo.w, sizeof mi.w);
     memcpy(mi.b, bo.b, sizeof mi.b);
     mi.first = co.first; mi.mac_en = co.mac_en; mi.last = co.last;
     mi.layer = co.layer; mi.group = co.group;
-    fc_mac_acc_comb(&m->u_mac, &mi, &mo);
+    fc_mac_comb(&m->u_mac, &mi, &mo);
 
     fc_drain_in_t  di;
     fc_drain_out_t dro;
@@ -92,6 +92,6 @@ void fc_top_seq(fc_top_t *m)
     fc_act_buf_seq(&m->u_act_a);
     fc_act_buf_seq(&m->u_act_b);
     fc_weight_rom_seq(&m->u_wrom);
-    fc_mac_acc_seq(&m->u_mac);
+    fc_mac_seq(&m->u_mac);
     fc_drain_seq(&m->u_drain);
 }
