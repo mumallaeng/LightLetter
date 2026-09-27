@@ -114,6 +114,8 @@ tb/results/
 # Layer-output/debug JSON dumps (large, regenerable -- experiment-result JSONs already
 # tracked under tb/cnn_golden/results/ stay tracked; this only affects new untracked ones)
 *.json
+# the confirmed model's weight/layer-output dump is the source RTL export and the UI read; keep it tracked
+!tb/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json
 *.png
 
 # BFSK TX project rules
