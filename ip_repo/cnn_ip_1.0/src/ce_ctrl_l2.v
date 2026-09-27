@@ -1,32 +1,35 @@
 `timescale 1ns / 1ps
 
-module ce_ctrl_l1 (
+module ce_ctrl_l2 (
     input      clk,
     input      rst_n,
-    // axis
-    input      s_axis_tvalid,
-    output     s_axis_tready,
-    input      s_axis_tuser,
-    input      s_axis_tlast,
+    // pre pool layer
+    input      pool_valid,
+    output     pool_ready,
+    input      pool_ch_done,
     // line buffer array
     input      win_valid,
     output     pixel_valid,
     output reg phase_clear,
     // weight_addr_ctrl
+    output     is_ch35,
     output reg mac_start,
     input      mac_done
 );
     // ========== FSM ==========
-    localparam [1:0] IDLE = 0;
-    localparam [1:0] IMG_IN = 1;
-    localparam [1:0] WAIT_MAC = 2;
-    localparam [1:0] STOP = 3;
+    localparam [2:0] IDLE = 0;
+    localparam [2:0] CH02_IMG_IN = 1;
+    localparam [2:0] WAIT_MAC_02 = 2;
+    localparam [2:0] WAIT_LB_RST = 3;
+    localparam [2:0] CH35_IMG_IN = 4;
+    localparam [2:0] WAIT_MAC_35 = 5;
+    localparam [2:0] STOP = 6;
 
-    reg [1:0] c_state, n_state;
+    reg [2:0] c_state, n_state;
 
     // ----- register -----
     reg phase_clear_next, mac_start_next;
-    reg ch_count, ch_count_next;
+    reg [1:0] ch_count, ch_count_next;
 
     // ----- State Update logic -----
     always @(posedge clk or negedge rst_n) begin
@@ -53,23 +56,43 @@ module ce_ctrl_l1 (
             IDLE: begin
                 mac_start_next   = 0;
                 phase_clear_next = 0;
-                if (s_axis_tvalid) begin
-                    n_state = IMG_IN;
+                if (pool_valid) begin
+                    n_state = CH02_IMG_IN;
                 end
             end
-            IMG_IN: begin
+            CH02_IMG_IN: begin
                 if (win_valid) begin
                     mac_start_next = 1;
-                    n_state        = WAIT_MAC;
+                    n_state        = WAIT_MAC_02;
                 end
             end
-            WAIT_MAC: begin
+            WAIT_MAC_02: begin
                 if (mac_done) begin
                     if (ch_count == 1) begin
                         phase_clear_next = 1;
+                        n_state          = WAIT_LB_RST;
+                    end else begin
+                        n_state = CH02_IMG_IN;
+                    end
+                end
+            end
+            WAIT_LB_RST: begin
+                phase_clear_next = 0;
+                n_state = CH35_IMG_IN;
+            end
+            CH35_IMG_IN: begin
+                if (win_valid) begin
+                    mac_start_next = 1;
+                    n_state        = WAIT_MAC_35;
+                end
+            end
+            WAIT_MAC_35: begin
+                if (mac_done) begin
+                    if (ch_count == 2) begin
+                        phase_clear_next = 1;
                         n_state          = STOP;
                     end else begin
-                        n_state = IMG_IN;
+                        n_state = CH35_IMG_IN;
                     end
                 end
             end
@@ -80,39 +103,19 @@ module ce_ctrl_l1 (
         endcase
     end
 
-    // ch_done signal generate based on s_axis_tlast
-    reg [$clog2(28)-1:0] done_cnt, done_cnt_next;
-    wire row_last = pixel_valid & s_axis_tlast;
-    wire ch_done = row_last & (done_cnt == 28 - 1);
-
-    always @(posedge clk or negedge rst_n) begin
-        if (~rst_n) begin
-            done_cnt <= 0;
-        end else begin
-            done_cnt <= done_cnt_next;
-        end
-    end
-
-    always @(*) begin
-        done_cnt_next = done_cnt;
-        if (row_last) begin
-            done_cnt_next = ch_done ? 0 : done_cnt + 1;
-        end
-    end
-
-
     // ----- channel count logic -----
     always @(*) begin
         ch_count_next = ch_count;
         if (c_state == STOP) begin
             ch_count_next = 0;
-        end else if (ch_done & pixel_valid) begin
+        end else if (pool_ch_done & pixel_valid) begin
             ch_count_next = ch_count + 1;
         end
     end
 
-
     // ========== Output Logic ==========
-    assign pixel_valid = s_axis_tvalid & s_axis_tready;
-    assign s_axis_tready = ((c_state==IDLE) | (c_state==IMG_IN)) & ~win_valid;
+    assign pixel_valid = pool_valid & pool_ready;
+    wire img_in_state = (c_state==CH02_IMG_IN) | (c_state==CH35_IMG_IN);
+    assign pool_ready = ((c_state==IDLE) | (img_in_state)) & ~win_valid;
+    assign is_ch35 = (c_state == CH35_IMG_IN) | (c_state == WAIT_MAC_35);
 endmodule
