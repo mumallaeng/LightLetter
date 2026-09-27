@@ -8,7 +8,8 @@ test/<folder>/*.png : 28x28 grayscale, upright (already transposed like tb/cnn_g
 Input quantization (conv_l1 input scale 2^-14, rtl/cnn/rtl_ref/README.md):
     pixel_in = round(p / 255 * 2^14)          p = 0..255 -> 0..16384 (never a .5 tie, 255 is odd)
 
-A bit-exact integer model of the whole chain (conv_l1 -> pool_l1 -> conv_l2 -> pool_l2 -> FC1..3 -> argmax) gives
+A bit-exact integer model of the whole chain (gen_chain_vectors.py conv / pool, gen_fc_golden.py FC,
+conv SCALE_EXP from rtl_ref/ce_params.txt) (conv_l1 -> pool_l1 -> conv_l2 -> pool_l2 -> FC1..3 -> argmax) gives
 the expected logits / class, so a wrong answer can be told apart: RTL != model -> RTL bug, RTL == model != label ->
 the network itself misclassifies the image. The model is checked first against rtl/cnn/rtl_ref (ce1_stim ->
 ce1_out / pool1_out / ce2_out / pool2_out) and vectors/logit_out.mem.
@@ -43,67 +44,31 @@ N_CLASS = len(CLASSES)
 
 sys.path.insert(0, str(HERE))
 from gen_fc_golden import read_fc_txt, read_mem, fc  # noqa: E402
+from gen_chain_vectors import conv_params, conv, pool, s_n  # noqa: E402
 
 
-def s_n(v, n):
-    return v - (1 << n) if v >> (n - 1) else v
-
-
-def quant(acc, s, relu):
-    """ReLU -> round-half-to-even >> s -> clamp int16 (relu_quant.c / fc_quant)."""
-    acc = np.where(acc < 0, 0, acc) if relu else acc
-    one = 1 << s
-    q, rem = acc // one, acc % one
-    q = q + ((rem > one // 2) | ((rem == one // 2) & (q & 1 == 1)))
-    return np.clip(q, -32768, 32767)
-
-
-def conv_params(k, c_in, c_out):
-    """convK_weight.mem: line [och][grp], 432 bit = lane 3 x tap 9 x int16, lane0 / tap0 at the LSB."""
-    rows = [int(l, 16) for l in (RTL_REF / f"conv{k}_weight.mem").read_text().split()]
-    w = np.zeros((c_out, c_in, 3, 3), dtype=np.int64)
-    for o in range(c_out):
-        for g in range(2):
-            r = rows[o * 2 + g]
-            for lane in range(3):
-                ci = g * 3 + lane
-                if ci >= c_in:
-                    continue
-                for t in range(9):
-                    w[o, ci, t // 3, t % 3] = s_n((r >> (144 * lane + 16 * t)) & 0xFFFF, 16)
-    b = np.array([s_n(int(l, 16), 32) for l in (RTL_REF / f"conv{k}_bias_ce.mem").read_text().split()],
-                 dtype=np.int64)
-    return w, b
-
-
-def conv(x, w, b):
-    c_in, h, _ = x.shape
-    o = h - 2
-    acc = np.zeros((w.shape[0], o, o), dtype=np.int64) + b[:, None, None]
-    for ci in range(c_in):
-        for ky in range(3):
-            for kx in range(3):
-                acc += w[:, ci, ky, kx][:, None, None] * x[ci, ky:ky + o, kx:kx + o][None]
-    return quant(acc, 16, True)
-
-
-def pool(x):
-    c, h, _ = x.shape
-    o = h // 2                                  # odd size: last row / col dropped
-    return x[:, :2 * o, :2 * o].reshape(c, o, 2, o, 2).max(axis=(2, 4))
+def conv_scales():
+    """conv SCALE_EXP the rtl_ref streams were made with (rtl_ref/ce_params.txt)."""
+    sc = {}
+    for line in (RTL_REF / "ce_params.txt").read_text().splitlines():
+        for layer in ("CONV_L1", "CONV_L2"):
+            if line.startswith(layer):
+                sc[layer] = int(line.split("SCALE_EXP=")[1].split()[0])
+    return sc["CONV_L1"], sc["CONV_L2"]
 
 
 class Model:
     def __init__(self):
-        self.c1 = conv_params(1, 1, 6)
-        self.c2 = conv_params(2, 6, 16)
+        self.c1 = conv_params(RTL_REF, 1, 1, 6)
+        self.c2 = conv_params(RTL_REF, 2, 6, 16)
+        self.s1, self.s2 = conv_scales()
         self.fc = [read_fc_txt(k) for k in (1, 2, 3)]
 
     def run(self, img):
         """img: int (28, 28) pixel_in -> dict of every stage."""
-        c1 = conv(img[None].astype(np.int64), *self.c1)
+        c1 = conv(img[None].astype(np.int64), *self.c1, self.s1)
         p1 = pool(c1)
-        c2 = conv(p1, *self.c2)
+        c2 = conv(p1, *self.c2, self.s2)
         p2 = pool(c2)
         x = [int(v) for v in p2.reshape(-1)]    # och-major 5x5 raster = pool_l2 stream order
         y1 = fc(self.fc[0], x)

@@ -8,15 +8,19 @@
 // 실행: 이 폴더에서  ./run_sim.sh  (Vivado xsim, 옵션은 run_sim.sh 참고)
 //       .mem 은 모두 bare 파일명으로 읽으므로 run_sim.sh 가 build/ 에 모아 두고 거기서 돌린다.
 //
-// 입력 / 기대값 (FRAMES = 2 : frame 0 = 실제 이미지 (손글씨 "6"), frame 1 = 좌우 반전)
+// 입력 / 기대값 (FRAMES = 2 : frame 0 = 26 클래스 재학습 덤프의 샘플 이미지 (EMNIST 'I', class 8), frame 1 = 좌우 반전)
+//   클래스는 대문자 26 개뿐 (0 = 'A' .. 25 = 'Z', 숫자 없음) - tb/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json
 //   rtl/cnn/rtl_ref/ (C 골든모델 cnn_chain rtl-vectors)
 //     ce1_stim.mem      16bit x 1568  conv_l1 pixel 입력, frame 당 28x28 raster
 //     ce1_out.mem       49bit x 2704  conv_l1 출력 {ch_done, d2, d1, d0}
 //     pool1_out.mem     49bit x  676  pool_l1 출력 {ch_done, d2, d1, d0}
 //     ce2_out.mem       17bit x 3872  conv_l2 출력 {ch_done, data}
 //     pool2_out.mem     17bit x  800  pool_l2 출력 {ch_done, data} = FC1 입력
+//     conv1_weight.mem 432bit x   12  conv_l1 weight 기대값 ([och][grp], grp0 lane0 = weight_rom_l1 case 상수)
 //     conv2_weight.mem 432bit x   32  conv_l2 weight ROM 기대값 ([och][is_ch35])
-//     conv1_bias_ce.mem / conv2_bias_ce.mem  골든과 짝이 맞는 INT32 bias
+//     conv1_bias_ce.mem / conv2_bias_ce.mem  INT32 bias 기대값
+//   RTL 은 rtl/cnn/mem/ (conv{1,2}_bias, l2_weight_ch*, fc*) 과 weight_rom_l1.v 의 case 상수를 쓴다. TB 는 ROM 을
+//   덮어쓰지 않는다 - mem/ 이 rtl_ref/ 와 다르면 [ROM1] [ROM] [BIAS] 와 그 뒤 단계에서 드러난다.
 //   tb/cnn/cnn_top/vectors/ (gen_fc_golden.py : pool2_out.mem 에서 FC 골든 규칙으로 계산)
 //     fc1_out.mem       16bit x  240  FC1 출력 (neuron 0..119)
 //     fc2_out.mem       16bit x  168  FC2 출력 (neuron 0..83)
@@ -26,7 +30,9 @@
 // 확인하는 것 (단계 경계마다 handshake 순서대로 골든 스트림과 비교)
 //   [C1]  conv_l1 출력  (l1_out_valid & l1_out_ready)          vs ce1_out.mem
 //   [P1]  pool_l1 출력  (l1_pool_valid & l1_pool_ready)        vs pool1_out.mem
+//   [ROM1] conv_l1 weight ROM - cal_valid 마다 weight_out == conv1_weight[out_ch_sel*2][143:0]
 //   [ROM] conv_l2 weight ROM - cal_valid 마다 weight_out == conv2_weight[out_ch_sel*2 + is_ch35]
+//   [BIAS] conv_l1 / conv_l2 bias ROM 내용 (시작할 때 한 번) == conv{1,2}_bias_ce.mem
 //   [C2]  conv_l2 출력  (l2_out_valid & l2_out_ready)          vs ce2_out.mem
 //   [P2]  pool_l2 출력  (l2_pool_valid & l2_pool_ready)        vs pool2_out.mem
 //   [F1]  FC1 출력      (U_FC.l1_out_valid & U_FC.l2_in_ready)  vs fc1_out.mem
@@ -49,11 +55,6 @@
 //   REPORT_FILE : 요약 + frame 별 단계 격자 (입력, C1, P1, C2, P2) + FC1 / FC2 / logit 표 + argmax 결과, signed 10진수.
 //                 '*' = 골든과 값이 다름, '!' = 값은 같고 ch_done 만 다름, ---- = 출력 안 나옴
 //   TRACE_FILE  : 모든 단계 handshake 의 sim time 과 값 (10진수, 괄호 안 hex). time 은 파형의 posedge 시각.
-//
-// TB 우회 (RTL 은 건드리지 않음)
-//   (W-bias, BIAS_FIX = 1) conv_out_stage 가 "conv1_bias.mem" / "conv2_bias.mem" (rtl/cnn/mem) 을 박아 넣는데,
-//             지금 weight 와 짝이 맞는 bias 는 rtl_ref/conv{1,2}_bias_ce.mem 이다. TB 가 두 bias ROM 을 덮어쓴다.
-//             BIAS_FIX = 0 이면 rtl/cnn/mem 의 bias 그대로 돌린다 (지금은 C1 부터 골든과 달라진다).
 
 module tb_cnn_top;
 
@@ -64,7 +65,6 @@ module tb_cnn_top;
     parameter FRAMES     = 2;
     parameter VALID_PCT  = 100;  // s_axis_tvalid 을 올릴 확률
     parameter GATE       = 0;    // 0: 앞 이미지 cnn_done 뒤, 1: conv_l1 이 앞 프레임을 다 내보낸 뒤
-    parameter BIAS_FIX   = 1;    // 1: conv bias ROM 을 *_bias_ce.mem 으로 덮어쓴다
     parameter SEED       = 1;
     parameter MAX_CYCLES = 600000;
     parameter MAX_REPORT = 10;   // 단계마다 콘솔에 찍을 불일치 최대 개수
@@ -129,6 +129,9 @@ module tb_cnn_top;
     reg [ 15:0] gold_lg [0:FRAMES*N_LG-1];
     reg [  7:0] gold_cls[0:FRAMES-1];
     reg [431:0] wref    [0:OCH2*2-1];
+    reg [431:0] wref1   [0:OCH1*2-1];
+    reg [ 31:0] bref1   [0:OCH1-1];
+    reg [ 31:0] bref2   [0:OCH2-1];
 
     // captured RTL streams - report 도 콘솔 판정도 이 배열을 쓴다
     reg [ 48:0] got_c1 [0:FRAMES*N_C1-1];
@@ -147,6 +150,8 @@ module tb_cnn_top;
     integer err_c1, err_p1, err_c2, err_p2, err_f1, err_f2, err_lg, err_am;
     integer shown_c1, shown_p1, shown_c2, shown_p2, shown_f1, shown_f2, shown_lg, shown_am;
     integer rom_checks, rom_errs, rom_shown;
+    integer rom1_checks, rom1_errs, rom1_shown;
+    integer bias_errs;
     integer ovr_l1, ovr_l2;
     integer stall_p2;                                     // pool_l2 -> fc_top : valid & ~ready 사이클 수
     integer img_ok;                                       // 이 frame 번호까지 입력을 넣어도 된다
@@ -160,6 +165,10 @@ module tb_cnn_top;
     function neq49;
         input [48:0] a, b;
         neq49 = (a !== b) || (^a === 1'bx) || (^b === 1'bx);
+    endfunction
+    function neq32;
+        input [31:0] a, b;
+        neq32 = (a !== b) || (^a === 1'bx) || (^b === 1'bx);
     endfunction
     function neq17;
         input [16:0] a, b;
@@ -279,6 +288,24 @@ module tb_cnn_top;
                 $fdisplay(fd_trace, "%10t %7d   P1 %5d  EXTRA", $realtime, cyc, n_p1);
             end
             n_p1 = n_p1 + 1;
+        end
+    end
+
+    // ---------------- [ROM1] conv_l1 weight ROM (weight_rom_l1 case 상수) ----------------
+    wire [143:0] rom1_expect = wref1[dut.U_CONV_L1.out_ch_sel*2][143:0];
+
+    always @(posedge clk) begin
+        if (rst_n && dut.U_CONV_L1.cal_valid) begin
+            rom1_checks = rom1_checks + 1;
+            if (dut.U_CONV_L1.weight_out !== rom1_expect) begin
+                rom1_errs = rom1_errs + 1;
+                if (rom1_shown < MAX_REPORT) begin
+                    rom1_shown = rom1_shown + 1;
+                    $display("[FAIL][ROM1] %t cyc %0d: out_ch_sel=%0d, weight_out.tap0=%0d exp %0d",
+                             $realtime, cyc, dut.U_CONV_L1.out_ch_sel,
+                             $signed(dut.U_CONV_L1.weight_out[15:0]), $signed(rom1_expect[15:0]));
+                end
+            end
         end
     end
 
@@ -661,11 +688,13 @@ module tb_cnn_top;
         begin
             fd = $fopen(REPORT_FILE, "w");
             $fdisplay(fd, "cnn_top (conv_l1 -> pool_l1 -> conv_l2 -> pool_l2 -> fc_top -> argmax) test report  (values in signed decimal)");
-            $fdisplay(fd, "  VALID_PCT=%0d GATE=%0d BIAS_FIX=%0d SEED=%0d FRAMES=%0d", VALID_PCT, GATE, BIAS_FIX, SEED, FRAMES);
+            $fdisplay(fd, "  VALID_PCT=%0d GATE=%0d SEED=%0d FRAMES=%0d", VALID_PCT, GATE, SEED, FRAMES);
             $fdisplay(fd, "  %0d cycles, pixel %0d / %0d, pool_l2 -> fc_top stall %0d cycles", cyc, pix, FRAMES * N_PIX, stall_p2);
             $fdisplay(fd, "  [C1]  conv_l1 out : %4d / %4d entries, %0d wrong   (ce1_out.mem)", n_c1, FRAMES * N_C1, err_c1);
             $fdisplay(fd, "  [P1]  pool_l1 out : %4d / %4d entries, %0d wrong   (pool1_out.mem)", n_p1, FRAMES * N_P1, err_p1);
+            $fdisplay(fd, "  [ROM1] conv_l1 rom : %0d / %0d cal_valid cycles wrong", rom1_errs, rom1_checks);
             $fdisplay(fd, "  [ROM] conv_l2 rom : %0d / %0d cal_valid cycles wrong", rom_errs, rom_checks);
+            $fdisplay(fd, "  [BIAS] conv bias rom : %0d / %0d entries wrong", bias_errs, OCH1 + OCH2);
             $fdisplay(fd, "  [C2]  conv_l2 out : %4d / %4d entries, %0d wrong   (ce2_out.mem)", n_c2, FRAMES * N_C2, err_c2);
             $fdisplay(fd, "  [P2]  pool_l2 out : %4d / %4d entries, %0d wrong   (pool2_out.mem)", n_p2, FRAMES * N_P2, err_p2);
             $fdisplay(fd, "  [F1]  FC1 out     : %4d / %4d values,  %0d wrong   (fc1_out.mem)", n_f1, FRAMES * N_F1, err_f1);
@@ -725,7 +754,7 @@ module tb_cnn_top;
         pass_all = (mem_ok && err_c1 == 0 && err_p1 == 0 && err_c2 == 0 && err_p2 == 0 &&
                     err_f1 == 0 && err_f2 == 0 && err_lg == 0 && err_am == 0 &&
                     u_hs_p2.errs == 0 && u_hs_f1.errs == 0 && u_hs_f2.errs == 0 &&
-                    rom_errs == 0 && ovr_l1 == 0 && ovr_l2 == 0 &&
+                    rom_errs == 0 && rom1_errs == 0 && bias_errs == 0 && ovr_l1 == 0 && ovr_l2 == 0 &&
                     n_c1 == FRAMES * N_C1 && n_p1 == FRAMES * N_P1 && n_c2 == FRAMES * N_C2 &&
                     n_p2 == FRAMES * N_P2 && n_f1 == FRAMES * N_F1 && n_f2 == FRAMES * N_F2 &&
                     n_lg == FRAMES * N_LG && n_done == FRAMES);
@@ -764,6 +793,8 @@ module tb_cnn_top;
         shown_c1 = 0; shown_p1 = 0; shown_c2 = 0; shown_p2 = 0; shown_f1 = 0; shown_f2 = 0; shown_lg = 0; shown_am = 0;
         stall_p2 = 0;
         rom_checks = 0; rom_errs = 0; rom_shown = 0;
+        rom1_checks = 0; rom1_errs = 0; rom1_shown = 0;
+        bias_errs = 0;
         ovr_l1 = 0; ovr_l2 = 0;
         t_c1_last = 0; t_c2_last = 0; t_p2_last = 0; t_lg_last = 0;
         for (i = 0; i < FRAMES * N_C1; i = i + 1) got_c1[i] = 49'bx;
@@ -785,14 +816,18 @@ module tb_cnn_top;
         $readmemh("logit_out.mem", gold_lg);
         $readmemh("class_out.mem", gold_cls);
         $readmemh("conv2_weight.mem", wref);
+        $readmemh("conv1_weight.mem", wref1);
+        $readmemh("conv1_bias_ce.mem", bref1);
+        $readmemh("conv2_bias_ce.mem", bref2);
         mem_ok = !(^stim[0] === 1'bx || ^gold_c1[0] === 1'bx || ^gold_p1[0] === 1'bx || ^gold_c2[0] === 1'bx ||
                    ^gold_p2[0] === 1'bx || ^gold_f1[0] === 1'bx || ^gold_f2[0] === 1'bx || ^gold_lg[0] === 1'bx ||
-                   ^gold_cls[0] === 1'bx || ^wref[0] === 1'bx);
+                   ^gold_cls[0] === 1'bx || ^wref[0] === 1'bx || ^wref1[0] === 1'bx ||
+                   ^bref1[0] === 1'bx || ^bref2[0] === 1'bx);
         if (!mem_ok) begin
             $display("[FAIL] golden .mem not loaded - run from build/ via run_sim.sh (or add the .mem files to the sim sources)");
-            $display("       TB : ce1_stim ce1_out pool1_out ce2_out pool2_out conv2_weight (rtl/cnn/rtl_ref),");
+            $display("       TB : ce1_stim ce1_out pool1_out ce2_out pool2_out conv1/2_weight conv1/2_bias_ce (rtl/cnn/rtl_ref),");
             $display("            fc1_out fc2_out logit_out class_out (tb/cnn/cnn_top/vectors)");
-            $display("       RTL: fc1..3_weight fc1..3_bias l2_weight_ch00..15 (rtl/cnn/mem), conv bias (see conv_out_stage.v)");
+            $display("       RTL: fc1..3_weight fc1..3_bias l2_weight_ch00..15 conv1/2_bias (rtl/cnn/mem)");
             $finish;
         end
 
@@ -804,13 +839,20 @@ module tb_cnn_top;
         @(negedge clk);
         rst_n = 1'b1;
 
-        // (W-bias) 두 conv 의 bias ROM 을 골든과 짝이 맞는 값으로 덮어쓴다
-        if (BIAS_FIX) begin
-            $readmemh("conv1_bias_ce.mem", dut.U_CONV_L1.U_OUTPUT_STAGE_L1.GEN_CONV1.u_output_buffer.u_bias_rom.mem);
-            $readmemh("conv2_bias_ce.mem", dut.U_CONV_L2.U_OUTPUT_STAGE_L1.GEN_CONV2.u_output_buffer.u_bias_rom.mem);
-        end
-        $display("cnn_top TB: %0d frame, VALID_PCT=%0d GATE=%0d BIAS_FIX=%0d SEED=%0d",
-                 FRAMES, VALID_PCT, GATE, BIAS_FIX, SEED);
+        // [BIAS] RTL bias ROM (rtl/cnn/mem/conv{1,2}_bias.mem) == rtl_ref/conv{1,2}_bias_ce.mem
+        for (i = 0; i < OCH1; i = i + 1)
+            if (neq32(dut.U_CONV_L1.U_OUTPUT_STAGE_L1.GEN_CONV1.u_output_buffer.u_bias_rom.mem[i], bref1[i])) begin
+                bias_errs = bias_errs + 1;
+                $display("[FAIL][BIAS] conv1 bias[%0d] = %0d, rtl_ref %0d", i,
+                         dut.U_CONV_L1.U_OUTPUT_STAGE_L1.GEN_CONV1.u_output_buffer.u_bias_rom.mem[i], $signed(bref1[i]));
+            end
+        for (i = 0; i < OCH2; i = i + 1)
+            if (neq32(dut.U_CONV_L2.U_OUTPUT_STAGE_L1.GEN_CONV2.u_output_buffer.u_bias_rom.mem[i], bref2[i])) begin
+                bias_errs = bias_errs + 1;
+                $display("[FAIL][BIAS] conv2 bias[%0d] = %0d, rtl_ref %0d", i,
+                         dut.U_CONV_L2.U_OUTPUT_STAGE_L1.GEN_CONV2.u_output_buffer.u_bias_rom.mem[i], $signed(bref2[i]));
+            end
+        $display("cnn_top TB: %0d frame, VALID_PCT=%0d GATE=%0d SEED=%0d", FRAMES, VALID_PCT, GATE, SEED);
 
         @(negedge clk);
         running = 1;
@@ -824,6 +866,14 @@ module tb_cnn_top;
                  cyc, t_c1_last, t_c2_last, t_p2_last, t_lg_last, stall_p2);
         stage_summary("[C1]  conv_l1 vs ce1_out    ", n_c1, FRAMES * N_C1, err_c1);
         stage_summary("[P1]  pool_l1 vs pool1_out  ", n_p1, FRAMES * N_P1, err_p1);
+        if (bias_errs == 0)
+            $display("  [BIAS] conv bias ROM         : all %0d entries == conv{1,2}_bias_ce", OCH1 + OCH2);
+        else
+            $display("  [BIAS] conv bias ROM         : %0d of %0d entries wrong", bias_errs, OCH1 + OCH2);
+        if (rom1_errs == 0)
+            $display("  [ROM1] conv_l1 weight ROM    : correct on all %0d cal_valid cycles", rom1_checks);
+        else
+            $display("  [ROM1] conv_l1 weight ROM    : %0d of %0d cal_valid cycles wrong", rom1_errs, rom1_checks);
         if (rom_errs == 0)
             $display("  [ROM] conv_l2 weight ROM     : correct on all %0d cal_valid cycles", rom_checks);
         else

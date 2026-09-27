@@ -7,13 +7,13 @@ module weight_rom_l1 #(
     output reg [          143:0] weight_out
 );
     always @(*) begin
-        case (out_ch_sel) 
-            0: weight_out = 144'h0847ed93b7cf4feee9f1ecd701952d2e4035;
-            1: weight_out = 144'hbabeb14bbe5dfea0245fe74326bc225c0f26;
-            2: weight_out = 144'he57404370b5f04fef2a6238f274c23700a49;
-            3: weight_out = 144'h16b21d9b22b5c04b05d24138c5e1d6ec0d45;
-            4: weight_out = 144'hd2c82c2ad0b12fe32ce62033e1e7e9b7ee82;
-            5: weight_out = 144'h11c40ea6008a2799ef62f8123364f6e3bcb6;
+        case (out_ch_sel)
+            0: weight_out = 144'h04ecf8e5b7c62f8dee67f0f2098c27b32b90;
+            1: weight_out = 144'hc4ddc3c3c82cf0910647e6cc22aa1f2e14c2;
+            2: weight_out = 144'hbf78e9e8fd88e533fc3536820ceb1e69173d;
+            3: weight_out = 144'h1ff5185d21cde0ac001f1f34c2b8e3b70029;
+            4: weight_out = 144'hfc941a97fd9618cb12840ebf12ef0d69f090;
+            5: weight_out = 144'h1149fafaeda41d54e76ef5a821220c37d75f;
             default: weight_out = 0;
         endcase
     end

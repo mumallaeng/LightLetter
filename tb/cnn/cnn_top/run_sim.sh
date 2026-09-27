@@ -3,16 +3,18 @@
 #
 #   ./run_sim.sh                     4 runs: input valid 100 / 60 / 35 / 15 %, GATE 0 (cnn_done gate)
 #   ./run_sim.sh all                 the 4 runs above + the same 4 with GATE 1 (frames overlap in the pipeline)
-#   ./run_sim.sh one [VALID] [GATE] [BIAS_FIX] [SEED]    a single run, e.g.  ./run_sim.sh one 60 1
+#   ./run_sim.sh one [VALID] [GATE] [SEED]    a single run, e.g.  ./run_sim.sh one 60 1
 #   ./run_sim.sh wave [VALID] [GATE] a single run with a waveform database build/<name>.wdb (open in Vivado)
-#   ./run_sim.sh vectors             regenerate vectors/ (FC / argmax golden) with gen_fc_golden.py
+#   ./run_sim.sh vectors             gen_chain_vectors.py --check: rtl_ref/ + vectors/ against the integer model
+#                                    (conv SCALE_EXP from rtl_ref/ce_params.txt)
 #   ./run_sim.sh img [N] [VALID]     test/<folder>/*.png, first N images per class (default 5) -> tb_cnn_top_img.v
 #                                    (no test/ : the saved 70 images in vectors/img_stim.mem)
 #                                    build/img_report.txt : label vs cnn_result (PASS/FAIL) + RTL vs integer model
 #   ./run_sim.sh clean
 #
 # Every run writes build/<name>_report.txt (summary + per stage grids / tables) and build/<name>_trace.txt
-# (every handshake with its sim time). <name> = v<VALID>_g<GATE>_b<BIAS_FIX>_s<SEED>.
+# (every handshake with its sim time). <name> = v<VALID>_g<GATE>_s<SEED>.
+# The RTL reads its ROMs from rtl/cnn/mem (and weight_rom_l1.v); the TB compares them with rtl/cnn/rtl_ref.
 # The .mem files are read by bare file name, so everything is copied into build/ and the sim runs there.
 set -u
 cd "$(dirname "$0")"
@@ -26,21 +28,33 @@ case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) XVLOG=xvlog.bat; XELAB=xelab.bat; XS
 prepare() {
     mkdir -p $BUILD
     cp $RTL/mem/*.mem $BUILD/                                         # ROMs the RTL reads
-    for f in ce1_stim ce1_out pool1_out ce2_out pool2_out conv2_weight conv1_bias_ce conv2_bias_ce; do
+    for f in ce1_stim ce1_out pool1_out ce2_out pool2_out conv1_weight conv2_weight conv1_bias_ce conv2_bias_ce; do
         cp $RTL/rtl_ref/$f.mem $BUILD/                                # golden up to pool_l2
     done
     for f in fc1_out fc2_out logit_out class_out; do
         [ -f vectors/$f.mem ] || { echo "vectors/$f.mem missing - run ./run_sim.sh vectors"; exit 1; }
         cp vectors/$f.mem $BUILD/                                     # FC / argmax golden
     done
+    scale_check
     (cd $BUILD && $XVLOG --nolog ../tb_cnn_top.v ../tb_cnn_top_img.v ../$RTL/*.v > xvlog.txt 2>&1) ||
         { grep -E "ERROR|WARNING" $BUILD/xvlog.txt; echo "xvlog failed"; exit 1; }
 }
 
-# run VALID GATE BIAS_FIX SEED [wave]
+# conv SCALE_EXP in the RTL vs the one rtl_ref/ was made with
+SC1=$(sed -n 's/^CONV_L1 .*SCALE_EXP=\([0-9]*\).*/\1/p' $RTL/rtl_ref/ce_params.txt)
+SC2=$(sed -n 's/^CONV_L2 .*SCALE_EXP=\([0-9]*\).*/\1/p' $RTL/rtl_ref/ce_params.txt)
+scale_check() {
+    local r1 r2
+    r1=$(sed -n 's/.*\.SCALE_EXP(\([0-9]*\)).*/\1/p' $RTL/conv_l1.v)
+    r2=$(sed -n 's/.*\.SCALE_EXP(\([0-9]*\)).*/\1/p' $RTL/conv_l2.v)
+    echo "conv SCALE_EXP  rtl: conv_l1 $r1, conv_l2 $r2   rtl_ref/ce_params.txt: conv_l1 $SC1, conv_l2 $SC2"
+    [ "$r1" = "$SC1" ] && [ "$r2" = "$SC2" ] || echo "  [WARN] SCALE_EXP differs - conv outputs will not match rtl_ref"
+}
+
+# run VALID GATE SEED [wave]
 run() {
-    local v=$1 g=$2 b=$3 s=$4 wave=${5:-}
-    local name=v${v}_g${g}_b${b}_s${s}
+    local v=$1 g=$2 s=$3 wave=${4:-}
+    local name=v${v}_g${g}_s${s}
     local dbg="" tcl=run_all.tcl
     echo "run all; quit" > $BUILD/$tcl
     if [ -n "$wave" ]; then
@@ -49,7 +63,7 @@ run() {
     fi
     # xelab options go through a file: xelab.bat on Windows splits command-line arguments at '='
     printf "%s\n" "--nolog" $dbg "tb_cnn_top" "-s snap_$name" "--generic_top VALID_PCT=$v" \
-        "--generic_top GATE=$g" "--generic_top BIAS_FIX=$b" "--generic_top SEED=$s" > $BUILD/xelab_$name.opt
+        "--generic_top GATE=$g" "--generic_top SEED=$s" > $BUILD/xelab_$name.opt
     (cd $BUILD &&
         $XELAB -f xelab_$name.opt > xelab_$name.txt 2>&1 ||
             { grep -E "ERROR" xelab_$name.txt; echo "xelab failed"; exit 1; }
@@ -84,13 +98,13 @@ run_img() {
 case "${1:-}" in
     ""|all)
         prepare
-        for v in 100 60 35 15; do run $v 0 1 $v; done
-        if [ "${1:-}" = all ]; then for v in 100 60 35 15; do run $v 1 1 $v; done; fi
+        for v in 100 60 35 15; do run $v 0 $v; done
+        if [ "${1:-}" = all ]; then for v in 100 60 35 15; do run $v 1 $v; done; fi
         echo "reports: $BUILD/*_report.txt, traces: $BUILD/*_trace.txt"
         ;;
-    one)   prepare; run "${2:-100}" "${3:-0}" "${4:-1}" "${5:-1}" ;;
-    wave)  prepare; run "${2:-100}" "${3:-0}" 1 1 wave; echo "waveform: $BUILD/v${2:-100}_g${3:-0}_b1_s1.wdb" ;;
-    vectors) python gen_fc_golden.py ;;
+    one)   prepare; run "${2:-100}" "${3:-0}" "${4:-1}" ;;
+    wave)  prepare; run "${2:-100}" "${3:-0}" 1 wave; echo "waveform: $BUILD/v${2:-100}_g${3:-0}_s1.wdb" ;;
+    vectors) python gen_chain_vectors.py --check --conv1-scale "$SC1" --conv2-scale "$SC2" ;;
     img)   prepare; run_img "${2:-5}" "${3:-100}" ;;
     clean) rm -rf $BUILD ;;
     *) sed -n '2,16p' "$0"; exit 1 ;;

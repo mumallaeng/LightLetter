@@ -95,7 +95,7 @@ module conv_l1 #(
     // ----------------------------------
     conv_out_stage #(
         .LAYER    (1),
-        .SCALE_EXP(16),
+        .SCALE_EXP(15),
         .CH_W     (36),
         .ACC_W    (40)
     ) U_OUTPUT_STAGE_L1 (
