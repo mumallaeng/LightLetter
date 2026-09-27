@@ -12,7 +12,7 @@ module fc_layer #(
     parameter CH_W        = 36,                // FC1=36; FC2=36; FC3=36
     parameter ACC_W       = 40,                // FC1=40; FC2=38; FC3=38
     parameter RELU        = 1,                 // FC1=1; FC2=1; FC3=0
-    parameter SCALE_EXP   = 15,                // FC1=15; FC2=14; FC3=13
+    parameter SCALE_EXP   = 16,                // FC1=16; FC2=15; FC3=14
     parameter WEIGHT_FILE = "fc1_weight.mem",
     parameter BIAS_FILE   = "fc1_bias.mem"
 ) (
