@@ -1,8 +1,8 @@
-"""Confirmed model: LeNet-5 3x3_schedule, FC 400->120->84->36, INT16 QAT.
+"""Confirmed model: LeNet-5 3x3_schedule, FC 400->120->84->26, INT16 QAT.
 
 conv_channels=[1,6,16] (kernel 3x3, stride 1, no padding) -> ReLU -> MaxPool(2x2,
 stride 2) after each Conv -> Flatten(5x5x16=400) -> FC1(400->120) -> ReLU ->
-FC2(120->84) -> ReLU -> FC3(84->36). Reproduces LeNet-5's spatial reduction
+FC2(120->84) -> ReLU -> FC3(84->26, uppercase A-Z). Reproduces LeNet-5's spatial reduction
 schedule (28->26->13->11->5, matching LeCun 1998's 32x32/5x5 schedule) inside this
 project's fixed 3x3 kernel, chosen after training and comparing 5 candidates
 (1-6-16, 1-6-8-8 conv-3-layer, this 3x3 schedule, and two 32x32/5x5 LeNet-5
@@ -26,7 +26,7 @@ from torch.nn import functional as F
 CONV_CHANNELS = [1, 6, 16]
 PADDING = 0
 POOL_STRIDE = 2
-FC_WIDTHS = [120, 84, 36]
+FC_WIDTHS = [120, 84, 26]
 
 
 def fake_quantize(x, scale, bits):
@@ -66,7 +66,7 @@ class Quant16(nn.Module):
 
 
 class Net(nn.Module):
-    """Hardcodes the confirmed spec: LeNet-5 3x3_schedule, FC 400->120->84->36."""
+    """Hardcodes the confirmed spec: LeNet-5 3x3_schedule, FC 400->120->84->26 (uppercase only)."""
 
     def __init__(self):
         super().__init__()
@@ -121,7 +121,7 @@ class Net(nn.Module):
             x = F.linear(x, self.weight_quant[i](fc.weight), self._quantized_bias(i, fc.bias))
             if j < len(self.fcs) - 1:
                 x = F.relu(x)
-            # No ReLU on the last FC. The argmax over the 36 logits is the class ID.
+            # No ReLU on the last FC. The argmax over the 26 logits is the class ID (0='A').
             x = self.activation_quant[i](x)
         return x
 

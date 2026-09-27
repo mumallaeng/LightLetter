@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wave_config>
+   <wave_state>
+   </wave_state>
+   <db_ref_list>
+      <db_ref path="tb_optical_tx_top_behav.wdb" id="1">
+         <top_modules>
+            <top_module name="glbl" />
+            <top_module name="tb_optical_tx_top" />
+         </top_modules>
+      </db_ref>
+   </db_ref_list>
+   <zoom_setting>
+      <ZoomStartTime time="57541557372fs"></ZoomStartTime>
+      <ZoomEndTime time="57942757373fs"></ZoomEndTime>
+      <Cursor1Time time="57201357372fs"></Cursor1Time>
+   </zoom_setting>
+   <column_width_setting>
+      <NameColumnWidth column_width="163"></NameColumnWidth>
+      <ValueColumnWidth column_width="67"></ValueColumnWidth>
+   </column_width_setting>
+   <WVObjectSize size="31" />
+   <wvobject fp_name="/tb_optical_tx_top/clk" type="logic">
+      <obj_property name="ElementShortName">clk</obj_property>
+      <obj_property name="ObjectShortName">clk</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/rst" type="logic">
+      <obj_property name="ElementShortName">rst</obj_property>
+      <obj_property name="ObjectShortName">rst</obj_property>
+   </wvobject>
+   <wvobject type="divider" fp_name="divider32">
+      <obj_property name="label">Ext. Status</obj_property>
+      <obj_property name="DisplayName">label</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/char_id" type="array">
+      <obj_property name="ElementShortName">char_id[7:0]</obj_property>
+      <obj_property name="ObjectShortName">char_id[7:0]</obj_property>
+      <obj_property name="Radix">ASCIIRADIX</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/char_valid" type="logic">
+      <obj_property name="ElementShortName">char_valid</obj_property>
+      <obj_property name="ObjectShortName">char_valid</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/char_ready" type="logic">
+      <obj_property name="ElementShortName">char_ready</obj_property>
+      <obj_property name="ObjectShortName">char_ready</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/tx_busy" type="logic">
+      <obj_property name="ElementShortName">tx_busy</obj_property>
+      <obj_property name="ObjectShortName">tx_busy</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/optical_tx" type="logic">
+      <obj_property name="ElementShortName">optical_tx</obj_property>
+      <obj_property name="ObjectShortName">optical_tx</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/tx_enable" type="logic">
+      <obj_property name="ElementShortName">tx_enable</obj_property>
+      <obj_property name="ObjectShortName">tx_enable</obj_property>
+   </wvobject>
+   <wvobject type="divider" fp_name="divider36">
+      <obj_property name="label">TX_FSM</obj_property>
+      <obj_property name="DisplayName">label</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/U_TX_FSM/state" type="array">
+      <obj_property name="ElementShortName">state[2:0]</obj_property>
+      <obj_property name="ObjectShortName">state[2:0]</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/U_TX_FSM/preamble_count" type="array">
+      <obj_property name="ElementShortName">preamble_count[7:0]</obj_property>
+      <obj_property name="ObjectShortName">preamble_count[7:0]</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/U_TX_FSM/frame_id" type="array">
+      <obj_property name="ElementShortName">frame_id[7:0]</obj_property>
+      <obj_property name="ObjectShortName">frame_id[7:0]</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/U_TX_FSM/latched_char_id" type="array">
+      <obj_property name="ElementShortName">latched_char_id[7:0]</obj_property>
+      <obj_property name="ObjectShortName">latched_char_id[7:0]</obj_property>
+      <obj_property name="Radix">ASCIIRADIX</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/U_TX_FSM/sync_valid" type="logic">
+      <obj_property name="ElementShortName">sync_valid</obj_property>
+      <obj_property name="ObjectShortName">sync_valid</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/U_TX_FSM/sync_ready" type="logic">
+      <obj_property name="ElementShortName">sync_ready</obj_property>
+      <obj_property name="ObjectShortName">sync_ready</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/U_TX_FSM/frame_gen_start" type="logic">
+      <obj_property name="ElementShortName">frame_gen_start</obj_property>
+      <obj_property name="ObjectShortName">frame_gen_start</obj_property>
+   </wvobject>
+   <wvobject type="divider" fp_name="divider44">
+      <obj_property name="label">Frame Generator</obj_property>
+      <obj_property name="DisplayName">label</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/tx_bit" type="logic">
+      <obj_property name="ElementShortName">tx_bit</obj_property>
+      <obj_property name="ObjectShortName">tx_bit</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/tx_bit_valid" type="logic">
+      <obj_property name="ElementShortName">tx_bit_valid</obj_property>
+      <obj_property name="ObjectShortName">tx_bit_valid</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/tx_bit_ready" type="logic">
+      <obj_property name="ElementShortName">tx_bit_ready</obj_property>
+      <obj_property name="ObjectShortName">tx_bit_ready</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/frame_gen_done" type="logic">
+      <obj_property name="ElementShortName">frame_gen_done</obj_property>
+      <obj_property name="ObjectShortName">frame_gen_done</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/U_TX_FRAME_GENERATOR/bit_count" type="array">
+      <obj_property name="ElementShortName">bit_count[5:0]</obj_property>
+      <obj_property name="ObjectShortName">bit_count[5:0]</obj_property>
+      <obj_property name="Radix">UNSIGNEDDECRADIX</obj_property>
+   </wvobject>
+   <wvobject type="divider" fp_name="divider53">
+      <obj_property name="label">Mapper / Carrier</obj_property>
+      <obj_property name="DisplayName">label</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/symbol_type" type="array">
+      <obj_property name="ElementShortName">symbol_type[1:0]</obj_property>
+      <obj_property name="ObjectShortName">symbol_type[1:0]</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/symbol_valid" type="logic">
+      <obj_property name="ElementShortName">symbol_valid</obj_property>
+      <obj_property name="ObjectShortName">symbol_valid</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/symbol_start" type="logic">
+      <obj_property name="ElementShortName">symbol_start</obj_property>
+      <obj_property name="ObjectShortName">symbol_start</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/symbol_done" type="logic">
+      <obj_property name="ElementShortName">symbol_done</obj_property>
+      <obj_property name="ObjectShortName">symbol_done</obj_property>
+   </wvobject>
+   <wvobject type="divider" fp_name="divider58">
+      <obj_property name="label">Symbol_finish_logic</obj_property>
+      <obj_property name="DisplayName">label</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/last_symbol_pending" type="logic">
+      <obj_property name="ElementShortName">last_symbol_pending</obj_property>
+      <obj_property name="ObjectShortName">last_symbol_pending</obj_property>
+   </wvobject>
+   <wvobject fp_name="/tb_optical_tx_top/dut/frame_done" type="logic">
+      <obj_property name="ElementShortName">frame_done</obj_property>
+      <obj_property name="ObjectShortName">frame_done</obj_property>
+   </wvobject>
+</wave_config>
