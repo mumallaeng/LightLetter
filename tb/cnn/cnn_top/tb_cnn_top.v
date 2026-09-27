@@ -3,7 +3,7 @@
 // cnn_top 전체 (conv_l1 -> pool_l1 -> conv_l2 -> pool_l2 -> fc_top -> argmax) 를 C 골든모델과 비교한다.
 //
 //   28x28x1 -> conv_l1 -> 26x26x6 -> pool_l1 -> 13x13x6 -> conv_l2 -> 11x11x16 -> pool_l2 -> 400
-//           -> FC1 -> 120 -> FC2 -> 84 -> FC3 -> logit 36 -> argmax -> cnn_result (class 0..35), cnn_done
+//           -> FC1 -> 120 -> FC2 -> 84 -> FC3 -> logit 26 -> argmax -> cnn_result (class 0..25 = 'A'..'Z'), cnn_done
 //
 // 실행: 이 폴더에서  ./run_sim.sh  (Vivado xsim, 옵션은 run_sim.sh 참고)
 //       .mem 은 모두 bare 파일명으로 읽으므로 run_sim.sh 가 build/ 에 모아 두고 거기서 돌린다.
@@ -20,7 +20,7 @@
 //   tb/cnn/cnn_top/vectors/ (gen_fc_golden.py : pool2_out.mem 에서 FC 골든 규칙으로 계산)
 //     fc1_out.mem       16bit x  240  FC1 출력 (neuron 0..119)
 //     fc2_out.mem       16bit x  168  FC2 출력 (neuron 0..83)
-//     logit_out.mem     16bit x   72  FC3 출력 = logit (signed, class 0..35)
+//     logit_out.mem     16bit x   52  FC3 출력 = logit (signed, class 0..25)
 //     class_out.mem      8bit x    2  argmax 결과
 //
 // 확인하는 것 (단계 경계마다 handshake 순서대로 골든 스트림과 비교)
@@ -32,7 +32,7 @@
 //   [F1]  FC1 출력      (U_FC.l1_out_valid & U_FC.l2_in_ready)  vs fc1_out.mem
 //   [F2]  FC2 출력      (U_FC.l2_out_valid & U_FC.l3_in_ready)  vs fc2_out.mem
 //   [LG]  FC3 출력      (logit_valid & logit_ready)            vs logit_out.mem
-//   [AM]  argmax        cnn_done 은 36 번째 logit 을 받은 바로 다음 클럭에만 1 클럭,
+//   [AM]  argmax        cnn_done 은 26 번째 logit 을 받은 바로 다음 클럭에만 1 클럭,
 //                       그때 cnn_result == class_out.mem (그리고 == RTL 이 실제로 낸 logit 의 argmax)
 //   [HS]  pool_l2 -> fc_top, FC1 -> FC2, FC2 -> FC3 handshake - valid 가 뜬 뒤 ready 전에 내려가거나 값이 바뀌면 위반
 //   [OVR] conv_l1 / conv_l2 out_reorder 가 꽉 찬 상태에서 버려진 push 횟수
@@ -69,7 +69,7 @@ module tb_cnn_top;
     parameter MAX_CYCLES = 600000;
     parameter MAX_REPORT = 10;   // 단계마다 콘솔에 찍을 불일치 최대 개수
 
-    localparam NUM_CLASS = 36;
+    localparam NUM_CLASS = 26;
     localparam IMG_W  = 28;
     localparam C1_W   = 26;
     localparam P1_W   = 13;
@@ -89,7 +89,7 @@ module tb_cnn_top;
     localparam N_P2   = P2_PIX * OCH2;       // 400  = FC1 입력
     localparam N_F1   = 120;
     localparam N_F2   = 84;
-    localparam N_LG   = NUM_CLASS;           // 36
+    localparam N_LG   = NUM_CLASS;           // 26
 
     // ---------------- DUT ----------------
     reg         clk;
@@ -178,13 +178,13 @@ module tb_cnn_top;
 
     // ---------------- AXIS source ----------------
     // valid 는 한 번 올리면 받을 때까지 유지. tdata / tuser / tlast 는 pix 에서 조합으로 뽑는다.
-    // tuser = frame 첫 pixel, tlast = frame 마지막 pixel (ce_ctrl_l1 은 tlast 로 이미지 끝을 센다)
+    // tuser = frame 첫 pixel, tlast = 행 마지막 pixel (c27, frame 당 28 번 - ce_ctrl_l1 은 28 번째 tlast 로 이미지 끝을 안다)
     wire pix_fire = s_axis_tvalid && s_axis_tready;
 
     always @(*) begin
         s_axis_tdata = (pix < FRAMES * N_PIX) ? stim[pix] : 16'd0;
         s_axis_tuser = (pix % N_PIX == 0);
-        s_axis_tlast = (pix % N_PIX == N_PIX - 1);
+        s_axis_tlast = (pix % IMG_W == IMG_W - 1);
     end
 
     always @(posedge clk or negedge rst_n) begin
@@ -651,9 +651,9 @@ module tb_cnn_top;
         end
     endtask
 
-    function [7:0] class_char;      // 0..9 -> '0'..'9', 10..35 -> 'A'..'Z'
+    function [7:0] class_char;      // 0..25 -> 'A'..'Z'
         input [7:0] k;
-        class_char = (k < 10) ? (8'd48 + k) : (8'd55 + k);
+        class_char = 8'd65 + k;
     endfunction
 
     task write_report;

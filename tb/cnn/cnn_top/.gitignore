@@ -1,0 +1,3 @@
+# run_sim.sh output (xsim snapshots, copied .mem files, reports / traces, waveforms)
+build/
+__pycache__/

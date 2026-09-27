@@ -5,14 +5,14 @@
 // 실행: 이 폴더에서  ./run_sim.sh img [N_PER_CLASS]   (gen_img_vectors.py 가 build/ 에 아래 파일을 만든다)
 //
 //   img_stim.mem    16bit x N_IMG*784  pixel_in = round(p / 255 * 2^14), 28x28 raster
-//   img_label.mem    8bit x N_IMG      정답 (test/<label>/ 폴더 번호, 0-9 A-Z)
+//   img_label.mem    8bit x N_IMG      정답 class (0 = 'A' .. 25 = 'Z', test/<폴더>/ 의 폴더 번호 - 10)
 //   img_class.mem    8bit x N_IMG      bit-exact 정수 모델 (gen_img_vectors.py) 의 class
-//   img_logit.mem   16bit x N_IMG*36   정수 모델의 logit
+//   img_logit.mem   16bit x N_IMG*26   정수 모델의 logit
 //   img_list.txt                        index label 글자 파일명
 //
 // 판정
 //   PASS / FAIL : cnn_result == label  (모델 정확도 문제라 all pass 일 필요는 없다)
-//   RTL==MODEL  : cnn_result 와 36 개 logit 이 정수 모델과 같은지 (다르면 RTL 문제)
+//   RTL==MODEL  : cnn_result 와 26 개 logit 이 정수 모델과 같은지 (다르면 RTL 문제)
 //
 // 입력 방식: 이미지 사이 리셋 없이, 다음 이미지는 앞 이미지의 cnn_done 뒤에 넣는다 (버튼 한 번에 한 장).
 
@@ -24,7 +24,7 @@ module tb_cnn_top_img;
     parameter SEED       = 1;
     parameter MAX_CYCLES = 40000 * N_IMG;
 
-    localparam NUM_CLASS = 36;
+    localparam NUM_CLASS = 26;
     localparam N_PIX     = 28 * 28;
 
     // ---------------- DUT ----------------
@@ -70,12 +70,12 @@ module tb_cnn_top_img;
     reg     running;
     reg [31:0] roll_v;
 
-    function [7:0] cls_chr;                               // 0-9 A-Z
+    function [7:0] cls_chr;                               // 0..25 -> A..Z
         input [7:0] c;
-        cls_chr = (c < 10) ? ("0" + c) : ("A" + c - 10);
+        cls_chr = "A" + c;
     endfunction
 
-    function lg_same;                                     // 이미지 n 의 logit 36 개가 모델과 같은지 (x 는 불일치)
+    function lg_same;                                     // 이미지 n 의 logit 26 개가 모델과 같은지 (x 는 불일치)
         input integer n;
         integer j;
         begin
@@ -92,7 +92,7 @@ module tb_cnn_top_img;
     always @(*) begin
         s_axis_tdata = (pix < N_IMG * N_PIX) ? stim[pix] : 16'd0;
         s_axis_tuser = (pix % N_PIX == 0);
-        s_axis_tlast = (pix % N_PIX == N_PIX - 1);
+        s_axis_tlast = (pix % 28 == 27);                  // 행 끝마다 (frame 당 28 번)
     end
 
     // 이미지 n 은 cnn_done 이 n 번 나온 뒤에 넣는다
@@ -144,7 +144,7 @@ module tb_cnn_top_img;
             fd = $fopen(REPORT_FILE, "w");
             $fdisplay(fd, "cnn_top image test  (N_IMG %0d, VALID_PCT %0d, SEED %0d)", N_IMG, VALID_PCT, SEED);
             $fdisplay(fd, "  PASS/FAIL  : cnn_result == label (folder)");
-            $fdisplay(fd, "  rtl==model : cnn_result and all 36 logits equal the bit-exact integer model");
+            $fdisplay(fd, "  rtl==model : cnn_result and all 26 logits equal the bit-exact integer model");
             $fdisplay(fd, "");
             $fdisplay(fd, "  img  label  rtl  model  logit[rtl]  logit[label]  cycle     result  rtl==model  file");
             for (n = 0; n < N_IMG; n = n + 1) begin
@@ -219,7 +219,7 @@ module tb_cnn_top_img;
         write_report;
         $display("");
         $display("  accuracy   : %0d / %0d  (cnn_result == label)", n_pass, N_IMG);
-        $display("  rtl==model : %0d / %0d  (cnn_result + 36 logits == bit-exact integer model)", n_same, N_IMG);
+        $display("  rtl==model : %0d / %0d  (cnn_result + 26 logits == bit-exact integer model)", n_same, N_IMG);
         if (n_done < N_IMG)
             $display("[FAIL] cnn_top img : only %0d / %0d cnn_done in %0d cycles", n_done, N_IMG, cyc);
         else if (n_same != N_IMG || n_lg != N_IMG * NUM_CLASS)

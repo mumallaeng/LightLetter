@@ -1,7 +1,9 @@
 """Test image stimulus + expected results for tb_cnn_top_img.v (cnn_top with real EMNIST images).
 
-test/<label>/*.png : 28x28 grayscale, upright (already transposed like tb/cnn_golden/data.py), folder = class 0..35
-                     (0-9, A-Z). The first N_PER_CLASS files of each folder (sorted by name) are used.
+test/<folder>/*.png : 28x28 grayscale, upright (already transposed like tb/cnn_golden/data.py), folder = EMNIST byclass
+                      index (10..35 = A..Z). The network is uppercase only (FC3 26 outputs, class 0 = 'A'), so
+                      label = folder - 10; digit folders (0..9) are skipped. The first N_PER_CLASS files of each
+                      folder (sorted by name) are used.
 
 Input quantization (conv_l1 input scale 2^-14, rtl/cnn/rtl_ref/README.md):
     pixel_in = round(p / 255 * 2^14)          p = 0..255 -> 0..16384 (never a .5 tie, 255 is odd)
@@ -13,11 +15,15 @@ ce1_out / pool1_out / ce2_out / pool2_out) and vectors/logit_out.mem.
 
     python gen_img_vectors.py [N_PER_CLASS]      (default 5)
 
+When test/ is not there, the saved set vectors/img_stim.mem + vectors/img_list.txt is used instead (the 70 images,
+5 per class M..Z, of the first run; the letter column of img_list.txt gives the label). A run from test/ saves its
+set there again.
+
 Output (build/ is where run_sim.sh runs xsim):
     build/img_stim.mem    16 bit x N*784   pixel_in, image after image, 28x28 raster
-    build/img_label.mem    8 bit x N       folder label
+    build/img_label.mem    8 bit x N       label = folder - 10 (0 = 'A')
     build/img_class.mem    8 bit x N       class of the integer model
-    build/img_logit.mem   16 bit x N*36    logits of the integer model
+    build/img_logit.mem   16 bit x N*26    logits of the integer model
     build/img_list.txt                      index, label, file
 """
 import sys
@@ -31,7 +37,9 @@ ROOT = HERE.parents[2]
 RTL_REF = ROOT / "rtl/cnn/rtl_ref"
 TEST = HERE / "test"
 BUILD = HERE / "build"
-CLASSES = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+SAVED = HERE / "vectors"
+CLASSES = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+N_CLASS = len(CLASSES)
 
 sys.path.insert(0, str(HERE))
 from gen_fc_golden import read_fc_txt, read_mem, fc  # noqa: E402
@@ -128,7 +136,7 @@ def self_check(m):
             "P1": lanes3(r["p1"], p1g[f * 338:(f + 1) * 338]),
             "C2": list(r["c2"].reshape(-1)) == [w & 0xFFFF for w in ce2[f * 1936:(f + 1) * 1936]],
             "P2": list(r["p2"].reshape(-1)) == [w & 0xFFFF for w in p2g[f * 400:(f + 1) * 400]],
-            "LG": r["logit"] == lgg[f * 36:(f + 1) * 36],
+            "LG": r["logit"] == lgg[f * N_CLASS:(f + 1) * N_CLASS],
         }
         print(f"  self check frame {f}: " + " ".join(f"{k} {'ok' if v else 'MISMATCH'}" for k, v in chk.items())
               + f"  class {r['cls']}")
@@ -143,22 +151,40 @@ def main():
         print("integer model does not match rtl_ref - stop")
         return 1
 
+    images = []                                 # (pixel_in 28x28, label, file)
+    if TEST.is_dir():
+        for d in sorted(TEST.iterdir(), key=lambda p: int(p.name)):
+            if not d.is_dir():
+                continue
+            if int(d.name) < 10:
+                print(f"  skip test/{d.name}/ (digit, not a class of the uppercase network)")
+                continue
+            for f in sorted(d.glob("*.png"))[:n_per]:
+                p = np.asarray(Image.open(f).convert("L"), dtype=np.int64)
+                assert p.shape == (28, 28), (f, p.shape)
+                img = (p * 16384 * 2 + 255) // (255 * 2)    # round(p / 255 * 2^14)
+                images.append((img, int(d.name) - 10, f.relative_to(HERE).as_posix()))
+        saved = [f"{i:3d} {l:2d} {CLASSES[l]} {n}" for i, (_, l, n) in enumerate(images)]
+        (SAVED / "img_stim.mem").write_text("".join(f"{v:04x}\n" for im, _, _ in images for v in im.reshape(-1)))
+        (SAVED / "img_list.txt").write_text("\n".join(saved) + "\n")
+    else:
+        print(f"  test/ not found - using the saved set vectors/img_stim.mem + img_list.txt (N_PER_CLASS ignored)")
+        px = read_mem(SAVED / "img_stim.mem")
+        for k, line in enumerate((SAVED / "img_list.txt").read_text().split("\n")):
+            if line.strip():
+                _, _, ch, name = line.split()
+                images.append((np.array(px[k * 784:(k + 1) * 784], dtype=np.int64).reshape(28, 28),
+                               CLASSES.index(ch), name))
+
     stim, labels, classes, logits, lines = [], [], [], [], []
-    for d in sorted(TEST.iterdir(), key=lambda p: int(p.name)):
-        if not d.is_dir():
-            continue
-        label = int(d.name)
-        for f in sorted(d.glob("*.png"))[:n_per]:
-            p = np.asarray(Image.open(f).convert("L"), dtype=np.int64)
-            assert p.shape == (28, 28), (f, p.shape)
-            img = (p * 16384 * 2 + 255) // (255 * 2)    # round(p / 255 * 2^14)
-            r = m.run(img)
-            idx = len(labels)
-            stim += list(img.reshape(-1))
-            labels.append(label)
-            classes.append(r["cls"])
-            logits += r["logit"]
-            lines.append(f"{idx:3d} {label:2d} {CLASSES[label]} {f.relative_to(HERE).as_posix()}")
+    for img, label, name in images:
+        r = m.run(img)
+        idx = len(labels)
+        stim += list(img.reshape(-1))
+        labels.append(label)
+        classes.append(r["cls"])
+        logits += r["logit"]
+        lines.append(f"{idx:3d} {label:2d} {CLASSES[label]} {name}")
 
     BUILD.mkdir(exist_ok=True)
     (BUILD / "img_stim.mem").write_text("".join(f"{v & 0xFFFF:04x}\n" for v in stim))
@@ -167,7 +193,7 @@ def main():
     (BUILD / "img_logit.mem").write_text("".join(f"{v & 0xFFFF:04x}\n" for v in logits))
     (BUILD / "img_list.txt").write_text("\n".join(lines) + "\n")
     hit = sum(l == c for l, c in zip(labels, classes))
-    print(f"  {len(labels)} images ({n_per} per class), integer model {hit}/{len(labels)} correct")
+    print(f"  {len(labels)} images, integer model {hit}/{len(labels)} correct")
     print(f"N_IMG={len(labels)}")
     return 0
 
