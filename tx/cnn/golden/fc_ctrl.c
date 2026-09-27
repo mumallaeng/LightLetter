@@ -1,75 +1,129 @@
 #include "fc_ctrl.h"
+#include <string.h>
 
-void fc_ctrl_init(fc_ctrl_t *m, const fc_param_t *p)
-{
-    m->p = *p;
-    fc_ctrl_reset(m);
-}
+void fc_ctrl_init(fc_ctrl_t *m) { fc_ctrl_reset(m); }
 
 void fc_ctrl_reset(fc_ctrl_t *m)
 {
-    m->state  = FC_IDLE;  m->state_next  = FC_IDLE;
-    m->neuron = 0;        m->neuron_next = 0;
-    m->chunk  = 0;        m->chunk_next  = 0;
+    m->state = FC_IDLE; m->state_next = FC_IDLE;
+    m->layer = 0;       m->layer_next = 0;
+    m->group = 0;       m->group_next = 0;
+    m->i = 0;           m->i_next = 0;
+    m->fill_cnt = 0;    m->fill_cnt_next = 0;
+}
+
+static uint16_t rom_row(uint8_t layer, uint8_t group, uint16_t i)
+{
+    const fc_layer_cfg_t *c = &FC_CFG[layer - 1];
+    return (uint16_t)(c->rom_base + (uint16_t)group * c->n_in + i);
 }
 
 /* always @(*) */
 void fc_ctrl_comb(fc_ctrl_t *m, const fc_ctrl_in_t *in, fc_ctrl_out_t *out)
 {
-    uint8_t mac_en      = (m->state == FC_RUN);
-    uint8_t neuron_last = (m->neuron + 1 == m->p.n_out);
-    uint8_t next_chunk  = (uint8_t)((m->chunk + 1 == m->p.num_chunk) ? 0 : m->chunk + 1);
-    uint8_t chunk_done  = mac_en && neuron_last;
+    memset(out, 0, sizeof *out);
 
-    // ========== Next State / Counter Logic ==========
-    m->state_next  = m->state;
-    m->neuron_next = m->neuron;
-    m->chunk_next  = m->chunk;
+    m->state_next    = m->state;
+    m->layer_next    = m->layer;
+    m->group_next    = m->group;
+    m->i_next        = m->i;
+    m->fill_cnt_next = m->fill_cnt;
 
-    if (m->state == FC_IDLE)
+    // ========== input fill (independent of the FSM) ==========
+    out->fc_in_ready = (m->fill_cnt < FC_FC1_IN);
+    out->fc1_in_we       = in->fc_in_valid && out->fc_in_ready;
+    out->fc1_in_waddr    = m->fill_cnt;
+    if (out->fc1_in_we)
+        m->fill_cnt_next = (uint16_t)(m->fill_cnt + 1);
+
+    // ========== Next State Logic ==========
+    switch (m->state)
     {
-        if (in->calc_full)
+        case FC_IDLE:
+            if (m->fill_cnt > 0)
+            {
+                m->state_next = FC_RUN;
+                m->layer_next = 1;
+                m->group_next = 0;
+                m->i_next     = 0;
+            }
+            break;
+
+        case FC_RUN:
         {
-            m->state_next  = FC_RUN;
-            m->neuron_next = 0;
+            const fc_layer_cfg_t *c = &FC_CFG[m->layer - 1];
+            uint8_t avail  = !(m->layer == 1 && m->group == 0) || (m->i < m->fill_cnt);
+            uint8_t lastin = (m->i + 1 == c->n_in);
+            uint8_t can    = avail && (!lastin || in->hold_free);
+            if (can)
+            {
+                out->mac_en = 1;
+                out->first  = (m->i == 0);
+                out->last   = lastin;
+                if (!lastin)
+                    m->i_next = (uint16_t)(m->i + 1);
+                else
+                {
+                    m->i_next = 0;
+                    if (m->group + 1 < c->groups)
+                    {
+                        m->group_next = (uint8_t)(m->group + 1);
+                        m->state_next = FC_RUN;
+                    }
+                    else
+                        m->state_next = FC_FLUSH;
+                }
+            }
+            break;
         }
-    }
-    else if (neuron_last)
-    {
-        m->neuron_next = 0;
-        m->chunk_next  = next_chunk;
-        /* keep running when the next chunk is already in the fill buffer */
-        m->state_next  = in->next_full ? FC_RUN : FC_IDLE;
-    }
-    else
-    {
-        m->neuron_next = (uint8_t)(m->neuron + 1);
+
+        case FC_FLUSH:
+            if (!in->mac_busy && in->hold_free)
+            {
+                if (m->layer == 1)
+                    m->fill_cnt_next = out->fc1_in_we ? 1 : 0; /* fc1_in is free again */
+                if (m->layer < FC_LAYERS)
+                {
+                    m->layer_next = (uint8_t)(m->layer + 1);
+                    m->group_next = 0;
+                    m->i_next     = 0;
+                    m->state_next = FC_RUN;
+                }
+                else
+                {
+                    m->layer_next = 0;
+                    m->state_next = FC_IDLE;
+                }
+            }
+            break;
     }
 
     // ========== Output Logic ==========
-    /* address of the next mac_en: same chunk and next neuron, or neuron 0 of the next chunk */
-    uint8_t addr_chunk  = (mac_en && neuron_last) ? next_chunk : m->chunk;
-    uint8_t addr_neuron = (m->state == FC_RUN && !neuron_last) ? (uint8_t)(m->neuron + 1) : 0;
-
-    out->mac_en     = mac_en;
-    out->rom_addr   = (uint16_t)((uint16_t)addr_chunk * m->p.n_out + addr_neuron);
-    out->chunk_done = chunk_done;
+    out->layer     = m->layer;
+    out->group     = m->group;
+    out->feature_raddr   = m->i;
+    out->bias_addr = m->layer ? (uint8_t)(FC_CFG[m->layer - 1].bias_base + m->group) : 0;
+    /* row the next cycle issues: where the counters land after this cycle */
+    out->weight_addr  = (m->layer_next >= 1) ? rom_row(m->layer_next, m->group_next, m->i_next) : 0;
 }
 
 /* always @(posedge clk) */
 void fc_ctrl_seq(fc_ctrl_t *m)
 {
-    m->state  = m->state_next;
-    m->neuron = m->neuron_next;
-    m->chunk  = m->chunk_next;
+    m->state    = m->state_next;
+    m->layer    = m->layer_next;
+    m->group    = m->group_next;
+    m->i        = m->i_next;
+    m->fill_cnt = m->fill_cnt_next;
 }
 
 const char *fc_state_name(fc_state_t s)
 {
     switch (s)
     {
-        case FC_IDLE: return "IDLE";
-        case FC_RUN:  return "RUN";
-        default:      return "?";
+        case FC_IDLE:  return "IDLE";
+        case FC_RUN:   return "RUN";
+        case FC_FLUSH: return "FLUSH";
+        default:       return "?";
     }
 }

@@ -1,9 +1,6 @@
 `timescale 1ns / 1ps
-// Bit-exact test: fc_top against the C golden model.
-//   vectors come from `make -f fc.mk rtl-vectors` (tx/cnn/golden):
-//   frame 1 = the real image, frame 2 = every input at 32767, which clamps the quantizers
-//   the FC1 and FC2 streams are checked at the layer boundaries, FC3 at the logit port
-//   run with `make -f sim.mk fc` (tx/cnn/tb); +vcd dumps build/<config>.vcd
+// Bit-exact test of fc_top against the C golden model; frame 2 has every input at 32767 so the quantizers clamp.
+// Run with `make -f sim.mk fc` (tx/cnn/tb); +vcd dumps build/<config>.vcd
 
 module tb_fc;
 
@@ -17,8 +14,7 @@ module tb_fc;
     parameter READY_PCT = 80;  // chance that Argmax accepts each cycle
     parameter SEED = 1;
     parameter VCD_FILE = "build/tb_fc.vcd";
-    // ROM files: "." is where Vivado puts the project's .mem files for a run; sim.mk points
-    // iverilog at tx/cnn/rtl/mem instead
+    // "." is the xsim run directory; sim.mk points iverilog at tx/cnn/rtl/mem
     parameter MEM = ".";
 
     reg         clk;
@@ -32,12 +28,8 @@ module tb_fc;
     wire        logit_valid;
 
     fc_top #(
-        .FC1_WEIGHT({MEM, "/fc1_weight.mem"}),
-        .FC1_BIAS  ({MEM, "/fc1_bias.mem"}),
-        .FC2_WEIGHT({MEM, "/fc2_weight.mem"}),
-        .FC2_BIAS  ({MEM, "/fc2_bias.mem"}),
-        .FC3_WEIGHT({MEM, "/fc3_weight.mem"}),
-        .FC3_BIAS  ({MEM, "/fc3_bias.mem"})
+        .WEIGHT_FILE({MEM, "/fc_weight.mem"}),
+        .BIAS_FILE  ({MEM, "/fc_bias.mem"})
     ) u_fc_top (
         .clk        (clk),
         .rst_n      (rst_n),
@@ -55,22 +47,18 @@ module tb_fc;
     reg [15:0] out2_mem[0:NOUT2-1];
     reg [15:0] out3_mem[0:NOUT3-1];
 
-    integer fed, idx1, idx2, idx3, fail_count, cycle, seed;
+    integer fed, idx1, idx2, idx3, fail_count, cycle, seed, first_in, last_logit;
     reg     fire_in;
     reg     stalled;
     reg [15:0] logit_prev;
 
-    // layer boundaries: a value moves when the producer is valid and the consumer is ready
-    wire fc1_fire = u_fc_top.u_fc1.out_valid & u_fc_top.u_fc1.out_ready;
-    wire fc2_fire = u_fc_top.u_fc2.out_valid & u_fc_top.u_fc2.out_ready;
+    // layer boundaries: fc_quant_out writes one FC1 / FC2 value per clock into the next buffer
+    wire        fc1_fire = u_fc_top.u_quant_out.feature_we & (u_fc_top.u_quant_out.feature_layer == 2'd1);
+    wire        fc2_fire = u_fc_top.u_quant_out.feature_we & (u_fc_top.u_quant_out.feature_layer == 2'd2);
+    wire [15:0] fc_wdata = u_fc_top.u_quant_out.feature_wdata;
 
-    // a push while the previous frame is still held by unread entries is dropped by the buffer
-    wire rb1_overrun = u_fc_top.u_fc1.GEN_RELU_QUANT.u_relu_quant.u_out_reorder.push
-                     & u_fc_top.u_fc1.GEN_RELU_QUANT.u_relu_quant.u_out_reorder.frame_full;
-    wire rb2_overrun = u_fc_top.u_fc2.GEN_RELU_QUANT.u_relu_quant.u_out_reorder.push
-                     & u_fc_top.u_fc2.GEN_RELU_QUANT.u_relu_quant.u_out_reorder.frame_full;
-    wire rb3_overrun = u_fc_top.u_fc3.GEN_QUANT_SIGNED.u_fc_quant_signed.u_out_reorder.push
-                     & u_fc_top.u_fc3.GEN_QUANT_SIGNED.u_fc_quant_signed.u_out_reorder.frame_full;
+    // a group's sums arriving while the hold register is still full would be lost
+    wire quant_out_overrun = u_fc_top.u_mac.sum_valid & u_fc_top.u_quant_out.valid;
 
     always #5 clk = ~clk;
 
@@ -82,32 +70,30 @@ module tb_fc;
         end
     endtask
 
-    // $readmemh resolves a relative path against the simulator's working directory, which
-    // differs per flow, and it leaves the array at x rather than failing when the file is not
-    // there. Try each place the vectors can sit and keep the set that loaded, so no flow needs
-    // a path override, and say so plainly if none of them held the files.
+    // $readmemh resolves against the simulator's working directory, which differs per flow
+    // and leaves the array at x when the file is missing: try each place and keep the set that loaded
     task load_vectors;
         begin
-            // tx/cnn/tb, where iverilog runs
-            $readmemh("vectors/fc_stim.mem", stim_mem);
-            $readmemh("vectors/fc1_out.mem", out1_mem);
-            $readmemh("vectors/fc2_out.mem", out2_mem);
-            $readmemh("vectors/fc3_out.mem", out3_mem);
+            // Vivado: the .mem files of sim_1 sit in the xsim run directory
+            $readmemh("fc_stim.mem", stim_mem);
+            $readmemh("fc1_out.mem", out1_mem);
+            $readmemh("fc2_out.mem", out2_mem);
+            $readmemh("fc3_out.mem", out3_mem);
 
-            // tx/cnn/rtl/mem, where a batch run reads the ROMs from
+            // iverilog: tx/cnn/tb
+            if (stim_mem[0] === 16'hxxxx) begin
+                $readmemh("vectors/fc_stim.mem", stim_mem);
+                $readmemh("vectors/fc1_out.mem", out1_mem);
+                $readmemh("vectors/fc2_out.mem", out2_mem);
+                $readmemh("vectors/fc3_out.mem", out3_mem);
+            end
+
+            // batch run: tx/cnn/rtl/mem
             if (stim_mem[0] === 16'hxxxx) begin
                 $readmemh("../../tb/vectors/fc_stim.mem", stim_mem);
                 $readmemh("../../tb/vectors/fc1_out.mem", out1_mem);
                 $readmemh("../../tb/vectors/fc2_out.mem", out2_mem);
                 $readmemh("../../tb/vectors/fc3_out.mem", out3_mem);
-            end
-
-            // <project>.sim/sim_1/behav/xsim, where Vivado runs
-            if (stim_mem[0] === 16'hxxxx) begin
-                $readmemh("../../../../tx/cnn/tb/vectors/fc_stim.mem", stim_mem);
-                $readmemh("../../../../tx/cnn/tb/vectors/fc1_out.mem", out1_mem);
-                $readmemh("../../../../tx/cnn/tb/vectors/fc2_out.mem", out2_mem);
-                $readmemh("../../../../tx/cnn/tb/vectors/fc3_out.mem", out3_mem);
             end
 
             if (stim_mem[0] === 16'hxxxx) begin
@@ -137,6 +123,8 @@ module tb_fc;
         stalled     = 1'b0;
         logit_prev  = 16'd0;
         seed        = SEED;
+        first_in    = -1;
+        last_logit  = -1;
 
         repeat (3) @(negedge clk);
         rst_n = 1'b1;
@@ -155,19 +143,19 @@ module tb_fc;
             // ---- FC1 / FC2 boundaries ----
             if (fc1_fire) begin
                 if (idx1 >= NOUT1) fail("more FC1 values than golden");
-                else if (u_fc_top.u_fc1.out_data !== out1_mem[idx1]) begin
-                    fail("FC1 out_data mismatch");
+                else if (fc_wdata !== out1_mem[idx1]) begin
+                    fail("FC1 value mismatch");
                     if (fail_count <= 10)
-                        $display("      FC1 #%0d: rtl %h golden %h", idx1, u_fc_top.u_fc1.out_data, out1_mem[idx1]);
+                        $display("      FC1 #%0d: rtl %h golden %h", idx1, fc_wdata, out1_mem[idx1]);
                 end
                 idx1 = idx1 + 1;
             end
             if (fc2_fire) begin
                 if (idx2 >= NOUT2) fail("more FC2 values than golden");
-                else if (u_fc_top.u_fc2.out_data !== out2_mem[idx2]) begin
-                    fail("FC2 out_data mismatch");
+                else if (fc_wdata !== out2_mem[idx2]) begin
+                    fail("FC2 value mismatch");
                     if (fail_count <= 10)
-                        $display("      FC2 #%0d: rtl %h golden %h", idx2, u_fc_top.u_fc2.out_data, out2_mem[idx2]);
+                        $display("      FC2 #%0d: rtl %h golden %h", idx2, fc_wdata, out2_mem[idx2]);
                 end
                 idx2 = idx2 + 1;
             end
@@ -186,15 +174,17 @@ module tb_fc;
             end
 
             if (fc_in_ready === 1'bx) fail("fc_in_ready is X");
-            if (rb1_overrun) fail("FC1 reorder buffer overrun");
-            if (rb2_overrun) fail("FC2 reorder buffer overrun");
-            if (rb3_overrun) fail("FC3 reorder buffer overrun");
+            if (quant_out_overrun) fail("hold register overrun");
 
             stalled    = (logit_valid === 1'b1) && !logit_ready;
             logit_prev = logit_data;
 
             // ---- bookkeeping for the next cycle ----
-            if (fire_in && fc_in_ready) fed = fed + 1;
+            if (fire_in && fc_in_ready) begin
+                if (fed == 0) first_in = cycle;
+                fed = fed + 1;
+            end
+            if (idx3 == LOGITS && last_logit < 0) last_logit = cycle;
             @(negedge clk);
         end
 
@@ -203,9 +193,9 @@ module tb_fc;
         if (idx2 != NOUT2) fail("FC2 value count");
         if (idx3 != NOUT3) fail("logit count");
 
-        $display("[%0s] fc_top valid=%0d%% ready=%0d%% seed=%0d : in %0d/%0d, FC1 %0d/%0d, FC2 %0d/%0d, logits %0d/%0d, %0d failures",
+        $display("[%0s] fc_top valid=%0d%% ready=%0d%% seed=%0d : in %0d/%0d, FC1 %0d/%0d, FC2 %0d/%0d, logits %0d/%0d, %0d failures, frame 1 %0d cycles",
                  (fail_count == 0) ? " ok " : "FAIL", VALID_PCT, READY_PCT, SEED, fed, NSTIM,
-                 idx1, NOUT1, idx2, NOUT2, idx3, NOUT3, fail_count);
+                 idx1, NOUT1, idx2, NOUT2, idx3, NOUT3, fail_count, last_logit - first_in);
         $finish;
     end
 

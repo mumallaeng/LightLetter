@@ -1,123 +1,77 @@
-#include <string.h>
 #include "fc_mac.h"
+#include <string.h>
 
-/* one balanced adder level: pairs nodes up, an odd node moves up untouched */
-static uint8_t tree_level(const ob_ch_t *in, uint8_t n, ob_ch_t *out, uint8_t *ovf)
+void fc_mac_init(fc_mac_t *m)
 {
-    uint8_t cur = (uint8_t)((n + 1) >> 1);
-
-    for (uint8_t g = 0; g < cur; g++)
-    {
-        int64_t v = (2 * g + 1 < n) ? in[2 * g] + in[2 * g + 1] : in[2 * g];
-        *ovf |= !ob_fits(v, OB_CH_W);
-        out[g] = ob_sext(v, OB_CH_W);
-    }
-    return cur;
-}
-
-void fc_mac_init(fc_mac_t *m, const fc_param_t *p)
-{
-    m->p = *p;
-
-    uint8_t levels = 1;
-    while ((1u << levels) < p->lanes)
-        levels++;
-    m->levels = (p->lanes > 1) ? levels : 1;
-    m->split  = (uint8_t)(m->levels / 2);
-    m->midn   = (uint8_t)((p->lanes + (1u << m->split) - 1) >> m->split);
-
     fc_mac_reset(m);
+    m->dbg_acc_ovf_cnt = 0;
 }
 
 void fc_mac_reset(fc_mac_t *m)
 {
-    memset(m->x_r, 0, sizeof(m->x_r));
-    memset(m->x_r_next, 0, sizeof(m->x_r_next));
-    memset(m->w_r, 0, sizeof(m->w_r));
-    memset(m->w_r_next, 0, sizeof(m->w_r_next));
-    memset(m->prod, 0, sizeof(m->prod));
-    memset(m->prod_next, 0, sizeof(m->prod_next));
-    memset(m->prod2, 0, sizeof(m->prod2));
-    memset(m->prod2_next, 0, sizeof(m->prod2_next));
-    memset(m->mid, 0, sizeof(m->mid));
-    memset(m->mid_next, 0, sizeof(m->mid_next));
+    memset(&m->s1, 0, sizeof m->s1);  memset(&m->s1_next, 0, sizeof m->s1_next);
+    memset(&m->s2, 0, sizeof m->s2);  memset(&m->s2_next, 0, sizeof m->s2_next);
+    memset(m->acc, 0, sizeof m->acc); memset(m->acc_next, 0, sizeof m->acc_next);
+    m->w_dbg_ovf = 0;
+}
 
-    m->in_valid    = 0;  m->in_valid_next    = 0;
-    m->prod_valid  = 0;  m->prod_valid_next  = 0;
-    m->prod2_valid = 0;  m->prod2_valid_next = 0;
-    m->mid_valid  = 0;  m->mid_valid_next  = 0;
-    m->sum        = 0;  m->sum_next        = 0;
-    m->sum_valid  = 0;  m->sum_valid_next  = 0;
-
-    m->w_dbg_ch_ovf   = 0;
-    m->dbg_ch_ovf_cnt = 0;
+static int fits_acc_w(fc_acc_t v)
+{
+    const fc_acc_t lim = (fc_acc_t)1 << (FC_ACC_W - 1);
+    return v >= -lim && v < lim;
 }
 
 /* always @(*) */
 void fc_mac_comb(fc_mac_t *m, const fc_mac_in_t *in, fc_mac_out_t *out)
 {
-    ob_ch_t node[FC_MAX_LANES];
-    uint8_t ovf = 0;
+    // ========== stage 1 next: operand registers ==========
+    m->s1_next.feature = in->feature;
+    memcpy(m->s1_next.weight, in->weight, sizeof m->s1_next.weight);
+    memcpy(m->s1_next.bias, in->bias, sizeof m->s1_next.bias);
+    m->s1_next.first = in->first && in->mac_en;
+    m->s1_next.mac   = in->mac_en;
+    m->s1_next.last  = in->last && in->mac_en;
+    m->s1_next.layer = in->layer;
+    m->s1_next.group = in->group;
+    m->s1_next.valid = in->mac_en;
 
-    // ========== Stage 1: operand registers (DSP AREG/BREG) ==========
-    for (uint8_t i = 0; i < m->p.lanes; i++)
+    // ========== stage 2 next: products ==========
+    for (int l = 0; l < FC_P; l++)
+        m->s2_next.prod[l] = (int32_t)m->s1.feature * (int32_t)m->s1.weight[l];
+    memcpy(m->s2_next.bias, m->s1.bias, sizeof m->s2_next.bias);
+    m->s2_next.first = m->s1.first;
+    m->s2_next.mac   = m->s1.mac;
+    m->s2_next.last  = m->s1.last;
+    m->s2_next.layer = m->s1.layer;
+    m->s2_next.group = m->s1.group;
+    m->s2_next.valid = m->s1.valid;
+
+    // ========== accumulate: acc <= bias | acc + product ==========
+    m->w_dbg_ovf = 0;
+    for (int l = 0; l < FC_P; l++)
     {
-        m->x_r_next[i] = in->x[i];
-        m->w_r_next[i] = in->w[i];
+        fc_acc_t sum = m->acc[l];
+        if (m->s2.valid && m->s2.mac)
+            sum = (m->s2.first ? (fc_acc_t)m->s2.bias[l] : m->acc[l]) + m->s2.prod[l];
+        m->acc_next[l] = sum;
+        out->sum[l]    = sum;
+        if (m->s2.valid && m->s2.mac && !fits_acc_w(sum))
+            m->w_dbg_ovf = 1;
     }
-    m->in_valid_next = in->mac_en;
-
-    // ========== Stage 2: LANES products ==========
-    for (uint8_t i = 0; i < m->p.lanes; i++)
-        m->prod_next[i] = (int64_t)(uint32_t)m->x_r[i] * (int64_t)m->w_r[i];
-    m->prod_valid_next = m->in_valid;
-
-    // ========== Stage 3: the products again (DSP MREG) ==========
-    memcpy(m->prod2_next, m->prod, sizeof(m->prod2_next));
-    m->prod2_valid_next = m->prod_valid;
-
-    // ========== Stage 4: adder tree up to the split ==========
-    uint8_t n = m->p.lanes;
-    for (uint8_t i = 0; i < n; i++)
-        node[i] = ob_sext(m->prod2[i], OB_CH_W);
-
-    for (uint8_t lv = 1; lv <= m->split; lv++)
-        n = tree_level(node, n, node, &ovf);
-
-    memcpy(m->mid_next, node, sizeof(ob_ch_t) * n);
-    m->mid_valid_next = m->prod2_valid;
-
-    // ========== Stage 5: the split down to one value ==========
-    memcpy(node, m->mid, sizeof(ob_ch_t) * m->midn);
-    n = m->midn;
-
-    for (uint8_t lv = (uint8_t)(m->split + 1); lv <= m->levels; lv++)
-        n = tree_level(node, n, node, &ovf);
-
-    m->sum_next       = node[0];
-    m->sum_valid_next = m->mid_valid;
 
     // ========== Output Logic ==========
-    out->ch_result = m->sum;
-    out->mac_valid = m->sum_valid;
-
-    m->w_dbg_ch_ovf = (m->prod2_valid || m->mid_valid) && ovf;
+    out->sum_valid = m->s2.valid && m->s2.mac && m->s2.last;
+    out->layer     = m->s2.layer;
+    out->group     = m->s2.group;
+    out->busy      = m->s1.valid || m->s2.valid;
 }
 
 /* always @(posedge clk) */
 void fc_mac_seq(fc_mac_t *m)
 {
-    memcpy(m->x_r, m->x_r_next, sizeof(m->x_r));
-    memcpy(m->w_r, m->w_r_next, sizeof(m->w_r));
-    memcpy(m->prod, m->prod_next, sizeof(m->prod));
-    memcpy(m->prod2, m->prod2_next, sizeof(m->prod2));
-    memcpy(m->mid, m->mid_next, sizeof(m->mid));
-    m->in_valid    = m->in_valid_next;
-    m->prod_valid  = m->prod_valid_next;
-    m->prod2_valid = m->prod2_valid_next;
-    m->mid_valid  = m->mid_valid_next;
-    m->sum        = m->sum_next;
-    m->sum_valid  = m->sum_valid_next;
-
-    m->dbg_ch_ovf_cnt += m->w_dbg_ch_ovf;
+    m->s1 = m->s1_next;
+    m->s2 = m->s2_next;
+    memcpy(m->acc, m->acc_next, sizeof m->acc);
+    if (m->w_dbg_ovf)
+        m->dbg_acc_ovf_cnt++;
 }
