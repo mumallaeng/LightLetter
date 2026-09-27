@@ -6,6 +6,13 @@ module tb_img_preprocess;
     localparam int IN_H  = 720;
     localparam int OUT_W = 28;
     localparam int OUT_H = 28;
+    localparam int CROP_SIZE =
+        (IN_W < IN_H) ? IN_W : IN_H;
+    localparam int CROP_X_OFFSET =
+        (IN_W - CROP_SIZE) / 2;
+    localparam int CROP_Y_OFFSET =
+        (IN_H - CROP_SIZE) / 2;
+    localparam int THRESHOLD = 100;
 
     localparam int TOTAL_OUTPUT_PIXELS =
         OUT_W * OUT_H;
@@ -203,6 +210,8 @@ module tb_img_preprocess;
         integer expected_g;
         integer expected_b;
         integer expected_gray;
+        integer expected_inverted;
+        integer expected_processed;
 
         if (rst_n && m_valid && m_ready) begin
 
@@ -218,14 +227,16 @@ module tb_img_preprocess;
             ox = out_count % OUT_W;
             oy = out_count / OUT_W;
 
-            // Nearest-neighbor source coordinates
+            // Center-square crop followed by nearest-point sampling.
             src_x =
-                ((2 * ox + 1) * IN_W) /
-                (2 * OUT_W);
+                CROP_X_OFFSET +
+                (((2 * ox + 1) * CROP_SIZE) /
+                 (2 * OUT_W));
 
             src_y =
-                ((2 * oy + 1) * IN_H) /
-                (2 * OUT_H);
+                CROP_Y_OFFSET +
+                (((2 * oy + 1) * CROP_SIZE) /
+                 (2 * OUT_H));
 
             // Read the expected RGB pixel from memory.
             expected_pixel =
@@ -243,17 +254,29 @@ module tb_img_preprocess;
                  29  * expected_b +
                  128) >> 8;
 
-            // Check grayscale value.
+            expected_inverted =
+                255 - expected_gray;
+
+            if (expected_inverted < THRESHOLD)
+                expected_processed = 0;
+            else
+                expected_processed = expected_inverted;
+
+            // Check crop, grayscale, inversion, and threshold result.
             if (
                 m_data[7:0] !==
-                expected_gray[7:0]
+                expected_processed[7:0]
             ) begin
                 $fatal(
                     1,
-                    "Pixel %0d mismatch: got %0d expected %0d",
+                    "Pixel %0d mismatch: got %0d expected %0d (src_x=%0d src_y=%0d gray=%0d inverted=%0d)",
                     out_count,
                     m_data[7:0],
-                    expected_gray
+                    expected_processed,
+                    src_x,
+                    src_y,
+                    expected_gray,
+                    expected_inverted
                 );
             end
 

@@ -4,7 +4,8 @@ module img_preprocess #(
     parameter IN_WIDTH   = 1280,
     parameter IN_HEIGHT  = 720,
     parameter OUT_WIDTH  = 28,
-    parameter OUT_HEIGHT = 28
+    parameter OUT_HEIGHT = 28,
+    parameter THRESHOLD  = 100
 ) (
     input  wire         axis_aclk,
     input  wire         axis_aresetn,
@@ -27,6 +28,17 @@ module img_preprocess #(
     output reg          m_axis_tlast
 );
 
+    // Center square crop. For 1280x720 input this selects
+    // X=280..999 and Y=0..719 before 28x28 sampling.
+    localparam CROP_SIZE =
+        (IN_WIDTH < IN_HEIGHT) ? IN_WIDTH : IN_HEIGHT;
+
+    localparam CROP_X_OFFSET =
+        (IN_WIDTH - CROP_SIZE) / 2;
+
+    localparam CROP_Y_OFFSET =
+        (IN_HEIGHT - CROP_SIZE) / 2;
+
     localparam IX_W = $clog2(IN_WIDTH);
     localparam IY_W = $clog2(IN_HEIGHT);
     localparam OX_W = $clog2(OUT_WIDTH);
@@ -37,15 +49,19 @@ module img_preprocess #(
     localparam X_REM_W = $clog2(X_DEN);
     localparam Y_REM_W = $clog2(Y_DEN);
 
-    localparam X_FIRST     = IN_WIDTH / X_DEN;
-    localparam Y_FIRST     = IN_HEIGHT / Y_DEN;
-    localparam X_FIRST_REM = IN_WIDTH % X_DEN;
-    localparam Y_FIRST_REM = IN_HEIGHT % Y_DEN;
+    localparam X_FIRST     =
+        CROP_X_OFFSET + (CROP_SIZE / X_DEN);
 
-    localparam X_STEP_BASE = (2 * IN_WIDTH) / X_DEN;
-    localparam Y_STEP_BASE = (2 * IN_HEIGHT) / Y_DEN;
-    localparam X_STEP_REM  = (2 * IN_WIDTH) % X_DEN;
-    localparam Y_STEP_REM  = (2 * IN_HEIGHT) % Y_DEN;
+    localparam Y_FIRST     =
+        CROP_Y_OFFSET + (CROP_SIZE / Y_DEN);
+
+    localparam X_FIRST_REM = CROP_SIZE % X_DEN;
+    localparam Y_FIRST_REM = CROP_SIZE % Y_DEN;
+
+    localparam X_STEP_BASE = (2 * CROP_SIZE) / X_DEN;
+    localparam Y_STEP_BASE = (2 * CROP_SIZE) / Y_DEN;
+    localparam X_STEP_REM  = (2 * CROP_SIZE) % X_DEN;
+    localparam Y_STEP_REM  = (2 * CROP_SIZE) % Y_DEN;
 
     // Capture state
     localparam STATE_IDLE    = 2'd0;
@@ -95,6 +111,8 @@ module img_preprocess #(
     wire [7:0] pix_b;
     wire [15:0] luma_sum;
     wire [7:0] luma;
+    wire [7:0] inverted_luma;
+    wire [7:0] processed_pixel;
 
     assign capture_req_rise =
         capture_req & ~capture_req_d;
@@ -169,6 +187,15 @@ module img_preprocess #(
 
     assign luma =
         luma_sum[15:8];
+
+    // Invert polarity, then suppress the dark background.
+    assign inverted_luma =
+        8'd255 - luma;
+
+    assign processed_pixel =
+        (inverted_luma < THRESHOLD)
+        ? 8'd0
+        : inverted_luma;
 
     always @(posedge axis_aclk or negedge axis_aresetn) begin
         if (!axis_aresetn) begin
@@ -247,7 +274,7 @@ module img_preprocess #(
 
                 // Output only selected pixels during STATE_CAPTURE.
                 if (selected) begin
-                    m_axis_tdata  <= {8'd0, luma};
+                    m_axis_tdata  <= {8'd0, processed_pixel};
                     m_axis_tvalid <= 1'b1;
 
                     // First pixel of the 28x28 output frame
