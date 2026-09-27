@@ -5,7 +5,7 @@
 // chunk_done marks the last neuron of a chunk and hands the calc buffer back to fc_staging.
 
 module fc_ctrl #(
-    parameter N_OUT     = 120,  // FC1=120; FC2=84; FC3=36
+    parameter N_OUT     = 120,  // FC1=120; FC2=84; FC3=26
     parameter NUM_CHUNK = 16    // FC1=16; FC2=12; FC3=17
 ) (
     input  wire                               clk,

@@ -6,7 +6,7 @@
 
 module fc_weight_rom #(
     parameter L         = 25,               // FC1=25; FC2=10; FC3=5
-    parameter N_OUT     = 120,              // FC1=120; FC2=84; FC3=36
+    parameter N_OUT     = 120,              // FC1=120; FC2=84; FC3=26
     parameter NUM_CHUNK = 16,               // FC1=16; FC2=12; FC3=17
     parameter ROM_FILE  = "fc1_weight.mem"  // rtl/cnn/mem
 ) (

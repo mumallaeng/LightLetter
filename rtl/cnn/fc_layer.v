@@ -6,7 +6,7 @@
 
 module fc_layer #(
     parameter N_IN        = 400,               // FC1=400; FC2=120; FC3=84
-    parameter N_OUT       = 120,               // FC1=120; FC2=84; FC3=36
+    parameter N_OUT       = 120,               // FC1=120; FC2=84; FC3=26
     parameter L           = 25,                // FC1=25; FC2=10; FC3=5
     parameter NUM_CHUNK   = 16,                // FC1=16; FC2=12; FC3=17
     parameter CH_W        = 36,                // FC1=36; FC2=36; FC3=36

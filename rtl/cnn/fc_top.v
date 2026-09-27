@@ -2,7 +2,7 @@
 // Fully Connected top: MaxPooling -> FC1 -> FC2 -> FC3 -> logit stream (to Argmax).
 // The layers are chained as value-at-a-time valid/ready streams,
 // so each layer's out_ready comes from the next layer's in_ready.
-// FC3 ends the Fully Connected scope: 36 signed logits in class order.
+// FC3 ends the Fully Connected scope: 26 signed logits in class order (0 = 'A' .. 25 = 'Z').
 
 module fc_top #(
     // ROM contents; the testbench overrides these with paths relative to tb/cnn
@@ -71,7 +71,7 @@ module fc_top #(
 
     fc_layer #(
         .N_IN       (84),
-        .N_OUT      (36),
+        .N_OUT      (26),
         .L          (5),
         .NUM_CHUNK  (17),                // 84 = 16 x 5 + 4, so the last chunk is short
         .ACC_W      (38),

@@ -6,7 +6,7 @@
 
 module fc_quant_signed #(
     parameter ACC_W     = 38,
-    parameter N_OUT     = 36,
+    parameter N_OUT     = 26,
     parameter SCALE_EXP = 13
 ) (
     input  wire                    clk,

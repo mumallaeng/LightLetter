@@ -11,8 +11,8 @@ module tb_fc;
     parameter NSTIM = 800;  // 2 frames
     parameter NOUT1 = 240;  // 2 x 120 neurons
     parameter NOUT2 = 168;  // 2 x 84
-    parameter NOUT3 = 72;  // 2 x 36 logits
-    parameter LOGITS = 36;  // logits per frame
+    parameter NOUT3 = 52;  // 2 x 26 logits
+    parameter LOGITS = 26;  // logits per frame
     parameter VALID_PCT = 100;  // chance that MaxPooling offers a value each cycle
     parameter READY_PCT = 80;  // chance that Argmax accepts each cycle
     parameter SEED = 1;

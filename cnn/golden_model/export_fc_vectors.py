@@ -3,6 +3,11 @@
 Reads tb/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json and writes, per layer,
 integer stimulus / expected values for test_fc.c plus the weight/bias ROM contents:
 
+The project is uppercase-only (26 classes, 0='A'). The dump still comes from the 36-class
+(digits + uppercase) training run, so FC3 keeps only rows 10..35 of the weight, bias and
+logits. The weight/output scales are taken from the full 36-row tensors first, because that
+is what the trained observers saw - the letter logits stay bit-identical to the trained model.
+
     python export_fc_vectors.py [dump.json] [out_dir] [mem_dir]
 
 Vector file layout (whitespace separated integers):
@@ -25,8 +30,10 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 DUMP = HERE.parents[1] / "tb/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json"
 
-# per-layer multiplier count: FC1 400->120, FC2 120->84, FC3 84->36 (sum = 40 DSP)
+# per-layer multiplier count: FC1 400->120, FC2 120->84, FC3 84->26 (sum = 40 DSP)
 FC_LANES = {1: 25, 2: 10, 3: 5}
+# 36-class dump rows that are the uppercase letters A..Z
+UPPERCASE = slice(10, 36)
 
 
 def pow2_scale_of(values, tol=0.05):
@@ -54,16 +61,20 @@ def hex_word(vals, bits=16):
 
 def export(layer, x_int, in_exp, w, bias, y_q, out_dir, mem_dir):
     """x_int: [n_in] ints, w: [n_out, n_in] floats, y_q: [n_out] quantized floats."""
-    n_out, n_in = w.shape
     lanes = FC_LANES[layer]
-    num_chunk = math.ceil(n_in / lanes)
     relu = 1 if layer < 3 else 0
 
+    # scales from the tensors as trained (36 rows for FC3), then keep the uppercase rows
     w_exp = weight_scale_exp(w)
+    out_exp = pow2_scale_of(y_q)
+    if layer == 3 and w.shape[0] == 36:
+        w, bias, y_q = w[UPPERCASE], bias[UPPERCASE], y_q[UPPERCASE]
+    n_out, n_in = w.shape
+    num_chunk = math.ceil(n_in / lanes)
+
     w_int = np.rint(w / 2.0 ** w_exp).astype(np.int64)
     acc_exp = in_exp + w_exp
     bias_int = np.rint(bias / 2.0 ** acc_exp).astype(np.int64)
-    out_exp = pow2_scale_of(y_q)
     scale_exp = out_exp - acc_exp
     assert 0 <= scale_exp <= 31, scale_exp
 

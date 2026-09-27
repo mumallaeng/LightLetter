@@ -7,7 +7,7 @@
 #define FC_MAX_LANES  25   /* FC1 */
 #define FC_MAX_N_IN   400  /* FC1 */
 #define FC_MAX_N_OUT  120  /* FC1 */
-#define FC_MAX_CHUNK  17   /* FC3 */
+#define FC_MAX_CHUNK  17   /* FC3: 84 = 16 x 5 + 4 */
 #define FC_MAX_ROM    (FC_MAX_CHUNK * FC_MAX_N_OUT)
 
 #define FC_OUT_MAX 32767
@@ -28,7 +28,7 @@ typedef struct
 
 static const fc_param_t FC_PARAM_FC1 = {1, 400, 120, 25, 16, 40, 15, 1};
 static const fc_param_t FC_PARAM_FC2 = {2, 120, 84, 10, 12, 38, 14, 1};
-static const fc_param_t FC_PARAM_FC3 = {3, 84, 36, 5, 17, 38, 13, 0};
+static const fc_param_t FC_PARAM_FC3 = {3, 84, 26, 5, 17, 38, 13, 0}; /* uppercase A..Z only */
 
 /* inputs of this chunk: the last chunk of a frame is shorter, the rest of the lanes read 0 */
 static inline uint8_t fc_chunk_len(const fc_param_t *p, uint8_t g)
