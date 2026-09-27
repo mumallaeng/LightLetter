@@ -1,93 +1,173 @@
 `timescale 1ns / 1ps
-// Chunk (outer) / neuron (inner) counters: one mac_en per clock while a calc buffer is full.
-// rom_addr leads by one - it addresses the next mac_en,
-// so the registered fc_weight_rom output arrives with the value it belongs to.
-// chunk_done marks the last neuron of a chunk and hands the calc buffer back to fc_staging.
+// Controller of the shared engine: layer / group / input counters.
+//   IDLE  -> RUN once the frame's first input has arrived
+//   RUN   : one input per clock; FC1 group 0 only as far as inputs have arrived (i < fill_cnt).
+//           The group's first input carries `first` (the accumulators start from the bias,
+//           DSP opmode C + M); the group's last input waits until the drain register is free
+//   FLUSH : after a layer's last group, until the MAC pipeline and the drain are empty
+// rom_addr is the row the NEXT cycle needs (BRAM prefetch) and re-addresses the same row while
+// RUN stalls. grp_base tracks ROM_BASE + group * N_IN with adds only, like the conv-side
+// address counters. fill_cnt counts the frame's inputs in act_in and clears after FC1.
 
 module fc_ctrl #(
-    parameter N_OUT     = 120,  // FC1=120; FC2=84; FC3=26
-    parameter NUM_CHUNK = 16    // FC1=16; FC2=12; FC3=17
+    parameter N_IN1      = 400,
+    parameter N_IN2      = 120,
+    parameter N_IN3      = 84,
+    parameter GROUPS1    = 6,
+    parameter GROUPS2    = 5,
+    parameter GROUPS3    = 2,
+    parameter ROM_BASE1  = 0,
+    parameter ROM_BASE2  = 2400,
+    parameter ROM_BASE3  = 3000,
+    parameter BIAS_BASE1 = 0,
+    parameter BIAS_BASE2 = 6,
+    parameter BIAS_BASE3 = 11,
+    parameter ROM_AW     = 12,
+    parameter BIAS_AW    = 4,
+    parameter IN_AW      = 9
 ) (
-    input  wire                               clk,
-    input  wire                               rst_n,
-    input  wire                               calc_full,
-    input  wire                               next_full,
-    output reg                                mac_en,
-    output reg  [$clog2(NUM_CHUNK*N_OUT)-1:0] rom_addr,
-    output reg                                chunk_done
+    input  wire               clk,
+    input  wire               rst_n,
+    input  wire               fc_in_valid,
+    input  wire               mac_busy,   // <- fc_mac_acc
+    input  wire               hold_free,  // <- fc_drain
+    output wire               fc_in_ready,
+    output wire               in_we,      // act_in write of fc_in_data at in_waddr
+    output wire [ IN_AW-1:0]  in_waddr,
+    output wire [       1:0]  layer,      // 1..3, 0 in IDLE
+    output wire [       2:0]  group,
+    output wire [ IN_AW-1:0]  x_raddr,    // input index i
+    output reg  [ROM_AW-1:0]  rom_addr,   // prefetch for the next cycle
+    output reg  [BIAS_AW-1:0] bias_addr,  // the group's bias row, read with the first input
+    output reg                first,
+    output reg                mac_en,
+    output reg                last
 );
 
-    localparam NEU_AW = (N_OUT > 1) ? $clog2(N_OUT) : 1;
-    localparam CHK_AW = (NUM_CHUNK > 1) ? $clog2(NUM_CHUNK) : 1;
-    localparam ROM_AW = $clog2(NUM_CHUNK * N_OUT);
-    localparam [31:0] CHUNK_STEP = N_OUT;
+    localparam [1:0] S_IDLE = 2'd0, S_RUN = 2'd1, S_FLUSH = 2'd2;
 
     // 32-bit constants, sliced at the use sites so the compares keep the counter width
-    localparam [31:0] NEURON_LAST = N_OUT - 1;
-    localparam [31:0] CHUNK_LAST = NUM_CHUNK - 1;
-
-    localparam FC_IDLE = 1'b0, FC_RUN = 1'b1;
+    localparam [31:0] FILL_FULL = N_IN1;
 
     // registers: reg / reg_next
-    reg state, state_next;
-    reg [NEU_AW-1:0] neuron, neuron_next;
-    reg [CHK_AW-1:0] chunk, chunk_next;
-    reg [ROM_AW-1:0] chunk_base, chunk_base_next;  // = chunk * N_OUT, kept without a multiplier
+    reg [       1:0] state, state_next;
+    reg [       1:0] layer_r, layer_next;
+    reg [       2:0] group_r, group_next;
+    reg [ IN_AW-1:0] i, i_next;
+    reg [ IN_AW-1:0] fill_cnt, fill_cnt_next;
+    reg [ROM_AW-1:0] grp_base, grp_base_next;
 
-    wire              run = (state == FC_RUN);
-    wire              neuron_last = (neuron == NEURON_LAST[NEU_AW-1:0]);
-    wire              chunk_wrap = (chunk == CHUNK_LAST[CHK_AW-1:0]);
+    // per-layer constants of the layer being run (32-bit, sliced at the use sites)
+    localparam [31:0] N_IN1_C = N_IN1, N_IN2_C = N_IN2, N_IN3_C = N_IN3;
+    localparam [31:0] GROUPS1_C = GROUPS1, GROUPS2_C = GROUPS2, GROUPS3_C = GROUPS3;
+    reg [ IN_AW-1:0] n_in;
+    reg [       3:0] n_groups;
+    always @(*) begin
+        case (layer_r)
+            2'd1:    begin n_in = N_IN1_C[IN_AW-1:0]; n_groups = GROUPS1_C[3:0]; end
+            2'd2:    begin n_in = N_IN2_C[IN_AW-1:0]; n_groups = GROUPS2_C[3:0]; end
+            default: begin n_in = N_IN3_C[IN_AW-1:0]; n_groups = GROUPS3_C[3:0]; end
+        endcase
+    end
 
-    wire [CHK_AW-1:0] next_chunk = chunk_wrap ? {CHK_AW{1'b0}} : chunk + 1'b1;
-    wire [ROM_AW-1:0] next_base = chunk_wrap ? {ROM_AW{1'b0}} : chunk_base + CHUNK_STEP[ROM_AW-1:0];
+    wire lastin = (i == n_in - 1'b1);
+    wire avail  = ~((layer_r == 2'd1) & (group_r == 3'd0)) | (i < fill_cnt);
+    wire can    = (state == S_RUN) & avail & (~lastin | hold_free);
 
-    // neuron of the next mac_en: the one after this, or 0 when this chunk ends
-    wire [NEU_AW-1:0] addr_neuron = (run & ~neuron_last) ? neuron + 1'b1 : {NEU_AW{1'b0}};
+    // ========== input fill (independent of the FSM) ==========
+    assign fc_in_ready = (fill_cnt < FILL_FULL[IN_AW-1:0]);
+    assign in_we       = fc_in_valid & fc_in_ready;
+    assign in_waddr    = fill_cnt;
 
-    // ========== Next State / Counter Logic ==========
+    // ========== Next State Logic ==========
     always @(*) begin : fc_ctrl_comb
-        state_next      = state;
-        neuron_next     = neuron;
-        chunk_next      = chunk;
-        chunk_base_next = chunk_base;
+        state_next    = state;
+        layer_next    = layer_r;
+        group_next    = group_r;
+        i_next        = i;
+        fill_cnt_next = in_we ? fill_cnt + 1'b1 : fill_cnt;
+        grp_base_next = grp_base;
+        first         = 1'b0;
+        mac_en        = 1'b0;
+        last          = 1'b0;
 
-        if (state == FC_IDLE) begin
-            if (calc_full) begin
-                state_next  = FC_RUN;
-                neuron_next = {NEU_AW{1'b0}};
+        case (state)
+            S_IDLE: begin
+                if (fill_cnt != {IN_AW{1'b0}}) begin
+                    state_next    = S_RUN;
+                    layer_next    = 2'd1;
+                    group_next    = 3'd0;
+                    i_next        = {IN_AW{1'b0}};
+                    grp_base_next = ROM_BASE1;
+                end
             end
-        end else if (neuron_last) begin
-            neuron_next     = {NEU_AW{1'b0}};
-            chunk_next      = next_chunk;
-            chunk_base_next = next_base;
-            // keep running when the next chunk is already in the fill buffer
-            state_next      = next_full ? FC_RUN : FC_IDLE;
-        end else begin
-            neuron_next = neuron + 1'b1;
-        end
+            S_RUN: begin
+                if (can) begin
+                    mac_en = 1'b1;
+                    first  = (i == {IN_AW{1'b0}});
+                    last   = lastin;
+                    if (!lastin) begin
+                        i_next = i + 1'b1;
+                    end else begin
+                        i_next = {IN_AW{1'b0}};
+                        if ({1'b0, group_r} + 1'b1 < n_groups) begin
+                            group_next    = group_r + 1'b1;
+                            grp_base_next = grp_base + {{(ROM_AW - IN_AW) {1'b0}}, n_in};
+                            state_next    = S_RUN;
+                        end else begin
+                            state_next = S_FLUSH;
+                        end
+                    end
+                end
+            end
+            default: begin  // S_FLUSH
+                if (!mac_busy & hold_free) begin
+                    if (layer_r == 2'd1) fill_cnt_next = in_we ? {{(IN_AW - 1) {1'b0}}, 1'b1} : {IN_AW{1'b0}};
+                    if (layer_r != 2'd3) begin
+                        layer_next    = layer_r + 1'b1;
+                        group_next    = 3'd0;
+                        i_next        = {IN_AW{1'b0}};
+                        grp_base_next = (layer_r == 2'd1) ? ROM_BASE2 : ROM_BASE3;
+                        state_next    = S_RUN;
+                    end else begin
+                        layer_next = 2'd0;
+                        state_next = S_IDLE;
+                    end
+                end
+            end
+        endcase
+
+        // ========== Output Logic ==========
+        // the row the next cycle issues: where the counters land after this cycle
+        rom_addr = grp_base_next + {{(ROM_AW - IN_AW) {1'b0}}, i_next};
+        case (layer_r)
+            2'd1:    bias_addr = BIAS_BASE1 + group_r;
+            2'd2:    bias_addr = BIAS_BASE2 + group_r;
+            2'd3:    bias_addr = BIAS_BASE3 + group_r;
+            default: bias_addr = {BIAS_AW{1'b0}};
+        endcase
     end
 
-    // ========== Output Logic ==========
-    always @(*) begin : fc_ctrl_out
-        mac_en     = run;
-        chunk_done = run & neuron_last;
-        rom_addr   = (run & neuron_last) ? next_base : chunk_base + {{(ROM_AW - NEU_AW) {1'b0}}, addr_neuron};
-    end
+    assign layer   = layer_r;
+    assign group   = group_r;
+    assign x_raddr = i;
 
-    always @(posedge clk) begin : fc_ctrl_seq
+    always @(posedge clk) begin
         if (!rst_n) begin
-            state      <= FC_IDLE;
-            neuron     <= {NEU_AW{1'b0}};
-            chunk      <= {CHK_AW{1'b0}};
-            chunk_base <= {ROM_AW{1'b0}};
+            state    <= S_IDLE;
+            layer_r  <= 2'd0;
+            group_r  <= 3'd0;
+            i        <= {IN_AW{1'b0}};
+            fill_cnt <= {IN_AW{1'b0}};
+            grp_base <= {ROM_AW{1'b0}};
         end else begin
-            state      <= state_next;
-            neuron     <= neuron_next;
-            chunk      <= chunk_next;
-            chunk_base <= chunk_base_next;
+            state    <= state_next;
+            layer_r  <= layer_next;
+            group_r  <= group_next;
+            i        <= i_next;
+            fill_cnt <= fill_cnt_next;
+            grp_base <= grp_base_next;
         end
     end
 
 endmodule
-
-

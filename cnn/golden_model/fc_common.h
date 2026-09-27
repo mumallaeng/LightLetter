@@ -1,41 +1,54 @@
-/* Fully Connected golden model: common definitions (stage 1, reuses the Output Buffer path) */
+/* Fully Connected golden model, step 2: one shared engine (P multipliers) runs FC1 -> FC2 -> FC3.
+ * Group-outer / input-inner order: a group of P neurons is held while every input of the layer
+ * streams past, so the P accumulators complete together and drain while the next group runs. */
 #ifndef FC_COMMON_H
 #define FC_COMMON_H
 
-#include "ob_common.h"
+#include <stdint.h>
 
-#define FC_MAX_LANES  25   /* FC1 */
-#define FC_MAX_N_IN   400  /* FC1 */
-#define FC_MAX_N_OUT  120  /* FC1 */
-#define FC_MAX_CHUNK  17   /* FC3: 84 = 16 x 5 + 4 */
-#define FC_MAX_ROM    (FC_MAX_CHUNK * FC_MAX_N_OUT)
+#define FC_P         20   /* multipliers = DSPs = neurons per group */
+#define FC_ACC_W     40   /* accumulator width (FC1 worst case: 400 x 2^30 + bias < 2^39) */
+#define FC_LAYERS    3
+#define FC_MAX_N_IN  400
+#define FC_MAX_N_OUT 120
+#define FC_ROM_ROWS  3168 /* 6*400 + 5*120 + 2*84 rows of P weights */
+#define FC_BIAS_ROWS 13   /* 6 + 5 + 2 rows of P biases */
+#define FC_ACT_IN    400  /* fc_act_buf depths: MaxPooling input, FC1 output, FC2 output */
+#define FC_ACT_A     120
+#define FC_ACT_B     84
 
-#define FC_OUT_MAX 32767
-#define FC_OUT_MIN (-32768)
+typedef int64_t fc_acc_t;
 
-/* parameter */
+/* per-layer constants (fc_top localparams) */
 typedef struct
 {
-    uint8_t  layer;     /* 1..3 */
-    uint16_t n_in;      /* inputs per frame */
-    uint8_t  n_out;     /* neurons -> Output Buffer C_OUT */
-    uint8_t  lanes;     /* multipliers = chunk size */
-    uint8_t  num_chunk; /* ceil(n_in / lanes) -> Output Buffer NUM_GROUPS */
-    uint8_t  acc_w;     /* Output Buffer ACC_W */
+    uint16_t n_in;
+    uint8_t  n_out;
+    uint8_t  groups;    /* ceil(n_out / P) */
+    uint16_t rom_base;  /* first weight ROM row of this layer: row = rom_base + g * n_in + i */
+    uint8_t  bias_base; /* first bias ROM row: row = bias_base + g */
     uint8_t  scale_exp; /* quantizer right shift */
-    uint8_t  relu;      /* 1 = reuse ReLU&Quant, 0 = signed quantizer (FC3) */
-} fc_param_t;
+    uint8_t  relu;      /* 1 = ReLU then unsigned clamp, 0 = signed clamp (FC3) */
+} fc_layer_cfg_t;
 
-static const fc_param_t FC_PARAM_FC1 = {1, 400, 120, 25, 16, 40, 16, 1};
-static const fc_param_t FC_PARAM_FC2 = {2, 120, 84, 10, 12, 38, 15, 1};
-static const fc_param_t FC_PARAM_FC3 = {3, 84, 26, 5, 17, 38, 14, 0}; /* uppercase A..Z only */
+static const fc_layer_cfg_t FC_CFG[FC_LAYERS] = {
+    {400, 120, 6,    0,  0, 16, 1},
+    {120,  84, 5, 2400,  6, 15, 1},
+    { 84,  26, 2, 3000, 11, 14, 0},
+};
 
-/* inputs of this chunk: the last chunk of a frame is shorter, the rest of the lanes read 0 */
-static inline uint8_t fc_chunk_len(const fc_param_t *p, uint8_t g)
+/* neurons in group g: the last group of a layer can be short (FC2 4, FC3 6) */
+static inline uint8_t fc_group_len(const fc_layer_cfg_t *c, uint8_t g)
 {
-    uint16_t done = (uint16_t)g * p->lanes;
-    uint16_t left = (uint16_t)(p->n_in - done);
-    return (left < p->lanes) ? (uint8_t)left : p->lanes;
+    uint16_t left = (uint16_t)(c->n_out - (uint16_t)g * FC_P);
+    return (left < FC_P) ? (uint8_t)left : FC_P;
 }
+
+/* ROM images: what fc_weight.mem / fc_bias.mem hold, lane 0 in the low bits of a row */
+typedef struct
+{
+    int16_t w[FC_ROM_ROWS][FC_P];
+    int32_t b[FC_BIAS_ROWS][FC_P];
+} fc_rom_image_t;
 
 #endif
