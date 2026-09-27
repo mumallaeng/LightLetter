@@ -34,7 +34,7 @@ module fc_top #(
         .NUM_CHUNK  (16),
         .ACC_W      (40),
         .RELU       (1),
-        .SCALE_EXP  (15),
+        .SCALE_EXP  (16),
         .WEIGHT_FILE(FC1_WEIGHT),
         .BIAS_FILE  (FC1_BIAS)
     ) u_fc1 (
@@ -55,7 +55,7 @@ module fc_top #(
         .NUM_CHUNK  (12),
         .ACC_W      (38),
         .RELU       (1),
-        .SCALE_EXP  (14),
+        .SCALE_EXP  (15),
         .WEIGHT_FILE(FC2_WEIGHT),
         .BIAS_FILE  (FC2_BIAS)
     ) u_fc2 (
@@ -76,7 +76,7 @@ module fc_top #(
         .NUM_CHUNK  (17),                // 84 = 16 x 5 + 4, so the last chunk is short
         .ACC_W      (38),
         .RELU       (0),                 // signed quantizer, no ReLU
-        .SCALE_EXP  (13),
+        .SCALE_EXP  (14),
         .WEIGHT_FILE(FC3_WEIGHT),
         .BIAS_FILE  (FC3_BIAS)
     ) u_fc3 (

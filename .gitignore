@@ -116,3 +116,63 @@ tb/results/
 *.png
 # C golden model build output
 cnn/golden_model/build/
+# the confirmed model's weight/layer-output dump is the source RTL export and the UI read; keep it tracked
+!tb/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json
+# BFSK TX project rules
+# Vivado generated files
+.Xil/
+.cache/
+.hw/
+.ip_user_files/
+.runs/
+.sim/
+.gen/
+*.jou
+*.log
+*.str
+*.dcp
+*.bit
+*.ltx
+*.wdb
+*.xpr.user
+# Simulation/generated data
+*.vcd
+*.fst
+*.out
+# Vitis/Eclipse generated workspace data
+vitis/.analytics
+vitis/.metadata/
+vitis/RemoteSystemsTempFiles/
+vitis/IDE.log
+vitis/**/Debug/
+vitis/**/.log/
+vitis/**/logs/
+vitis/**/_ide/bitstream/
+vitis/**/export/
+vitis/**/hw/
+vitis/**/zynq_fsbl/
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+# Vivado per-project generated directories
+*.cache/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.sim/
+*.gen/
+# *.srcs may contain authored Block Design/IP configuration sources.
+# Do not ignore the whole directory; review and track required BD/XCI files.
+# Regenerated Vitis BSP and temporary launch scripts
+vitis/**/bsp/
+vitis/**/Release/
+vitis/temp_xsdb_launch_script.tcl
+vitis/BFSK_TX_Test_system/_ide/scripts/systemdebugger_*.tcl
+# Retain authored BFSK Vivado project and Vitis recreation files
+!tb_xpr/**/*.xpr
+!tb_xpr/**/*.srcs/
+!vitis/BFSK_Tx/platform.tcl
+!vitis/BFSK_Tx/platform.spr
+!vitis/BFSK_TX_Test/_ide/

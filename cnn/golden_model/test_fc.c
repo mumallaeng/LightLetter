@@ -231,7 +231,7 @@ static int test_ctrl(void)
 {
     int before = g_fail;
 
-    fc_param_t p = {2, 120, 84, 10, 12, 38, 14, 1};
+    fc_param_t p = {2, 120, 84, 10, 12, 38, 15, 1};
     fc_ctrl_init(&ctrl, &p);
 
     fc_ctrl_in_t  in  = {0, 0};

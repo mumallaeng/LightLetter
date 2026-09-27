@@ -1,8 +1,9 @@
-"""Loads EMNIST digits+uppercase (36 classes) via torchvision, no team-specific files.
+"""Loads EMNIST uppercase A-Z (26 classes) via torchvision, no team-specific files.
 
 torchvision.datasets.EMNIST(split="byclass") ships 62 classes ordered 0-9 (digits),
-10-35 (uppercase A-Z), 36-61 (lowercase a-z) -- see the EMNIST byclass mapping. We
-keep labels 0-35 as-is and drop lowercase; no relabeling is needed.
+10-35 (uppercase A-Z), 36-61 (lowercase a-z) -- see the EMNIST byclass mapping. The
+project is uppercase-only, so we keep byclass labels 10-35 and shift them down by 10
+so that class 0 is 'A' and class 25 is 'Z'. Digits and lowercase are dropped.
 
 torchvision's EMNIST images are stored flipped and rotated 90 degrees anticlockwise
 relative to the human-readable orientation (a long-standing artifact of the original
@@ -14,7 +15,9 @@ correction is verified indirectly by matching the previously confirmed accuracy.
 import numpy as np
 from torchvision.datasets import EMNIST
 
-NUM_CLASSES = 36
+NUM_CLASSES = 26
+FIRST_CLASS = 10  # byclass label of 'A'
+CLASS_NAMES = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
 def load_split(root, partition):
@@ -23,5 +26,5 @@ def load_split(root, partition):
     images = dataset.data.numpy()
     labels = dataset.targets.numpy()
     images = np.transpose(images, (0, 2, 1))  # undoes the EMNIST flip+rotate artifact
-    keep = labels < NUM_CLASSES
-    return images[keep].copy(), labels[keep].astype(np.int64).copy()
+    keep = (labels >= FIRST_CLASS) & (labels < FIRST_CLASS + NUM_CLASSES)
+    return images[keep].copy(), (labels[keep] - FIRST_CLASS).astype(np.int64).copy()

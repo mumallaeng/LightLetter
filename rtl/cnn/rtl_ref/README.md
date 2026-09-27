@@ -3,11 +3,16 @@
 이 폴더(`cnn/rtl_ref/`)의 파일은 전부 C 골든모델(`cnn/golden_model`)이 만든 `$readmemh` 데이터다.
 RTL 은 이 값과 **bit-exact** 여야 한다.
 
-재생성:
+재생성 (2026-09-27부터, 26클래스 재학습본 `tb/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json` 기준):
 
 ```
-make -C cnn/golden_model -f cnn_chain.mk rtl-vectors   # 이 폴더 전체를 다시 만든다
+python cnn/golden_model/export_conv_roms.py                       # conv ROM: conv{1,2}_weight.mem, conv{1,2}_bias_ce.mem, rtl/cnn/mem/l2_weight_ch*.mem, conv1_weight_rom_l1.txt
+python tb/cnn/cnn_top/gen_chain_vectors.py --conv1-scale 15 --conv2-scale 16   # 단계 경계 스트림 + tb/cnn/cnn_top/vectors
 ```
+
+`gen_chain_vectors.py --check`는 디스크의 파일과 대조만 한다(생성기 자체 검사). `weight_rom_l1.v`는 `.mem`이 아니라
+case 상수라 이 폴더의 `conv1_weight_rom_l1.txt`에 새 상수를 적어 둔다 — `weight_rom_l1.v`와 `conv_l1.v`의 `SCALE_EXP`(16 → **15**)는
+그 파일 담당자가 반영한다. 반영 전까지 RTL conv_l1은 이 스트림과 맞지 않는다.
 
 ---
 
@@ -34,19 +39,17 @@ lane 안에서 bit 15..0 = tap0, 31..16 = tap1, ... 143..128 = tap8   (tap k = k
 
 conv1 은 `C_IN = 1` 이라 grp0 의 lane0 만 값이 있고 나머지는 전부 0 (홀수 줄이 전부 0 인 이유).
 
-검산 — `conv1_weight.mem` 1번째 줄 하위 36 hex = `0847 ed93 b7cf 4fee e9f1 ecd7 0195 2d2e 4035`
-→ tap0..tap8 = `16437, 11566, 405, -4905, -5647, 20462, -18481, -4717, 2119`
-(= `vectors/conv_l1.txt` 의 weight 첫 9개)
+검산 — `conv1_weight.mem` 1번째 줄 하위 36 hex = `conv1_weight_rom_l1.txt`의 0번 상수 = 덤프 `conv1.weight_raw[0]`을 `2^-14`로 나눠 반올림한 tap0..tap8
 
 ### 양자화 파라미터
 
 | | conv_l1 | conv_l2 |
 |---|---|---|
 | 입력 스케일 | 2^-14 (image) | 2^-13 (= conv_l1 출력) |
-| weight 스케일 | 2^-15 | 2^-14 |
-| accumulator | 2^-29 | 2^-27 |
+| weight 스케일 | 2^-14 | 2^-14 |
+| accumulator | 2^-28 | 2^-27 |
 | 출력 스케일 | 2^-13 | 2^-11 |
-| `SCALE_EXP` (quantizer shift) | **16** | **16** |
+| `SCALE_EXP` (quantizer shift) | **15** (재학습 전 16) | **16** |
 
 quantizer: ReLU → `>> SCALE_EXP` with **round-half-to-even** → `32767` clamp (`relu_quant.c:quantizer_comb`).
 
@@ -54,7 +57,7 @@ quantizer: ReLU → `>> SCALE_EXP` with **round-half-to-even** → `32767` clamp
 
 ## 2. 단계 경계 골든 스트림
 
-`FRAMES = 2`. frame 0 = 실제 이미지, frame 1 = 좌우 반전. 모든 파일이 frame 0 전부 → frame 1 전부 순서.
+`FRAMES = 2`. frame 0 = 덤프의 샘플 이미지(test[0], 'I'), frame 1 = 좌우 반전. 모든 파일이 frame 0 전부 → frame 1 전부 순서.
 
 | 파일 | 줄 수 | 폭 | 신호 |
 |---|---|---|---|
@@ -100,8 +103,5 @@ RTL 도 같은 제약을 지켜야 `rb_overrun` 이 안 난다.
 `conv1_*.mem` / `conv2_*.mem` / `conv{1,2}_params.txt` 는 `tb_output_buffer.v` 전용으로,
 `gen_rtl_vectors.c` 가 `vectors/ob_conv{1,2}.txt` 에서 만든다. 위 CE 벡터와는 별개 세트다.
 
-> **주의 — 두 세트의 bias 가 다르다.**
-> `rtl/cnn/mem/conv1_bias.mem` (팀원 output_buffer TB 용) 첫 값은 `-109703176`, `conv1_bias_ce.mem` 은 `-85067728`.
-> `vectors/ob_conv{1,2}.txt` 가 오래된 덤프에서 만들어진 것이고 (지금 JSON 으로 재생성하면
-> `conv_l{1,2}.txt` 와 같은 bias 가 나온다), `vectors/conv_l{1,2}.txt` 쪽이 현재 모델과 일치한다.
-> CE RTL 은 `*_bias_ce.mem` 을 써야 하고, `ob_conv*.txt` 는 별도로 갱신이 필요하다.
+> 2026-09-27부터 두 세트 모두 같은 덤프에서 나온다: `rtl/cnn/mem/conv{1,2}_bias.mem`(`output_buffer.mk rtl-vectors`)과
+> `conv{1,2}_bias_ce.mem`(`export_conv_roms.py`)은 값이 같다. `tb/cnn/sim.mk`의 conv1 `SCALE_EXP`도 15다.

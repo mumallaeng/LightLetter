@@ -5,7 +5,7 @@
 
 module quantizer_signed #(
     parameter ACC_W     = 38,
-    parameter SCALE_EXP = 13
+    parameter SCALE_EXP = 14
 ) (
     input  wire signed [ACC_W-1:0] x_in,
     output wire signed [     15:0] y_out
