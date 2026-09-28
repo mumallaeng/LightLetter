@@ -86,10 +86,29 @@ module img_preprocess #(
     reg [X_REM_W-1:0] x_rem_reg;
     reg [Y_REM_W-1:0] y_rem_reg;
 
+    // Stage 1 isolates the selected RGB pixel from the upstream VDMA path.
+    reg [7:0] rgb_stage_r;
+    reg [7:0] rgb_stage_g;
+    reg [7:0] rgb_stage_b;
+    reg       rgb_stage_valid;
+    reg       rgb_stage_user;
+    reg       rgb_stage_last;
+    reg       rgb_stage_frame_last;
+
+    // Stage 2 calculates and registers grayscale.
+    // Stage 3 performs inversion/thresholding and drives the output register.
+    reg [7:0] luma_stage;
+    reg       luma_stage_valid;
+    reg       luma_stage_user;
+    reg       luma_stage_last;
+    reg       luma_stage_frame_last;
+
     // Marks the final pixel of the complete 28x28 frame
     reg m_axis_frame_last;
 
     wire output_slot_free;
+    wire luma_stage_slot_free;
+    wire rgb_stage_slot_free;
     wire input_accept;
     wire output_accept;
     wire capture_now;
@@ -111,8 +130,6 @@ module img_preprocess #(
     wire [7:0] pix_b;
     wire [15:0] luma_sum;
     wire [7:0] luma;
-    wire [7:0] inverted_luma;
-    wire [7:0] processed_pixel;
 
     assign capture_req_rise =
         capture_req & ~capture_req_d;
@@ -120,8 +137,16 @@ module img_preprocess #(
     assign output_slot_free =
         (~m_axis_tvalid) | m_axis_tready;
 
+    // The grayscale stage may accept a new selected pixel when it is empty,
+    // or while its previous value advances to the output register.
+    assign luma_stage_slot_free =
+        (~luma_stage_valid) | output_slot_free;
+
+    assign rgb_stage_slot_free =
+        (~rgb_stage_valid) | luma_stage_slot_free;
+
     assign s_axis_tready =
-        output_slot_free;
+        rgb_stage_slot_free;
 
     assign input_accept =
         s_axis_tvalid & s_axis_tready;
@@ -180,22 +205,13 @@ module img_preprocess #(
     // Grayscale:
     // luma = (77*R + 150*G + 29*B + 128) / 256
     assign luma_sum =
-        (16'd77  * pix_r) +
-        (16'd150 * pix_g) +
-        (16'd29  * pix_b) +
+        (16'd77  * rgb_stage_r) +
+        (16'd150 * rgb_stage_g) +
+        (16'd29  * rgb_stage_b) +
         16'd128;
 
     assign luma =
         luma_sum[15:8];
-
-    // Invert polarity, then suppress the dark background.
-    assign inverted_luma =
-        8'd255 - luma;
-
-    assign processed_pixel =
-        (inverted_luma < THRESHOLD)
-        ? 8'd0
-        : inverted_luma;
 
     always @(posedge axis_aclk or negedge axis_aresetn) begin
         if (!axis_aresetn) begin
@@ -211,6 +227,20 @@ module img_preprocess #(
             target_y_reg     <= Y_FIRST;
             x_rem_reg        <= X_FIRST_REM;
             y_rem_reg        <= Y_FIRST_REM;
+
+            rgb_stage_r      <= 8'd0;
+            rgb_stage_g      <= 8'd0;
+            rgb_stage_b      <= 8'd0;
+            rgb_stage_valid  <= 1'b0;
+            rgb_stage_user   <= 1'b0;
+            rgb_stage_last   <= 1'b0;
+            rgb_stage_frame_last <= 1'b0;
+
+            luma_stage       <= 8'd0;
+            luma_stage_valid <= 1'b0;
+            luma_stage_user  <= 1'b0;
+            luma_stage_last  <= 1'b0;
+            luma_stage_frame_last <= 1'b0;
 
             m_axis_tdata     <= 16'd0;
             m_axis_tvalid    <= 1'b0;
@@ -249,13 +279,45 @@ module img_preprocess #(
                 end
             endcase
 
-            // Clear output control signals when the output register
-            // is empty or the previous output has been accepted.
+            // Stage 3: transfer the registered grayscale value through
+            // polarity inversion and thresholding into the AXI output.
+            // Hold every output signal stable while TREADY is low.
             if (output_slot_free) begin
-                m_axis_tvalid     <= 1'b0;
-                m_axis_tuser      <= 1'b0;
-                m_axis_tlast      <= 1'b0;
-                m_axis_frame_last <= 1'b0;
+                if (luma_stage_valid) begin
+                    m_axis_tdata <= {
+                        8'd0,
+                        ((8'd255 - luma_stage) < THRESHOLD)
+                            ? 8'd0
+                            : (8'd255 - luma_stage)
+                    };
+                    m_axis_tvalid     <= 1'b1;
+                    m_axis_tuser      <= luma_stage_user;
+                    m_axis_tlast      <= luma_stage_last;
+                    m_axis_frame_last <= luma_stage_frame_last;
+                end else begin
+                    m_axis_tvalid     <= 1'b0;
+                    m_axis_tuser      <= 1'b0;
+                    m_axis_tlast      <= 1'b0;
+                    m_axis_frame_last <= 1'b0;
+                end
+
+                luma_stage_valid <= 1'b0;
+            end
+
+            // Stage 2: calculate grayscale from the registered RGB pixel.
+            // The stage is held whenever the downstream pipeline is blocked.
+            if (luma_stage_slot_free) begin
+                if (rgb_stage_valid) begin
+                    luma_stage            <= luma;
+                    luma_stage_valid      <= 1'b1;
+                    luma_stage_user       <= rgb_stage_user;
+                    luma_stage_last       <= rgb_stage_last;
+                    luma_stage_frame_last <= rgb_stage_frame_last;
+                end else begin
+                    luma_stage_valid <= 1'b0;
+                end
+
+                rgb_stage_valid <= 1'b0;
             end
 
             // Process only an accepted AXI input pixel.
@@ -272,22 +334,24 @@ module img_preprocess #(
                     y_rem_reg    <= Y_FIRST_REM;
                 end
 
-                // Output only selected pixels during STATE_CAPTURE.
+                // Stage 1: register only selected RGB pixels and sidebands.
                 if (selected) begin
-                    m_axis_tdata  <= {8'd0, processed_pixel};
-                    m_axis_tvalid <= 1'b1;
+                    rgb_stage_r     <= pix_r;
+                    rgb_stage_g     <= pix_g;
+                    rgb_stage_b     <= pix_b;
+                    rgb_stage_valid <= 1'b1;
 
                     // First pixel of the 28x28 output frame
-                    m_axis_tuser <=
+                    rgb_stage_user <=
                         (cur_out_x == 0) &&
                         (cur_out_y == 0);
 
                     // End of each 28-pixel output line
-                    m_axis_tlast <=
+                    rgb_stage_last <=
                         (cur_out_x == OUT_WIDTH - 1);
 
                     // Final pixel of the complete 28x28 frame
-                    m_axis_frame_last <=
+                    rgb_stage_frame_last <=
                         (cur_out_x == OUT_WIDTH - 1) &&
                         (cur_out_y == OUT_HEIGHT - 1);
 
