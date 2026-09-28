@@ -33,6 +33,9 @@ void capture_ctrl_trigger(void)
     XGpio_DiscreteWrite(&capture_gpio, CAPTURE_REQ_CHANNEL, GPIO_BIT_0);
     usleep(10u);
     XGpio_DiscreteWrite(&capture_gpio, CAPTURE_REQ_CHANNEL, 0u);
+
+    /* Machine-readable event consumed by the PC capture UI. */
+    xil_printf("{\"type\":\"capture\"}\r\n");
     xil_printf("capture: requested; waiting for next frame\r\n");
 }
 
