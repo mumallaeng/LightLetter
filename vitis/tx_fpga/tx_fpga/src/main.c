@@ -60,6 +60,7 @@
 #include "xuartps_hw.h"
 #include "xstatus.h"
 #include "capture_ctrl/capture_ctrl.h"
+#include "cnn_ctrl/cnn_ctrl.h"
 /*===========================================================================
  *  Platform glue
  *===========================================================================*/
@@ -255,6 +256,12 @@ int main(void)
         return 1;
     }
 
+    /* 버튼 -> 캡처 -> cnn_ip 추론 -> cnn_done 인터럽트 -> cnn_result 읽기 */
+    if (cnn_ctrl_init() != XST_SUCCESS) {
+        xil_printf("CNN interrupt initialization failed. Stopping.\r\n");
+        return 1;
+    }
+
     /*-------------------------------------------------------------------
      *  8. Super-loop
      *
@@ -269,6 +276,7 @@ int main(void)
 
     for (;;) {
         capture_ctrl_poll();
+        cnn_ctrl_poll();
         menu_run();
     }
 

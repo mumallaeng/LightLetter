@@ -130,6 +130,8 @@ module img_preprocess #(
     wire [7:0] pix_b;
     wire [15:0] luma_sum;
     wire [7:0] luma;
+    wire [7:0] processed_pixel;
+    wire [15:0] cnn_pixel;
 
     assign capture_req_rise =
         capture_req & ~capture_req_d;
@@ -213,6 +215,18 @@ module img_preprocess #(
     assign luma =
         luma_sum[15:8];
 
+    // Polarity inversion and thresholding of the registered grayscale value.
+    assign processed_pixel =
+        ((8'd255 - luma_stage) < THRESHOLD)
+            ? 8'd0
+            : (8'd255 - luma_stage);
+
+    // cnn_ip input scale is 2^-14: pixel_in = round(p / 255 * 2^14).
+    // p * 64.25 = (p << 6) + (p >> 2), at most 1 LSB off (255 -> 16383).
+    assign cnn_pixel =
+        {2'b00, processed_pixel, 6'd0} +
+        {10'd0, processed_pixel[7:2]};
+
     always @(posedge axis_aclk or negedge axis_aresetn) begin
         if (!axis_aresetn) begin
             capture_req_d    <= 1'b0;
@@ -280,16 +294,12 @@ module img_preprocess #(
             endcase
 
             // Stage 3: transfer the registered grayscale value through
-            // polarity inversion and thresholding into the AXI output.
+            // polarity inversion, thresholding and cnn_ip input scaling
+            // into the AXI output.
             // Hold every output signal stable while TREADY is low.
             if (output_slot_free) begin
                 if (luma_stage_valid) begin
-                    m_axis_tdata <= {
-                        8'd0,
-                        ((8'd255 - luma_stage) < THRESHOLD)
-                            ? 8'd0
-                            : (8'd255 - luma_stage)
-                    };
+                    m_axis_tdata      <= cnn_pixel;
                     m_axis_tvalid     <= 1'b1;
                     m_axis_tuser      <= luma_stage_user;
                     m_axis_tlast      <= luma_stage_last;

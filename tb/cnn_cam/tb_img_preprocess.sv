@@ -212,6 +212,7 @@ module tb_img_preprocess;
         integer expected_gray;
         integer expected_inverted;
         integer expected_processed;
+        integer expected_scaled;
 
         if (rst_n && m_valid && m_ready) begin
 
@@ -262,31 +263,27 @@ module tb_img_preprocess;
             else
                 expected_processed = expected_inverted;
 
-            // Check crop, grayscale, inversion, and threshold result.
+            // cnn_ip input scale 2^-14: p * 64 + p / 4 (~ p / 255 * 2^14)
+            expected_scaled =
+                expected_processed * 64 +
+                expected_processed / 4;
+
+            // Check crop, grayscale, inversion, threshold, and scaling result.
             if (
-                m_data[7:0] !==
-                expected_processed[7:0]
+                m_data !==
+                expected_scaled[15:0]
             ) begin
                 $fatal(
                     1,
-                    "Pixel %0d mismatch: got %0d expected %0d (src_x=%0d src_y=%0d gray=%0d inverted=%0d)",
+                    "Pixel %0d mismatch: got %0d expected %0d (src_x=%0d src_y=%0d gray=%0d inverted=%0d processed=%0d)",
                     out_count,
-                    m_data[7:0],
-                    expected_processed,
+                    m_data,
+                    expected_scaled,
                     src_x,
                     src_y,
                     expected_gray,
-                    expected_inverted
-                );
-            end
-
-            // Upper 8 bits must be zero.
-            if (m_data[15:8] !== 8'd0) begin
-                $fatal(
-                    1,
-                    "Upper bits mismatch at pixel %0d: m_data=%h",
-                    out_count,
-                    m_data
+                    expected_inverted,
+                    expected_processed
                 );
             end
 
@@ -315,11 +312,11 @@ module tb_img_preprocess;
                 last_count = last_count + 1;
 
             // Write the captured 28x28 grayscale output
-            // as an ASCII PGM image.
+            // as an ASCII PGM image (m_data >> 6 recovers the 8-bit pixel).
             $fwrite(
                 pgm,
                 "%0d%c",
-                m_data[7:0],
+                m_data[13:6],
                 (ox == OUT_W - 1) ? 10 : 32
             );
 
