@@ -183,4 +183,6 @@ vitis/BFSK_TX_Test_system/_ide/scripts/systemdebugger_*.tcl
 !tb_xpr/**/*.srcs/
 !vitis/BFSK_Tx/platform.tcl
 !vitis/BFSK_Tx/platform.spr
+!vitis/cnn_cam_platform/platform.tcl
+!vitis/cnn_cam_platform/platform.spr
 !vitis/BFSK_TX_Test/_ide/
