@@ -5,7 +5,7 @@ module img_preprocess #(
     parameter IN_HEIGHT  = 720,
     parameter OUT_WIDTH  = 28,
     parameter OUT_HEIGHT = 28,
-    parameter THRESHOLD  = 100
+    parameter THRESHOLD  = 160
 ) (
     input  wire         axis_aclk,
     input  wire         axis_aresetn,
