@@ -1,13 +1,13 @@
-#include "fc_act_buf.h"
+#include "fc_feature_buf.h"
 #include <string.h>
 
-void fc_act_buf_init(fc_act_buf_t *m, uint16_t depth)
+void fc_feature_buf_init(fc_feature_buf_t *m, uint16_t depth)
 {
     m->depth = depth;
-    fc_act_buf_reset(m);
+    fc_feature_buf_reset(m);
 }
 
-void fc_act_buf_reset(fc_act_buf_t *m)
+void fc_feature_buf_reset(fc_feature_buf_t *m)
 {
     /* the RAM itself has no reset; clearing it here only makes tests deterministic */
     memset(m->mem, 0, sizeof m->mem);
@@ -17,7 +17,7 @@ void fc_act_buf_reset(fc_act_buf_t *m)
 }
 
 /* always @(*) : asynchronous read */
-void fc_act_buf_comb(fc_act_buf_t *m, const fc_act_buf_in_t *in, fc_act_buf_out_t *out)
+void fc_feature_buf_comb(fc_feature_buf_t *m, const fc_feature_buf_in_t *in, fc_feature_buf_out_t *out)
 {
     out->rdata = (in->raddr < m->depth) ? m->mem[in->raddr] : 0;
 
@@ -27,7 +27,7 @@ void fc_act_buf_comb(fc_act_buf_t *m, const fc_act_buf_in_t *in, fc_act_buf_out_
 }
 
 /* always @(posedge clk) : write port */
-void fc_act_buf_seq(fc_act_buf_t *m)
+void fc_feature_buf_seq(fc_feature_buf_t *m)
 {
     if (m->we_next && m->waddr_next < m->depth)
         m->mem[m->waddr_next] = m->wdata_next;

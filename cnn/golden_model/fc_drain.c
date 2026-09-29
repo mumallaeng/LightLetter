@@ -65,10 +65,10 @@ void fc_drain_comb(fc_drain_t *m, const fc_drain_in_t *in, fc_drain_out_t *out)
         }
         else
         {
-            out->act_we    = 1;
-            out->act_layer = m->layer;
-            out->act_waddr = (uint8_t)(m->group * FC_P + m->idx);
-            out->act_wdata = (uint16_t)y;
+            out->feature_we    = 1;
+            out->feature_layer = m->layer;
+            out->feature_waddr = (uint8_t)(m->group * FC_P + m->idx);
+            out->feature_wdata = (uint16_t)y;
             pop = 1;
         }
     }

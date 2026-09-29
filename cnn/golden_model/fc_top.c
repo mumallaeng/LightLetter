@@ -3,9 +3,9 @@
 
 void fc_top_init(fc_top_t *m, const fc_rom_image_t *img)
 {
-    fc_act_buf_init(&m->u_act_in, FC_ACT_IN);
-    fc_act_buf_init(&m->u_act_a, FC_ACT_A);
-    fc_act_buf_init(&m->u_act_b, FC_ACT_B);
+    fc_feature_buf_init(&m->u_fc1_in, FC_FC1_IN);
+    fc_feature_buf_init(&m->u_fc2_in, FC_FC2_IN);
+    fc_feature_buf_init(&m->u_fc3_in, FC_FC3_IN);
     fc_weight_rom_init(&m->u_wrom, img->w);
     fc_bias_rom_init(&m->u_brom, img->b);
     fc_mac_init(&m->u_mac);
@@ -16,9 +16,9 @@ void fc_top_init(fc_top_t *m, const fc_rom_image_t *img)
 
 void fc_top_reset(fc_top_t *m)
 {
-    fc_act_buf_reset(&m->u_act_in);
-    fc_act_buf_reset(&m->u_act_a);
-    fc_act_buf_reset(&m->u_act_b);
+    fc_feature_buf_reset(&m->u_fc1_in);
+    fc_feature_buf_reset(&m->u_fc2_in);
+    fc_feature_buf_reset(&m->u_fc3_in);
     fc_mac_reset(&m->u_mac);
     fc_drain_reset(&m->u_drain);
     fc_ctrl_reset(&m->u_ctrl);
@@ -36,14 +36,14 @@ void fc_top_comb(fc_top_t *m, const fc_top_in_t *in, fc_top_out_t *out)
     fc_ctrl_comb(&m->u_ctrl, &ci, &co);
 
     /* this layer's input value (asynchronous reads; writes are applied below) */
-    fc_act_buf_in_t  rd_in = {0, 0, 0, co.x_raddr};
-    fc_act_buf_out_t rd_a, rd_b, rd_in_o;
-    fc_act_buf_comb(&m->u_act_in, &rd_in, &rd_in_o);
-    fc_act_buf_comb(&m->u_act_a, &rd_in, &rd_a);
-    fc_act_buf_comb(&m->u_act_b, &rd_in, &rd_b);
-    uint16_t x = (co.layer == 1) ? rd_in_o.rdata : (co.layer == 2) ? rd_a.rdata : rd_b.rdata;
+    fc_feature_buf_in_t  rd_in = {0, 0, 0, co.feature_raddr};
+    fc_feature_buf_out_t rd_fc2, rd_fc3, rd_fc1;
+    fc_feature_buf_comb(&m->u_fc1_in, &rd_in, &rd_fc1);
+    fc_feature_buf_comb(&m->u_fc2_in, &rd_in, &rd_fc2);
+    fc_feature_buf_comb(&m->u_fc3_in, &rd_in, &rd_fc3);
+    uint16_t feature = (co.layer == 1) ? rd_fc1.rdata : (co.layer == 2) ? rd_fc2.rdata : rd_fc3.rdata;
 
-    fc_weight_rom_in_t  wi = {co.rom_addr};
+    fc_weight_rom_in_t  wi = {co.weight_addr};
     fc_weight_rom_out_t wo;
     fc_weight_rom_comb(&m->u_wrom, &wi, &wo);
 
@@ -53,9 +53,9 @@ void fc_top_comb(fc_top_t *m, const fc_top_in_t *in, fc_top_out_t *out)
 
     fc_mac_in_t  mi;
     fc_mac_out_t mo;
-    mi.x = x;
-    memcpy(mi.w, wo.w, sizeof mi.w);
-    memcpy(mi.b, bo.b, sizeof mi.b);
+    mi.feature = feature;
+    memcpy(mi.weight, wo.w, sizeof mi.weight);
+    memcpy(mi.bias, bo.b, sizeof mi.bias);
     mi.first = co.first; mi.mac_en = co.mac_en; mi.last = co.last;
     mi.layer = co.layer; mi.group = co.group;
     fc_mac_comb(&m->u_mac, &mi, &mo);
@@ -67,30 +67,30 @@ void fc_top_comb(fc_top_t *m, const fc_top_in_t *in, fc_top_out_t *out)
     di.layer = mo.layer; di.group = mo.group; di.logit_ready = in->logit_ready;
     fc_drain_comb(&m->u_drain, &di, &dro);
 
-    /* writes: the MaxPooling stream into act_in, the drain into act_a / act_b */
-    fc_act_buf_in_t  w_in = {co.in_we, co.in_waddr, in->fc_in_data, co.x_raddr};
-    fc_act_buf_in_t  w_a  = {(uint8_t)(dro.act_we && dro.act_layer == 1), dro.act_waddr, dro.act_wdata, co.x_raddr};
-    fc_act_buf_in_t  w_b  = {(uint8_t)(dro.act_we && dro.act_layer == 2), dro.act_waddr, dro.act_wdata, co.x_raddr};
-    fc_act_buf_comb(&m->u_act_in, &w_in, &rd_in_o);
-    fc_act_buf_comb(&m->u_act_a, &w_a, &rd_a);
-    fc_act_buf_comb(&m->u_act_b, &w_b, &rd_b);
+    /* writes: the MaxPooling stream into fc1_in, the drain into fc2_in / fc3_in */
+    fc_feature_buf_in_t  w_fc1 = {co.fc1_in_we, co.fc1_in_waddr, in->fc_in_data, co.feature_raddr};
+    fc_feature_buf_in_t  w_fc2 = {(uint8_t)(dro.feature_we && dro.feature_layer == 1), dro.feature_waddr, dro.feature_wdata, co.feature_raddr};
+    fc_feature_buf_in_t  w_fc3 = {(uint8_t)(dro.feature_we && dro.feature_layer == 2), dro.feature_waddr, dro.feature_wdata, co.feature_raddr};
+    fc_feature_buf_comb(&m->u_fc1_in, &w_fc1, &rd_fc1);
+    fc_feature_buf_comb(&m->u_fc2_in, &w_fc2, &rd_fc2);
+    fc_feature_buf_comb(&m->u_fc3_in, &w_fc3, &rd_fc3);
 
     // ========== Output Logic ==========
     out->fc_in_ready = co.fc_in_ready;
     out->logit_data  = dro.logit_data;
     out->logit_valid = dro.logit_valid;
 
-    m->w_l1_fire = w_a.we; m->w_l1_data = (int16_t)dro.act_wdata;
-    m->w_l2_fire = w_b.we; m->w_l2_data = (int16_t)dro.act_wdata;
+    m->w_l1_fire = w_fc2.we; m->w_l1_data = (int16_t)dro.feature_wdata;
+    m->w_l2_fire = w_fc3.we; m->w_l2_data = (int16_t)dro.feature_wdata;
 }
 
 /* always @(posedge clk) */
 void fc_top_seq(fc_top_t *m)
 {
     fc_ctrl_seq(&m->u_ctrl);
-    fc_act_buf_seq(&m->u_act_in);
-    fc_act_buf_seq(&m->u_act_a);
-    fc_act_buf_seq(&m->u_act_b);
+    fc_feature_buf_seq(&m->u_fc1_in);
+    fc_feature_buf_seq(&m->u_fc2_in);
+    fc_feature_buf_seq(&m->u_fc3_in);
     fc_weight_rom_seq(&m->u_wrom);
     fc_mac_seq(&m->u_mac);
     fc_drain_seq(&m->u_drain);

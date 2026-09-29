@@ -1,6 +1,6 @@
 /*
  * Fully Connected golden model test (step 2, shared engine)
- *   unit tests: quantizer, act_buf, fc_ctrl order and gating, fc_mac latency, drain backpressure
+ *   unit tests: quantizer, feature_buf, fc_ctrl order and gating, fc_mac latency, drain backpressure
  *   frame tests: Python vectors (bit-exact), two frames back to back, synthetic corner-case frame
  *
  *   ./test_fc [vector_dir]
@@ -76,28 +76,28 @@ static int test_quant(void)
     return end_test("quantizer: round-half-even, ReLU / signed clamp", before);
 }
 
-/* ---------------------------------------------------------------- act_buf */
-static int test_act_buf(void)
+/* ---------------------------------------------------------------- feature_buf */
+static int test_feature_buf(void)
 {
     int before = g_fail;
-    fc_act_buf_t buf;
-    fc_act_buf_init(&buf, FC_ACT_B);
-    fc_act_buf_in_t in; fc_act_buf_out_t out;
-    for (uint16_t i = 0; i < FC_ACT_B; i++)
+    fc_feature_buf_t buf;
+    fc_feature_buf_init(&buf, FC_FC3_IN);
+    fc_feature_buf_in_t in; fc_feature_buf_out_t out;
+    for (uint16_t i = 0; i < FC_FC3_IN; i++)
     {
         in.we = 1; in.waddr = i; in.wdata = (uint16_t)(i * 7 + 1); in.raddr = i;
-        fc_act_buf_comb(&buf, &in, &out);
+        fc_feature_buf_comb(&buf, &in, &out);
         CHECK(out.rdata == 0, "a write must not be visible in its own cycle (addr %u)", i);
-        fc_act_buf_seq(&buf);
+        fc_feature_buf_seq(&buf);
     }
-    for (uint16_t i = 0; i < FC_ACT_B; i++)
+    for (uint16_t i = 0; i < FC_FC3_IN; i++)
     {
         in.we = 0; in.raddr = i;
-        fc_act_buf_comb(&buf, &in, &out);
+        fc_feature_buf_comb(&buf, &in, &out);
         CHECK(out.rdata == (uint16_t)(i * 7 + 1), "addr %u reads %u", i, out.rdata);
-        fc_act_buf_seq(&buf);
+        fc_feature_buf_seq(&buf);
     }
-    return end_test("act_buf: write one per clock, asynchronous read", before);
+    return end_test("feature_buf: write one per clock, asynchronous read", before);
 }
 
 /* ---------------------------------------------------------------- fc_ctrl */
@@ -113,7 +113,7 @@ static int test_ctrl(void)
     for (int i = 0; i < 3; i++)
     {
         fc_ctrl_comb(&c, &in, &out);
-        CHECK(!out.mac_en && c.state == FC_IDLE, "must idle with an empty act_in");
+        CHECK(!out.mac_en && c.state == FC_IDLE, "must idle with an empty fc1_in");
         fc_ctrl_seq(&c);
     }
 
@@ -124,14 +124,14 @@ static int test_ctrl(void)
     uint8_t seen_layer3_flush = 0;
     for (; cycles < 20000 && !seen_layer3_flush; cycles++)
     {
-        in.fc_in_valid = (fed < FC_ACT_IN);
+        in.fc_in_valid = (fed < FC_FC1_IN);
         fc_ctrl_comb(&c, &in, &out);
-        if (out.in_we) fed++;
+        if (out.fc1_in_we) fed++;
         if (out.mac_en)
         {
             issues[out.layer]++;
             /* a valid row is addressed one cycle earlier: check the prefetch matches this issue */
-            uint16_t row = (uint16_t)(FC_CFG[out.layer - 1].rom_base + out.group * FC_CFG[out.layer - 1].n_in + out.x_raddr);
+            uint16_t row = (uint16_t)(FC_CFG[out.layer - 1].rom_base + out.group * FC_CFG[out.layer - 1].n_in + out.feature_raddr);
             (void)row;
         }
         if (out.mac_en && out.first) firsts[out.layer]++;
@@ -142,7 +142,7 @@ static int test_ctrl(void)
     CHECK(issues[1] == 6 * 400 && issues[2] == 5 * 120 && issues[3] == 2 * 84,
           "issues per layer %d / %d / %d", issues[1], issues[2], issues[3]);
     CHECK(firsts[1] == 6 && firsts[2] == 5 && firsts[3] == 2, "first-input flags per layer %d / %d / %d", firsts[1], firsts[2], firsts[3]);
-    CHECK(fed == FC_ACT_IN, "fed %u inputs", fed);
+    CHECK(fed == FC_FC1_IN, "fed %u inputs", fed);
     CHECK(stalls_g0 <= 2, "FC1 group 0 stalled %d cycles although inputs arrive every clock", stalls_g0);
     CHECK(c.fill_cnt == 0, "fill_cnt must clear after FC1 (is %u)", c.fill_cnt);
     printf("    ctrl: %ld cycles from first input to the FC3 flush (hold always free)\n", cycles);
@@ -183,7 +183,7 @@ static int test_mac_acc(void)
     memset(&in, 0, sizeof in);
 
     fc_acc_t want[FC_P];
-    for (int l = 0; l < FC_P; l++) { in.b[l] = 1000 * (l + 1) * ((l & 1) ? -1 : 1); want[l] = in.b[l]; }
+    for (int l = 0; l < FC_P; l++) { in.bias[l] = 1000 * (l + 1) * ((l & 1) ? -1 : 1); want[l] = in.bias[l]; }
     in.layer = 2; in.group = 3;
     /* stale accumulators must not leak into the group: the first input starts from the bias */
     for (int l = 0; l < FC_P; l++) mac.acc[l] = 123456789;
@@ -192,8 +192,8 @@ static int test_mac_acc(void)
     for (int i = 0; i < N; i++)                                        /* cycles 0..4: inputs */
     {
         in.first = (i == 0); in.mac_en = 1; in.last = (i == N - 1);
-        in.x = (uint16_t)(3000 + 700 * i);
-        for (int l = 0; l < FC_P; l++) { in.w[l] = (int16_t)(-2000 + 137 * l + 11 * i); want[l] += (fc_acc_t)in.x * in.w[l]; }
+        in.feature = (uint16_t)(3000 + 700 * i);
+        for (int l = 0; l < FC_P; l++) { in.weight[l] = (int16_t)(-2000 + 137 * l + 11 * i); want[l] += (fc_acc_t)in.feature * in.weight[l]; }
         fc_mac_comb(&mac, &in, &out);
         CHECK(!out.sum_valid, "sum_valid must be 0 while inputs are still issued (i=%d)", i);
         fc_mac_seq(&mac);
@@ -246,7 +246,7 @@ static int test_drain(void)
     CHECK(got == 6, "drained %d logits, expected 6", got);
     CHECK(!d.valid, "register empties after the short last group");
 
-    /* FC1 group 2: 20 writes to act_a at neurons 40..59, one per clock, ReLU applied */
+    /* FC1 group 2: 20 writes to fc2_in at neurons 40..59, one per clock, ReLU applied */
     in.sum_valid = 1; in.layer = 1; in.group = 2; in.logit_ready = 0;
     for (int l = 0; l < FC_P; l++) in.sum[l] = (fc_acc_t)((l & 1) ? -5 : 5) << FC_CFG[0].scale_exp;
     fc_drain_comb(&d, &in, &out); fc_drain_seq(&d);
@@ -254,14 +254,14 @@ static int test_drain(void)
     for (int k = 0; k < FC_P; k++)
     {
         fc_drain_comb(&d, &in, &out);
-        CHECK(out.act_we && out.act_layer == 1 && out.act_waddr == 40 + k, "write %d goes to act_a[%d]", k, 40 + k);
-        CHECK(out.act_wdata == ((k & 1) ? 0 : 5), "write %d value %u", k, out.act_wdata);
+        CHECK(out.feature_we && out.feature_layer == 1 && out.feature_waddr == 40 + k, "write %d goes to fc2_in[%d]", k, 40 + k);
+        CHECK(out.feature_wdata == ((k & 1) ? 0 : 5), "write %d value %u", k, out.feature_wdata);
         fc_drain_seq(&d);
     }
     fc_drain_comb(&d, &in, &out);
-    CHECK(!out.act_we && out.hold_free, "done after 20 writes");
+    CHECK(!out.feature_we && out.hold_free, "done after 20 writes");
     CHECK(d.dbg_overrun_cnt == 0, "overrun counter %u", d.dbg_overrun_cnt);
-    return end_test("fc_drain: logit backpressure, act writes in neuron order, ReLU", before);
+    return end_test("fc_drain: logit backpressure, feature writes in neuron order, ReLU", before);
 }
 
 /* ------------------------------------------------------------ frame tests */
@@ -394,7 +394,7 @@ int main(int argc, char **argv)
 
     srand(1);
     test_quant();
-    test_act_buf();
+    test_feature_buf();
     test_ctrl();
     test_mac_acc();
     test_drain();

@@ -1,11 +1,11 @@
 /* fc_top: MaxPooling -> [shared engine: FC1 -> FC2 -> FC3] -> logit stream (to Argmax).
- * Same ports as the step 1 fc_top. act_in holds the frame's 400 inputs, act_a / act_b
+ * Same ports as the step 1 fc_top. fc1_in holds the frame's 400 inputs, fc2_in / fc3_in
  * the FC1 / FC2 outputs; one weight ROM, one bias ROM, P MAC lanes and one drain serve all
  * three layers in turn. */
 #ifndef FC_TOP_H
 #define FC_TOP_H
 
-#include "fc_act_buf.h"
+#include "fc_feature_buf.h"
 #include "fc_bias_rom.h"
 #include "fc_ctrl.h"
 #include "fc_drain.h"
@@ -28,7 +28,7 @@ typedef struct
 
 typedef struct
 {
-    fc_act_buf_t    u_act_in, u_act_a, u_act_b;
+    fc_feature_buf_t    u_fc1_in, u_fc2_in, u_fc3_in;
     fc_weight_rom_t u_wrom;
     fc_bias_rom_t   u_brom;
     fc_mac_t    u_mac;

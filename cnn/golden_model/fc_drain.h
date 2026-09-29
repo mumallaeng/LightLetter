@@ -1,5 +1,5 @@
 /* fc_drain: holds one group's P sums and quantizes them one per clock in lane order.
- * FC1/FC2 values go to the next layer's activation buffer (act_we / act_waddr), FC3 values
+ * FC1/FC2 values go to the next layer's activation buffer (feature_we / feature_waddr), FC3 values
  * leave on the logit stream and wait for logit_ready. hold_free tells fc_ctrl the register
  * is empty, so a group's last input is only issued when its sums have somewhere to land. */
 #ifndef FC_DRAIN_H
@@ -18,10 +18,10 @@ typedef struct
 typedef struct
 {
     uint8_t  hold_free;
-    uint8_t  act_we;     /* write into act_a (layer 1) or act_b (layer 2) */
-    uint8_t  act_layer;  /* 1 or 2 */
-    uint8_t  act_waddr;  /* neuron index = group * P + lane */
-    uint16_t act_wdata;
+    uint8_t  feature_we;     /* write into fc2_in (layer 1) or fc3_in (layer 2) */
+    uint8_t  feature_layer;  /* 1 or 2 */
+    uint8_t  feature_waddr;  /* neuron index = group * P + lane */
+    uint16_t feature_wdata;
     int16_t  logit_data; /* signed */
     uint8_t  logit_valid;
 } fc_drain_out_t;

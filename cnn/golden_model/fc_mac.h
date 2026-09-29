@@ -1,4 +1,4 @@
-/* fc_mac: P multipliers and P accumulators. Every `mac_en` adds x * w[lane]; the group's
+/* fc_mac: P multipliers and P accumulators. Every `mac_en` adds feature * weight[lane]; the group's
  * first input (`first`) starts from the bias instead of the running sum (DSP opmode C + M,
  * then P + M). Three pipeline stages after the issue cycle: operands (DSP A/B registers) ->
  * products (M register) -> accumulate (P register). The flags ride along, so the sum of the
@@ -10,11 +10,11 @@
 
 typedef struct
 {
-    uint16_t x;          /* one activation, broadcast to every lane */
-    int16_t  w[FC_P];    /* this input's weights for the group's P neurons */
-    int32_t  b[FC_P];    /* the group's biases (used with first) */
-    uint8_t  first;      /* acc <= bias + x * w */
-    uint8_t  mac_en;     /* acc <= acc + x * w */
+    uint16_t feature;    /* one activation, broadcast to every lane */
+    int16_t  weight[FC_P]; /* this input's weights for the group's P neurons */
+    int32_t  bias[FC_P]; /* the group's biases (used with first) */
+    uint8_t  first;      /* acc <= bias + feature * weight */
+    uint8_t  mac_en;     /* acc <= acc + feature * weight */
     uint8_t  last;       /* mac_en of the group's last input */
     uint8_t  layer;      /* 1..3, tag carried to the drain */
     uint8_t  group;
@@ -30,16 +30,16 @@ typedef struct
 
 typedef struct
 {
-    uint16_t x;
-    int16_t  w[FC_P];
-    int32_t  b[FC_P];
+    uint16_t feature;
+    int16_t  weight[FC_P];
+    int32_t  bias[FC_P];
     uint8_t  first, mac, last, layer, group, valid;
 } fc_mac_s1_t;
 
 typedef struct
 {
     int32_t  prod[FC_P];
-    int32_t  b[FC_P];
+    int32_t  bias[FC_P];
     uint8_t  first, mac, last, layer, group, valid;
 } fc_mac_s2_t;
 

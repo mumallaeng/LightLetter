@@ -30,10 +30,10 @@ void fc_ctrl_comb(fc_ctrl_t *m, const fc_ctrl_in_t *in, fc_ctrl_out_t *out)
     m->fill_cnt_next = m->fill_cnt;
 
     // ========== input fill (independent of the FSM) ==========
-    out->fc_in_ready = (m->fill_cnt < FC_ACT_IN);
-    out->in_we       = in->fc_in_valid && out->fc_in_ready;
-    out->in_waddr    = m->fill_cnt;
-    if (out->in_we)
+    out->fc_in_ready = (m->fill_cnt < FC_FC1_IN);
+    out->fc1_in_we       = in->fc_in_valid && out->fc_in_ready;
+    out->fc1_in_waddr    = m->fill_cnt;
+    if (out->fc1_in_we)
         m->fill_cnt_next = (uint16_t)(m->fill_cnt + 1);
 
     // ========== Next State Logic ==========
@@ -81,7 +81,7 @@ void fc_ctrl_comb(fc_ctrl_t *m, const fc_ctrl_in_t *in, fc_ctrl_out_t *out)
             if (!in->mac_busy && in->hold_free)
             {
                 if (m->layer == 1)
-                    m->fill_cnt_next = out->in_we ? 1 : 0; /* act_in is free again */
+                    m->fill_cnt_next = out->fc1_in_we ? 1 : 0; /* fc1_in is free again */
                 if (m->layer < FC_LAYERS)
                 {
                     m->layer_next = (uint8_t)(m->layer + 1);
@@ -101,10 +101,10 @@ void fc_ctrl_comb(fc_ctrl_t *m, const fc_ctrl_in_t *in, fc_ctrl_out_t *out)
     // ========== Output Logic ==========
     out->layer     = m->layer;
     out->group     = m->group;
-    out->x_raddr   = m->i;
+    out->feature_raddr   = m->i;
     out->bias_addr = m->layer ? (uint8_t)(FC_CFG[m->layer - 1].bias_base + m->group) : 0;
     /* row the next cycle issues: where the counters land after this cycle */
-    out->rom_addr  = (m->layer_next >= 1) ? rom_row(m->layer_next, m->group_next, m->i_next) : 0;
+    out->weight_addr  = (m->layer_next >= 1) ? rom_row(m->layer_next, m->group_next, m->i_next) : 0;
 }
 
 /* always @(posedge clk) */

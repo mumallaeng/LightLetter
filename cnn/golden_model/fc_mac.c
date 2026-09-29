@@ -25,9 +25,9 @@ static int fits_acc_w(fc_acc_t v)
 void fc_mac_comb(fc_mac_t *m, const fc_mac_in_t *in, fc_mac_out_t *out)
 {
     // ========== stage 1 next: operand registers ==========
-    m->s1_next.x = in->x;
-    memcpy(m->s1_next.w, in->w, sizeof m->s1_next.w);
-    memcpy(m->s1_next.b, in->b, sizeof m->s1_next.b);
+    m->s1_next.feature = in->feature;
+    memcpy(m->s1_next.weight, in->weight, sizeof m->s1_next.weight);
+    memcpy(m->s1_next.bias, in->bias, sizeof m->s1_next.bias);
     m->s1_next.first = in->first && in->mac_en;
     m->s1_next.mac   = in->mac_en;
     m->s1_next.last  = in->last && in->mac_en;
@@ -37,8 +37,8 @@ void fc_mac_comb(fc_mac_t *m, const fc_mac_in_t *in, fc_mac_out_t *out)
 
     // ========== stage 2 next: products ==========
     for (int l = 0; l < FC_P; l++)
-        m->s2_next.prod[l] = (int32_t)m->s1.x * (int32_t)m->s1.w[l];
-    memcpy(m->s2_next.b, m->s1.b, sizeof m->s2_next.b);
+        m->s2_next.prod[l] = (int32_t)m->s1.feature * (int32_t)m->s1.weight[l];
+    memcpy(m->s2_next.bias, m->s1.bias, sizeof m->s2_next.bias);
     m->s2_next.first = m->s1.first;
     m->s2_next.mac   = m->s1.mac;
     m->s2_next.last  = m->s1.last;
@@ -52,7 +52,7 @@ void fc_mac_comb(fc_mac_t *m, const fc_mac_in_t *in, fc_mac_out_t *out)
     {
         fc_acc_t sum = m->acc[l];
         if (m->s2.valid && m->s2.mac)
-            sum = (m->s2.first ? (fc_acc_t)m->s2.b[l] : m->acc[l]) + m->s2.prod[l];
+            sum = (m->s2.first ? (fc_acc_t)m->s2.bias[l] : m->acc[l]) + m->s2.prod[l];
         m->acc_next[l] = sum;
         out->sum[l]    = sum;
         if (m->s2.valid && m->s2.mac && !fits_acc_w(sum))

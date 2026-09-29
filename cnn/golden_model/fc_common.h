@@ -13,9 +13,9 @@
 #define FC_MAX_N_OUT 120
 #define FC_ROM_ROWS  3168 /* 6*400 + 5*120 + 2*84 rows of P weights */
 #define FC_BIAS_ROWS 13   /* 6 + 5 + 2 rows of P biases */
-#define FC_ACT_IN    400  /* fc_act_buf depths: MaxPooling input, FC1 output, FC2 output */
-#define FC_ACT_A     120
-#define FC_ACT_B     84
+#define FC_FC1_IN 400 /* fc_feature_buf depths: MaxPooling input, FC1 output, FC2 output */
+#define FC_FC2_IN 120
+#define FC_FC3_IN 84
 
 typedef int64_t fc_acc_t;
 
