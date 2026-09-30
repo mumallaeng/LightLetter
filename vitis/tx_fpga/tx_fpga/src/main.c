@@ -60,6 +60,7 @@
 #include "xuartps_hw.h"
 #include "xstatus.h"
 #include "capture_ctrl/capture_ctrl.h"
+#include "roi_dma/roi_dma.h"
 #include "cnn_ctrl/cnn_ctrl.h"
 /*===========================================================================
  *  Platform glue
@@ -92,6 +93,7 @@ static void menu_help()
 	xil_printf("\r\n--- keys ---------------------\r\n");
 	xil_printf(" external button : capture next complete frame \r\n");
 	xil_printf(" c    : request capture from UART \r\n");
+	xil_printf(" d    : send synthetic 112x112 RGB frame through ROI DMA \r\n");
 	xil_printf(" ? : help \r\n");
 }
 
@@ -108,6 +110,7 @@ static void menu_run()
 	switch(c)
 	{
 	case 'c' : capture_ctrl_trigger(); break;
+	case 'd' : roi_dma_send_test_frame(); break;
 	case '?' : menu_help();
 	default:	break;
 	}
@@ -256,7 +259,11 @@ int main(void)
         return 1;
     }
 
-    /* 버튼 -> 캡처 -> cnn_ip 추론 -> cnn_done 인터럽트 -> cnn_result 읽기 */
+    if (roi_dma_init() != XST_SUCCESS) {
+        xil_printf("ROI AXI DMA initialization failed. Stopping.\r\n");
+        return 1;
+    }
+
     if (cnn_ctrl_init() != XST_SUCCESS) {
         xil_printf("CNN interrupt initialization failed. Stopping.\r\n");
         return 1;
