@@ -31,6 +31,10 @@ typedef struct {
     double center[6][2];
 } aruco_result_t;
 
+/* cells from marker centers (raw frame pixels, bit i of mask = marker i present) */
+int aruco_crop_from_centers(const aruco_frame_t *f, const double centers[6][2], int mask,
+                            aruco_cells_t *out, aruco_result_t *res);
+
 int aruco_crop_run(const aruco_frame_t *f, aruco_cells_t *out, aruco_result_t *res);
 
 #endif

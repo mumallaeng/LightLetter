@@ -1,130 +1,158 @@
+#include <math.h>
 #include <string.h>
+#include "aruco_config.h"
 #include "aruco_crop.h"
 #include "aruco_detect.h"
 #include "aruco_geom.h"
 
 /*
- * Reference: tb/aruco_crop/aruco_crop.ipynb (Python golden model), pasted below.
- * Replace each block with the C version as it is implemented.
+ * Reference: tb/aruco_crop/aruco_crop.ipynb (Python golden model)
  */
+
+#define NUM_MARKERS 6
+
+/* bilinear sample of the raw frame, coordinates clamped to the image (border replicate) */
+static void sample(const aruco_frame_t *f, double x, double y, uint8_t out[3])
+{
+    int x0, y0, x1, y1, c;
+    double fx, fy;
+
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x > f->width - 1)  x = f->width - 1;
+    if (y > f->height - 1) y = f->height - 1;
+    x0 = (int)x; y0 = (int)y;
+    x1 = x0 + 1 < f->width  ? x0 + 1 : x0;
+    y1 = y0 + 1 < f->height ? y0 + 1 : y0;
+    fx = x - x0; fy = y - y0;
+    for (c = 0; c < 3; c++) {
+        double a = f->rgb[y0 * f->stride + x0 * 3 + c] * (1 - fx) + f->rgb[y0 * f->stride + x1 * 3 + c] * fx;
+        double b = f->rgb[y1 * f->stride + x0 * 3 + c] * (1 - fx) + f->rgb[y1 * f->stride + x1 * 3 + c] * fx;
+        out[c] = (uint8_t)(a * (1 - fy) + b * fy + 0.5);
+    }
+}
+
+/* board rect (x0,y0)-(x1,y1) -> w x h pixels written at column xoff of a 112-wide cell */
+static void warp_region(const aruco_frame_t *f, const double H[9],
+                        double x0, double y0, double x1, double y1,
+                        int w, int h, int xoff, uint8_t cell[ARUCO_CELL_H][ARUCO_CELL_W][3])
+{
+    int u, v;
+    for (v = 0; v < h; v++)
+        for (u = 0; u < w; u++) {
+            double b[2], p[2], q[2];
+            b[0] = x0 + u * (x1 - x0) / w;
+            b[1] = y0 + v * (y1 - y0) / h;
+            perspective_transform(H, b, p);
+            distort_point(p, q);
+            sample(f, q[0], q[1], cell[v][xoff + u]);
+        }
+}
+
+static void cell_rect(int k, double *x0, double *y0, double *x1, double *y1)
+{
+    *x0 = aruco_cell_x[k][0] + ARUCO_MARGIN_X;
+    *x1 = aruco_cell_x[k][1] - ARUCO_MARGIN_X;
+    *y0 = ARUCO_INSET;
+    *y1 = 1 - ARUCO_INSET;
+}
+
+/* marker centers -> 5 cells. steps: undistort_points -> find_homography (fill missing
+ * markers) -> get_perspective_transform (two pieces) -> per pixel board->H->distort->bilinear */
+int aruco_crop_from_centers(const aruco_frame_t *f, const double centers[6][2], int mask,
+                            aruco_cells_t *out, aruco_result_t *res)
+{
+    double bsrc[NUM_MARKERS][2], raw[NUM_MARKERS][2], und[NUM_MARKERS][2];
+    double c[NUM_MARKERS][2], Hall[9], HL[9], HR[9], sq = 0;
+    static const int idL[4] = { 0, 1, 4, 3 }, idR[4] = { 1, 2, 5, 4 };
+    double qs[4][2], qd[4][2];
+    int i, k, n = 0, ids[NUM_MARKERS];
+
+    if (!f || !f->rgb || !centers || !out || f->width != ARUCO_FRAME_W || f->height != ARUCO_FRAME_H)
+        return ARUCO_ERR_ARG;
+    memset(out, 0, sizeof(*out));
+    if (res)
+        memset(res, 0, sizeof(*res));
+
+    for (i = 0; i < NUM_MARKERS; i++)
+        if (mask & (1 << i)) {
+            ids[n] = i;
+            bsrc[n][0] = aruco_board[i][0]; bsrc[n][1] = aruco_board[i][1];
+            raw[n][0] = centers[i][0]; raw[n][1] = centers[i][1];
+            n++;
+        }
+    if (n < 4)
+        return ARUCO_ERR_MARKERS;
+
+    undistort_points((const double (*)[2])raw, und, n);
+    if (find_homography((const double (*)[2])bsrc, (const double (*)[2])und, n, Hall) != 0)
+        return ARUCO_ERR_GEOM;
+
+    /* missing markers are projected with the all-marker fit */
+    for (i = 0; i < NUM_MARKERS; i++)
+        perspective_transform(Hall, aruco_board[i], c[i]);
+    for (k = 0; k < n; k++) {
+        double d[2];
+        c[ids[k]][0] = und[k][0]; c[ids[k]][1] = und[k][1];
+        perspective_transform(Hall, bsrc[k], d);
+        sq += (d[0] - und[k][0]) * (d[0] - und[k][0]) + (d[1] - und[k][1]) * (d[1] - und[k][1]);
+    }
+
+    for (i = 0; i < 4; i++) {
+        qs[i][0] = aruco_board[idL[i]][0]; qs[i][1] = aruco_board[idL[i]][1];
+        qd[i][0] = c[idL[i]][0];           qd[i][1] = c[idL[i]][1];
+    }
+    if (get_perspective_transform(qs, qd, HL) != 0)
+        return ARUCO_ERR_GEOM;
+    for (i = 0; i < 4; i++) {
+        qs[i][0] = aruco_board[idR[i]][0]; qs[i][1] = aruco_board[idR[i]][1];
+        qd[i][0] = c[idR[i]][0];           qd[i][1] = c[idR[i]][1];
+    }
+    if (get_perspective_transform(qs, qd, HR) != 0)
+        return ARUCO_ERR_GEOM;
+
+    for (k = 0; k < ARUCO_CELL_COUNT; k++) {
+        double x0, y0, x1, y1;
+        cell_rect(k, &x0, &y0, &x1, &y1);
+        if (x1 <= ARUCO_SEAM_X) {
+            warp_region(f, HL, x0, y0, x1, y1, ARUCO_CELL_W, ARUCO_CELL_H, 0, out->pix[k]);
+        } else if (x0 >= ARUCO_SEAM_X) {
+            warp_region(f, HR, x0, y0, x1, y1, ARUCO_CELL_W, ARUCO_CELL_H, 0, out->pix[k]);
+        } else {
+            /* cell straddles the seam, split the output width proportionally */
+            int cut = (int)floor(ARUCO_CELL_W * (ARUCO_SEAM_X - x0) / (x1 - x0) + 0.5);
+            warp_region(f, HL, x0, y0, ARUCO_SEAM_X, y1, cut, ARUCO_CELL_H, 0, out->pix[k]);
+            warp_region(f, HR, ARUCO_SEAM_X, y0, x1, y1, ARUCO_CELL_W - cut, ARUCO_CELL_H, cut, out->pix[k]);
+        }
+    }
+
+    if (res) {
+        res->n_markers = n;
+        res->marker_mask = mask;
+        for (k = 0; k < ARUCO_CELL_COUNT; k++)
+            res->cell_ok[k] = 1;
+        res->fit_rms_px = sqrt(sq / n);
+        memcpy(res->center, c, sizeof(res->center));
+    }
+    return ARUCO_OK;
+}
 
 /* frame -> 5 cells. steps: detect_markers -> centers -> undistort_points ->
  * find_homography (two pieces) -> per pixel board->H->distort->bilinear */
 int aruco_crop_run(const aruco_frame_t *f, aruco_cells_t *out, aruco_result_t *res)
 {
+    aruco_marker_t m[NUM_MARKERS];
+    double centers[NUM_MARKERS][2] = {{0}};
+    int i, n, mask = 0;
+
     if (!f || !f->rgb || !out)
         return ARUCO_ERR_ARG;
-    memset(out, 0, sizeof(*out));
-    if (res)
-        memset(res, 0, sizeof(*res));
-    /* TODO */
-    return ARUCO_ERR_MARKERS;
+    n = detect_markers(f->rgb, f->width, f->height, f->stride, m, NUM_MARKERS);
+    for (i = 0; i < n; i++)
+        if (m[i].id >= 0 && m[i].id < NUM_MARKERS) {
+            centers[m[i].id][0] = m[i].center[0];
+            centers[m[i].id][1] = m[i].center[1];
+            mask |= 1 << m[i].id;
+        }
+    return aruco_crop_from_centers(f, (const double (*)[2])centers, mask, out, res);
 }
-
-// ---- tb/aruco_crop/aruco_crop.ipynb (Python) ----
-// def board_to_image(found):
-//     """마커 위치로 보드 -> 이미지 homography 두 개(왼쪽, 오른쪽 조각) 계산
-//
-//     return: HL, HR, centres, note
-//     """
-//     have = sorted(found)
-//     if len(have) < 4:
-//         return None, None, None, "마커 %d개 뿐 (최소 4개)" % len(have)
-//
-//     src = np.float32([BOARD[i] for i in have])
-//     dst = np.float32([found[i]["c"] for i in have])
-//     H, _ = cv2.findHomography(src, dst, 0)     # 0 = 최소제곱
-//     if H is None:
-//         return None, None, None, "homography 계산 실패"
-//
-//     # 빠진 마커는 위 변환으로 위치 추정
-//     centres, filled = {}, []
-//     for mid in BOARD:
-//         if mid in found:
-//             centres[mid] = found[mid]["c"]
-//         else:
-//             p = cv2.perspectiveTransform(np.float32([[BOARD[mid]]]), H)[0][0]
-//             centres[mid] = p
-//             filled.append(mid)
-//
-//     def quad(ids):
-//         """마커 4개 대응으로 homography 하나 계산"""
-//         return cv2.getPerspectiveTransform(
-//             np.float32([BOARD[i] for i in ids]),
-//             np.float32([centres[i] for i in ids]))
-//
-//     HL = quad((0, 1, 4, 3))
-//     HR = quad((1, 2, 5, 4))
-//     note = "마커 %d개" % len(have)
-//     if filled:
-//         note += ", id %s 는 추정" % ",".join(str(i) for i in filled)
-//     return HL, HR, centres, note
-//
-//
-// for path in IMAGES:
-//     f = detect(to_gray(load_frame(path)))
-//     _, _, _, note = board_to_image(f)
-//     print("%-26s %s" % (os.path.basename(path).replace("aru_test_img_", ""), note))
-//
-// def cell_rect(k):
-//     """칸 k의 보드 좌표 범위 (좌우는 CELL_X 안쪽에서 MARGIN_X만큼 물러남)
-//
-//     return: x0, y0, x1, y1
-//     """
-//     x0, x1 = CELL_X[k][0] + MARGIN_X, CELL_X[k][1] - MARGIN_X
-//     y0, y1 = INSET, 1 - INSET
-//     return x0, y0, x1, y1
-//
-//
-// def warp_region(img, H, x0, y0, x1, y1, w, h):
-//     """보드 좌표의 직사각형 영역 하나를 w x h 정면 이미지로 변환"""
-//     src = np.float32([[x0, y0], [x1, y0], [x1, y1], [x0, y1]])
-//     dst = np.float32([[0, 0], [w, 0], [w, h], [0, h]])
-//     # 출력 -> 이미지 변환 = H · (보드 -> 출력 변환)의 역
-//     M = H @ np.linalg.inv(cv2.getPerspectiveTransform(src, dst))
-//     return cv2.warpPerspective(img, M, (w, h),
-//                                flags=cv2.WARP_INVERSE_MAP | cv2.INTER_LINEAR,
-//                                borderMode=cv2.BORDER_REPLICATE)
-//
-//
-// def extract_cells(img, HL, HR, n=OUT_N):
-//     """칸 5개를 n x n 컬러 이미지로 잘라냄
-//
-//     return: cells
-//     """
-//     cells = []
-//     for k in range(NUM_CELLS):
-//         x0, y0, x1, y1 = cell_rect(k)
-//         if x1 <= SEAM_X:
-//             cells.append(warp_region(img, HL, x0, y0, x1, y1, n, n))
-//         elif x0 >= SEAM_X:
-//             cells.append(warp_region(img, HR, x0, y0, x1, y1, n, n))
-//         else:
-//             # 이음매를 걸친 칸, 출력 폭을 비율대로 나눔
-//             cut = int(round(n * (SEAM_X - x0) / (x1 - x0)))
-//             left = warp_region(img, HL, x0, y0, SEAM_X, y1, cut, n)
-//             right = warp_region(img, HR, SEAM_X, y0, x1, y1, n - cut, n)
-//             cells.append(np.hstack([left, right]))
-//     return cells
-//
-//
-// def process(path):
-//     """사진 한 장의 마커 검출부터 칸 자르기까지 실행
-//
-//     return: dict(bgr, gray, found, note, cells, centres, HL, HR)
-//     """
-//     bgr = load_frame(path)
-//     gray = to_gray(bgr)
-//     found = detect(gray)
-//     HL, HR, centres, note = board_to_image(found)
-//     if HL is None:
-//         return dict(bgr=bgr, gray=gray, found=found, note=note, cells=None, centres=None)
-//     return dict(bgr=bgr, gray=gray, found=found, note=note,
-//                 cells=extract_cells(bgr, HL, HR), centres=centres,
-//                 HL=HL, HR=HR)
-//
-//
-// res = {os.path.basename(p).replace("aru_test_img_", "").replace(".png", ""): process(p)
-//        for p in IMAGES}
-// for k, v in res.items():
-//     print("%-10s %s" % (k, v["note"]))

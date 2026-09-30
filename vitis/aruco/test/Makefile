@@ -10,4 +10,4 @@ run: test_aruco
 	./test_aruco
 
 clean:
-	rm -f test_aruco
+	rm -rf test_aruco test_aruco.dSYM
