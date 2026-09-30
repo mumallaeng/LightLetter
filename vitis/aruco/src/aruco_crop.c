@@ -9,8 +9,6 @@
  * Reference: tb/aruco_crop/aruco_crop.ipynb (Python golden model)
  */
 
-#define NUM_MARKERS 6
-
 /* bilinear sample of the raw frame, coordinates clamped to the image (border replicate) */
 static void sample(const aruco_frame_t *f, double x, double y, uint8_t out[3])
 {
@@ -62,11 +60,11 @@ static void cell_rect(int k, double *x0, double *y0, double *x1, double *y1)
 int aruco_crop_from_centers(const aruco_frame_t *f, const double centers[6][2], int mask,
                             aruco_cells_t *out, aruco_result_t *res)
 {
-    double bsrc[NUM_MARKERS][2], raw[NUM_MARKERS][2], und[NUM_MARKERS][2];
-    double c[NUM_MARKERS][2], Hall[9], HL[9], HR[9], sq = 0;
+    double bsrc[ARUCO_NUM_MARKERS][2], raw[ARUCO_NUM_MARKERS][2], und[ARUCO_NUM_MARKERS][2];
+    double c[ARUCO_NUM_MARKERS][2], Hall[9], HL[9], HR[9], sq = 0;
     static const int idL[4] = { 0, 1, 4, 3 }, idR[4] = { 1, 2, 5, 4 };
     double qs[4][2], qd[4][2];
-    int i, k, n = 0, ids[NUM_MARKERS];
+    int i, k, n = 0, ids[ARUCO_NUM_MARKERS];
 
     if (!f || !f->rgb || !centers || !out || f->width != ARUCO_FRAME_W || f->height != ARUCO_FRAME_H)
         return ARUCO_ERR_ARG;
@@ -74,7 +72,7 @@ int aruco_crop_from_centers(const aruco_frame_t *f, const double centers[6][2], 
     if (res)
         memset(res, 0, sizeof(*res));
 
-    for (i = 0; i < NUM_MARKERS; i++)
+    for (i = 0; i < ARUCO_NUM_MARKERS; i++)
         if (mask & (1 << i)) {
             ids[n] = i;
             bsrc[n][0] = aruco_board[i][0]; bsrc[n][1] = aruco_board[i][1];
@@ -89,7 +87,7 @@ int aruco_crop_from_centers(const aruco_frame_t *f, const double centers[6][2], 
         return ARUCO_ERR_GEOM;
 
     /* missing markers are projected with the all-marker fit */
-    for (i = 0; i < NUM_MARKERS; i++)
+    for (i = 0; i < ARUCO_NUM_MARKERS; i++)
         perspective_transform(Hall, aruco_board[i], c[i]);
     for (k = 0; k < n; k++) {
         double d[2];
@@ -141,15 +139,15 @@ int aruco_crop_from_centers(const aruco_frame_t *f, const double centers[6][2], 
  * find_homography (two pieces) -> per pixel board->H->distort->bilinear */
 int aruco_crop_run(const aruco_frame_t *f, aruco_cells_t *out, aruco_result_t *res)
 {
-    aruco_marker_t m[NUM_MARKERS];
-    double centers[NUM_MARKERS][2] = {{0}};
+    aruco_marker_t m[ARUCO_NUM_MARKERS];
+    double centers[ARUCO_NUM_MARKERS][2] = {{0}};
     int i, n, mask = 0;
 
     if (!f || !f->rgb || !out)
         return ARUCO_ERR_ARG;
-    n = detect_markers(f->rgb, f->width, f->height, f->stride, m, NUM_MARKERS);
+    n = detect_markers(f->rgb, f->width, f->height, f->stride, m, ARUCO_NUM_MARKERS);
     for (i = 0; i < n; i++)
-        if (m[i].id >= 0 && m[i].id < NUM_MARKERS) {
+        if (m[i].id >= 0 && m[i].id < ARUCO_NUM_MARKERS) {
             centers[m[i].id][0] = m[i].center[0];
             centers[m[i].id][1] = m[i].center[1];
             mask |= 1 << m[i].id;

@@ -1,586 +1,514 @@
+#include <math.h>
+#include <string.h>
+#include "aruco_detect.h"
+#include "aruco_config.h"
+#include "aruco_dict.h"
+#include "aruco_geom.h"
+
 /*
- * Function skeletons below mirror OpenCV 5.0.0 (Apache-2.0, (c) OpenCV
- * contributors). Original source is pasted as // comments and is replaced by
- * a C reimplementation step by step. See THIRD_PARTY_NOTICES.md.
+ * Reimplemented from OpenCV 5.0.0 (Apache-2.0): adaptiveThreshold, ArucoDetector
+ * (_threshold, _findMarkerContours, detectCandidates, _extractCellPixelRatio,
+ * _identifyOneCandidate) and Dictionary::identify. See THIRD_PARTY_NOTICES.md.
+ *
+ * Differences from OpenCV: threshold windows 23 and 13 (OpenCV sweeps 3..23 step 10),
+ * connected components with diagonal extreme points instead of findContours + approxPolyDP,
+ * only ids 0..5 are searched.
  */
 
-#include "aruco_detect.h"
-#include "aruco_dict.h"
+#define MAX_LABELS     40000
+#define MAX_CAND       256
 
+#define THRESH_C       7
+#define MIN_AREA       100
+#define MIN_SIDE       10
+#define MAX_SIDE       300
+#define MAX_BORDER_ERR 7      /* maxErroneousBitsInBorderRate 0.35 of 20 border bits */
+#define MAX_HAMMING    1
+#define MIN_CONTRAST   30
+#define MAX_POOL       32
+#define MAX_PER_ID     3
+#define DUP_DIST       3.0    /* same id closer than this (px) is the same marker seen in another window */
+#define FIT_RMS_MAX    4.0    /* board -> image homography residual (px) of an accepted marker set */
+
+static uint8_t  gray_buf[ARUCO_FRAME_H * ARUCO_FRAME_W];
+static uint8_t  bin_buf[ARUCO_FRAME_H * ARUCO_FRAME_W];
+static uint32_t integral[(ARUCO_FRAME_H + 1) * (ARUCO_FRAME_W + 1)];
+
+/* mean threshold, THRESH_BINARY_INV: bin = 255 where gray <= mean - c */
 void adaptive_threshold(const uint8_t *gray, uint8_t *bin, int w, int h, int win, int c)
 {
-    /* TODO */
+    int W1 = w + 1, half = win / 2, x, y;
+
+    memset(integral, 0, W1 * sizeof(uint32_t));
+    for (y = 0; y < h; y++) {
+        uint32_t rowsum = 0;
+        integral[(y + 1) * W1] = 0;
+        for (x = 0; x < w; x++) {
+            rowsum += gray[y * w + x];
+            integral[(y + 1) * W1 + x + 1] = integral[y * W1 + x + 1] + rowsum;
+        }
+    }
+    for (y = 0; y < h; y++) {
+        int y0 = y - half < 0 ? 0 : y - half;
+        int y1 = y + half >= h ? h - 1 : y + half;
+        for (x = 0; x < w; x++) {
+            int x0 = x - half < 0 ? 0 : x - half;
+            int x1 = x + half >= w ? w - 1 : x + half;
+            uint32_t sum = integral[(y1 + 1) * W1 + x1 + 1] - integral[y0 * W1 + x1 + 1]
+                         - integral[(y1 + 1) * W1 + x0] + integral[y0 * W1 + x0];
+            int n = (x1 - x0 + 1) * (y1 - y0 + 1);
+            int mean = (int)((sum + n / 2) / n);
+            bin[y * w + x] = (gray[y * w + x] - mean <= -c) ? 255 : 0;
+        }
+    }
 }
 
-// ---- OpenCV 5.0.0 thresh.cpp : adaptiveThreshold (line 1901) ----
-// void cv::adaptiveThreshold( InputArray _src, OutputArray _dst, double maxValue,
-//                             int method, int type, int blockSize, double delta )
-// {
-//     CV_INSTRUMENT_REGION();
-//
-//     Mat src = _src.getMat();
-//     CV_Assert( src.type() == CV_8UC1 );
-//     CV_Assert( blockSize % 2 == 1 && blockSize > 1 );
-//     Size size = src.size();
-//
-//     _dst.create( size, src.type() );
-//     Mat dst = _dst.getMat();
-//
-//     if( maxValue < 0 )
-//     {
-//         dst = Scalar(0);
-//         return;
-//     }
-//
-//     CALL_HAL(adaptiveThreshold, cv_hal_adaptiveThreshold, src.data, src.step, dst.data, dst.step, src.cols, src.rows,
-//              maxValue, method, type, blockSize, delta);
-//
-//     Mat mean;
-//
-//     if( src.data != dst.data )
-//         mean = dst;
-//
-//     if (method == ADAPTIVE_THRESH_MEAN_C)
-//         boxFilter( src, mean, src.type(), Size(blockSize, blockSize),
-//                    Point(-1,-1), true, BORDER_REPLICATE|BORDER_ISOLATED );
-//     else if (method == ADAPTIVE_THRESH_GAUSSIAN_C)
-//     {
-//         Mat srcfloat,meanfloat;
-//         src.convertTo(srcfloat,CV_32F);
-//         meanfloat=srcfloat;
-//         GaussianBlur(srcfloat, meanfloat, Size(blockSize, blockSize), 0, 0, BORDER_REPLICATE|BORDER_ISOLATED);
-//         meanfloat.convertTo(mean, src.type());
-//     }
-//     else
-//         CV_Error( cv::Error::StsBadFlag, "Unknown/unsupported adaptive threshold method" );
-//
-//     int i, j;
-//     uchar imaxval = saturate_cast<uchar>(maxValue);
-//     int idelta = type == THRESH_BINARY ? cvCeil(delta) : cvFloor(delta);
-//     uchar tab[768];
-//
-//     if( type == cv::THRESH_BINARY )
-//         for( i = 0; i < 768; i++ )
-//             tab[i] = (uchar)(i - 255 > -idelta ? imaxval : 0);
-//     else if( type == cv::THRESH_BINARY_INV )
-//         for( i = 0; i < 768; i++ )
-//             tab[i] = (uchar)(i - 255 <= -idelta ? imaxval : 0);
-//     else
-//         CV_Error( cv::Error::StsBadFlag, "Unknown/unsupported threshold type" );
-//
-//     if( src.isContinuous() && mean.isContinuous() && dst.isContinuous() )
-//     {
-//         size.width *= size.height;
-//         size.height = 1;
-//     }
-//
-//     for( i = 0; i < size.height; i++ )
-//     {
-//         const uchar* sdata = src.ptr(i);
-//         const uchar* mdata = mean.ptr(i);
-//         uchar* ddata = dst.ptr(i);
-//
-//         for( j = 0; j < size.width; j++ )
-//             ddata[j] = tab[sdata[j] - mdata[j] + 255];
-//     }
-// }
+/* window sizes in search order, a marker merged with dark neighbours in one often separates in the other */
+static const int thresh_wins[] = { 23, 13 };
 
-static void threshold_frame(const uint8_t *gray, uint8_t *bin, int w, int h)
+static void threshold_frame(const uint8_t *gray, uint8_t *bin, int w, int h, int win)
 {
-    /* TODO */
+    adaptive_threshold(gray, bin, w, h, win, THRESH_C);
 }
 
-// ---- OpenCV 5.0.0 aruco_detector.cpp : _threshold (line 119) ----
-// static void _threshold(InputArray _in, OutputArray _out, int winSize, double constant) {
-//
-//     CV_Assert(winSize >= 3);
-//     if(winSize % 2 == 0) winSize++; // win size must be odd
-//     adaptiveThreshold(_in, _out, 255, ADAPTIVE_THRESH_MEAN_C, THRESH_BINARY_INV, winSize, constant);
-// }
+/* ---- connected components with per-blob extreme points ---- */
 
+typedef struct {
+    int32_t area;
+    int16_t x0, x1, y0, y1;
+    int16_t e[4][2];     /* extremes: min(x+y), max(x-y), max(x+y), min(x-y) = TL, TR, BR, BL */
+} blob_t;
+
+static blob_t   blob[MAX_LABELS];
+static uint16_t parent[MAX_LABELS];
+static uint16_t row_a[ARUCO_FRAME_W], row_b[ARUCO_FRAME_W];
+
+static int score(int i, int x, int y)
+{
+    switch (i) {
+    case 0:  return -(x + y);
+    case 1:  return x - y;
+    case 2:  return x + y;
+    default: return -(x - y);
+    }
+}
+
+static void blob_add(blob_t *b, int x, int y)
+{
+    int i;
+    b->area++;
+    if (x < b->x0) b->x0 = x;
+    if (x > b->x1) b->x1 = x;
+    if (y < b->y0) b->y0 = y;
+    if (y > b->y1) b->y1 = y;
+    for (i = 0; i < 4; i++)
+        if (score(i, x, y) > score(i, b->e[i][0], b->e[i][1])) {
+            b->e[i][0] = x;
+            b->e[i][1] = y;
+        }
+}
+
+static void blob_merge(blob_t *a, const blob_t *b)
+{
+    int i;
+    a->area += b->area;
+    if (b->x0 < a->x0) a->x0 = b->x0;
+    if (b->x1 > a->x1) a->x1 = b->x1;
+    if (b->y0 < a->y0) a->y0 = b->y0;
+    if (b->y1 > a->y1) a->y1 = b->y1;
+    for (i = 0; i < 4; i++)
+        if (score(i, b->e[i][0], b->e[i][1]) > score(i, a->e[i][0], a->e[i][1])) {
+            a->e[i][0] = b->e[i][0];
+            a->e[i][1] = b->e[i][1];
+        }
+}
+
+static int find_root(int l)
+{
+    while (parent[l] != l) {
+        parent[l] = parent[parent[l]];
+        l = parent[l];
+    }
+    return l;
+}
+
+static int is_convex(const aruco_quad_t *q)
+{
+    int i, pos = 0, neg = 0;
+    for (i = 0; i < 4; i++) {
+        const float *a = q->p[i], *b = q->p[(i + 1) % 4], *c = q->p[(i + 2) % 4];
+        float cr = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+        if (cr > 0) pos++;
+        else if (cr < 0) neg++;
+    }
+    return pos == 4 || neg == 4;
+}
+
+static float quad_area(const aruco_quad_t *q)
+{
+    float s = 0;
+    int i;
+    for (i = 0; i < 4; i++) {
+        const float *a = q->p[i], *b = q->p[(i + 1) % 4];
+        s += a[0] * b[1] - b[0] * a[1];
+    }
+    return (s < 0 ? -s : s) * 0.5f;
+}
+
+/* 4-connected dark blobs -> quad candidates (own: replaces findContours + approxPolyDP) */
 static int find_marker_contours(const uint8_t *bin, int w, int h, aruco_quad_t *cand, int max_cand)
 {
-    /* TODO */
-    return 0;
+    uint16_t *prev = row_a, *cur = row_b, *t;
+    int next = 1, x, y, l, n = 0;
+
+    memset(row_a, 0, sizeof(row_a));
+    for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+            int left, up, lab;
+            if (!bin[y * w + x]) {
+                cur[x] = 0;
+                continue;
+            }
+            left = x > 0 ? cur[x - 1] : 0;
+            up = prev[x];
+            if (!left && !up) {
+                if (next >= MAX_LABELS) {       /* too many blobs, drop the pixel */
+                    cur[x] = 0;
+                    continue;
+                }
+                lab = next++;
+                parent[lab] = lab;
+                memset(&blob[lab], 0, sizeof(blob_t));
+                blob[lab].x0 = blob[lab].x1 = x;
+                blob[lab].y0 = blob[lab].y1 = y;
+                blob[lab].e[0][0] = blob[lab].e[1][0] = blob[lab].e[2][0] = blob[lab].e[3][0] = x;
+                blob[lab].e[0][1] = blob[lab].e[1][1] = blob[lab].e[2][1] = blob[lab].e[3][1] = y;
+                blob[lab].area = 1;
+            } else {
+                lab = find_root(left ? left : up);
+                if (left && up) {
+                    int rb = find_root(up);
+                    if (rb != lab) {
+                        parent[rb] = lab;
+                        blob_merge(&blob[lab], &blob[rb]);
+                    }
+                }
+                blob_add(&blob[lab], x, y);
+            }
+            cur[x] = lab;
+        }
+        t = prev; prev = cur; cur = t;
+    }
+
+    for (l = 1; l < next && n < max_cand; l++) {
+        const blob_t *b;
+        aruco_quad_t q;
+        int bw, bh, i;
+        if (parent[l] != l)
+            continue;
+        b = &blob[l];
+        bw = b->x1 - b->x0 + 1;
+        bh = b->y1 - b->y0 + 1;
+        if (b->area < MIN_AREA || bw < MIN_SIDE || bh < MIN_SIDE || bw > MAX_SIDE || bh > MAX_SIDE)
+            continue;
+        if (bw * 5 < bh * 2 || bh * 5 < bw * 2)
+            continue;
+        for (i = 0; i < 4; i++) {
+            q.p[i][0] = b->e[i][0];
+            q.p[i][1] = b->e[i][1];
+        }
+        if (!is_convex(&q) || quad_area(&q) < 0.5f * bw * bh)
+            continue;
+        cand[n++] = q;
+    }
+    return n;
 }
 
-// ---- OpenCV 5.0.0 aruco_detector.cpp : _findMarkerContours (own: connected components) (line 131) ----
-// static void _findMarkerContours(const Mat &in, vector<vector<Point2f> > &candidates,
-//                                 vector<vector<Point> > &contoursOut, double minPerimeterRate,
-//                                 double maxPerimeterRate, double accuracyRate,
-//                                 double minCornerDistanceRate, int minSize) {
-//
-//     CV_Assert(minPerimeterRate > 0 && maxPerimeterRate > 0 && accuracyRate > 0 &&
-//               minCornerDistanceRate >= 0);
-//
-//     // calculate maximum and minimum sizes in pixels
-//     unsigned int minPerimeterPixels =
-//         (unsigned int)(minPerimeterRate * max(in.cols, in.rows));
-//     unsigned int maxPerimeterPixels =
-//         (unsigned int)(maxPerimeterRate * max(in.cols, in.rows));
-//
-//     // for aruco3 functionality
-//     if (minSize != 0) {
-//         minPerimeterPixels = 4*minSize;
-//     }
-//
-//     vector<vector<Point> > contours;
-//     findContours(in, contours, RETR_LIST, CHAIN_APPROX_NONE);
-//     // now filter list of contours
-//     for(unsigned int i = 0; i < contours.size(); i++) {
-//         // check perimeter
-//         if(contours[i].size() < minPerimeterPixels || contours[i].size() > maxPerimeterPixels)
-//             continue;
-//
-//         // check is square and is convex
-//         vector<Point> approxCurve;
-//         approxPolyDP(contours[i], approxCurve, double(contours[i].size()) * accuracyRate, true);
-//         if(approxCurve.size() != 4 || !isContourConvex(approxCurve)) continue;
-//
-//         // check min distance between corners
-//         double minDistSq = max(in.cols, in.rows) * max(in.cols, in.rows);
-//         for(int j = 0; j < 4; j++) {
-//             double d = (double)(approxCurve[j].x - approxCurve[(j + 1) % 4].x) *
-//                            (double)(approxCurve[j].x - approxCurve[(j + 1) % 4].x) +
-//                        (double)(approxCurve[j].y - approxCurve[(j + 1) % 4].y) *
-//                            (double)(approxCurve[j].y - approxCurve[(j + 1) % 4].y);
-//             minDistSq = min(minDistSq, d);
-//         }
-//         double minCornerDistancePixels = double(contours[i].size()) * minCornerDistanceRate;
-//         if(minDistSq < minCornerDistancePixels * minCornerDistancePixels) continue;
-//
-//         // if it passes all the test, add to candidates vector
-//         vector<Point2f> currentCandidate;
-//         currentCandidate.resize(4);
-//         for(int j = 0; j < 4; j++) {
-//             currentCandidate[j] = Point2f((float)approxCurve[j].x, (float)approxCurve[j].y);
-//         }
-//         candidates.push_back(currentCandidate);
-//         contoursOut.push_back(contours[i]);
-//     }
-// }
-
-static void reorder_candidates_corners(aruco_quad_t *cand, int n)
+static int detect_candidates(const uint8_t *gray, int w, int h, int win, aruco_quad_t *cand, int max_cand)
 {
-    /* TODO */
+    threshold_frame(gray, bin_buf, w, h, win);
+    return find_marker_contours(bin_buf, w, h, cand, max_cand);
 }
 
-// ---- OpenCV 5.0.0 aruco_detector.cpp : _reorderCandidatesCorners (line 190) ----
-// static void _reorderCandidatesCorners(vector<vector<Point2f> > &candidates) {
-//
-//     for(unsigned int i = 0; i < candidates.size(); i++) {
-//         double dx1 = candidates[i][1].x - candidates[i][0].x;
-//         double dy1 = candidates[i][1].y - candidates[i][0].y;
-//         double dx2 = candidates[i][2].x - candidates[i][0].x;
-//         double dy2 = candidates[i][2].y - candidates[i][0].y;
-//         double crossProduct = (dx1 * dy2) - (dy1 * dx2);
-//
-//         if(crossProduct < 0.0) { // not clockwise direction
-//             swap(candidates[i][1], candidates[i][3]);
-//         }
-//     }
-// }
+/* ---- bit extraction and dictionary lookup ---- */
 
-static int detect_candidates(const uint8_t *gray, aruco_quad_t *cand, int max_cand)
+static int otsu36(const uint8_t *v, int n)
 {
-    /* TODO */
-    return 0;
+    int hist[256] = {0}, i, t, best = 0;
+    double sum = 0, sb = 0, wb = 0, maxv = -1;
+    for (i = 0; i < n; i++) { hist[v[i]]++; sum += v[i]; }
+    for (t = 0; t < 256; t++) {
+        double wf, mb, mf, between;
+        wb += hist[t];
+        if (wb == 0) continue;
+        wf = n - wb;
+        if (wf == 0) break;
+        sb += (double)t * hist[t];
+        mb = sb / wb;
+        mf = (sum - sb) / wf;
+        between = wb * wf * (mb - mf) * (mb - mf);
+        if (between > maxv) { maxv = between; best = t; }
+    }
+    return best;
 }
 
-// ---- OpenCV 5.0.0 aruco_detector.cpp : detectCandidates (line 921) ----
-//     void detectCandidates(const Mat& grey, vector<vector<Point2f> >& candidates, vector<vector<Point> >& contours) {
-//         /// 1. DETECT FIRST SET OF CANDIDATES
-//         _detectInitialCandidates(grey, candidates, contours, detectorParams);
-//         /// 2. SORT CORNERS
-//         _reorderCandidatesCorners(candidates);
-//     }
-
-static int extract_bits(const uint8_t *gray, int w, int h, const aruco_quad_t *q, uint8_t bits[16])
+/* 6x6 module grid -> 4x4 inner code, bit 15 = top-left, white = 1. returns 0 on failure */
+static int extract_bits(const uint8_t *gray, int w, int h, const aruco_quad_t *q, uint16_t *code)
 {
-    /* TODO */
-    return 0;
+    static const double unit[4][2] = { {0, 0}, {6, 0}, {6, 6}, {0, 6} };
+    static const double off[3] = { -0.25, 0, 0.25 };
+    double dst[4][2], H[9];
+    uint8_t cell[36];
+    int i, j, a, b, lo = 255, hi = 0, thr, err = 0;
+
+    for (i = 0; i < 4; i++) { dst[i][0] = q->p[i][0]; dst[i][1] = q->p[i][1]; }
+    /* remove perspective */
+    if (get_perspective_transform(unit, (const double (*)[2])dst, H) != 0)
+        return 0;
+
+    for (i = 0; i < 6; i++)
+        for (j = 0; j < 6; j++) {
+            int s = 0;
+            /* Remove some border just to avoid border noise from perspective transformation */
+            for (a = 0; a < 3; a++)
+                for (b = 0; b < 3; b++) {
+                    double p[2] = { j + 0.5 + off[b], i + 0.5 + off[a] }, r[2];
+                    int px, py;
+                    perspective_transform(H, p, r);
+                    px = (int)(r[0] + 0.5);
+                    py = (int)(r[1] + 0.5);
+                    if (px < 0 || py < 0 || px >= w || py >= h)
+                        return 0;
+                    s += gray[py * w + px];
+                }
+            cell[i * 6 + j] = (uint8_t)(s / 9);
+            if (cell[i * 6 + j] < lo) lo = cell[i * 6 + j];
+            if (cell[i * 6 + j] > hi) hi = cell[i * 6 + j];
+        }
+    /* all pixels the same color -> nothing to decode */
+    if (hi - lo < MIN_CONTRAST)
+        return 0;
+
+    /* now extract code, first threshold using Otsu */
+    thr = otsu36(cell, 36);
+
+    /* analyze border bits */
+    for (i = 0; i < 6; i++)
+        for (j = 0; j < 6; j++)
+            if ((i == 0 || i == 5 || j == 0 || j == 5) && cell[i * 6 + j] > thr)
+                err++;
+    if (err > MAX_BORDER_ERR)
+        return 0;
+
+    /* take only inner bits */
+    *code = 0;
+    for (i = 0; i < 4; i++)
+        for (j = 0; j < 4; j++)
+            if (cell[(i + 1) * 6 + j + 1] > thr)
+                *code |= (uint16_t)(1u << (15 - (4 * i + j)));
+    return 1;
 }
 
-// ---- OpenCV 5.0.0 aruco_detector.cpp : _extractCellPixelRatio (line 316) ----
-// static Mat _extractCellPixelRatio(InputArray _image, const vector<Point2f>& corners, int markerSize,
-//                                    int markerBorderBits, int cellSize, double cellMarginRate, double minStdDevOtsu) {
-//     CV_Assert(_image.getMat().channels() == 1);
-//     CV_Assert(corners.size() == 4ull);
-//     CV_Assert(markerBorderBits > 0 && cellSize > 0 && cellMarginRate >= 0 && cellMarginRate <= 0.5);
-//     CV_Assert(minStdDevOtsu >= 0);
-//
-//     // number of bits in the marker
-//     int markerSizeWithBorders = markerSize + 2 * markerBorderBits;
-//     int cellMarginPixels = int(cellMarginRate * cellSize);
-//
-//     Mat resultImg; // marker image after removing perspective
-//     int resultImgSize = markerSizeWithBorders * cellSize;
-//     Mat resultImgCorners(4, 1, CV_32FC2);
-//     resultImgCorners.ptr<Point2f>(0)[0] = Point2f(0, 0);
-//     resultImgCorners.ptr<Point2f>(0)[1] = Point2f((float)resultImgSize - 1, 0);
-//     resultImgCorners.ptr<Point2f>(0)[2] =
-//         Point2f((float)resultImgSize - 1, (float)resultImgSize - 1);
-//     resultImgCorners.ptr<Point2f>(0)[3] = Point2f(0, (float)resultImgSize - 1);
-//
-//     // remove perspective
-//     Mat transformation = getPerspectiveTransform(corners, resultImgCorners);
-//     warpPerspective(_image, resultImg, transformation, Size(resultImgSize, resultImgSize),
-//                     INTER_NEAREST);
-//
-//     // output image containing the ratio of white pixels in each cell
-//     Mat cellPixelRatio(markerSizeWithBorders, markerSizeWithBorders, CV_32FC1, Scalar::all(0));
-//
-//     // check if standard deviation is enough to apply Otsu
-//     // if not enough, it probably means all pixels are the same color (black or white)
-//     Mat mean, stddev;
-//     // Remove some border just to avoid border noise from perspective transformation
-//     Mat innerRegion = resultImg.colRange(cellSize / 2, resultImg.cols - cellSize / 2)
-//                           .rowRange(cellSize / 2, resultImg.rows - cellSize / 2);
-//     meanStdDev(innerRegion, mean, stddev);
-//     if(stddev.ptr< double >(0)[0] < minStdDevOtsu) {
-//         // all black or all white, depending on mean value
-//         if(mean.ptr< double >(0)[0] > 127){
-//             cellPixelRatio.setTo(1);
-//         } else {
-//             cellPixelRatio.setTo(0);
-//         }
-//
-//         return cellPixelRatio;
-//     }
-//
-//     // now extract code, first threshold using Otsu
-//     threshold(resultImg, resultImg, 125, 255, THRESH_BINARY | THRESH_OTSU);
-//
-//     // for each cell
-//     for(int y = 0; y < markerSizeWithBorders; y++) {
-//         for(int x = 0; x < markerSizeWithBorders; x++) {
-//             int Xstart = x * (cellSize) + cellMarginPixels;
-//             int Ystart = y * (cellSize) + cellMarginPixels;
-//             Mat square = resultImg(Rect(Xstart, Ystart, cellSize - 2 * cellMarginPixels,
-//                                         cellSize - 2 * cellMarginPixels));
-//             // count white pixels on each cell to assign its value
-//             size_t nZ = (size_t) countNonZero(square);
-//
-//             // define the cell pixel ratio as the ratio of the white pixels. For inverted markers, the ratio will be inverted.
-//             cellPixelRatio.at<float>(y, x) = (nZ / (float)square.total());
-//         }
-//     }
-//
-//     return cellPixelRatio;
-// }
-
-static int dictionary_identify(const uint8_t bits[16], int *id, int *rotation)
+/* rotate the 4x4 bit grid 90 degrees clockwise */
+static uint16_t rotate_code(uint16_t c)
 {
-    /* TODO */
-    return 0;
+    uint16_t r = 0;
+    int i, j;
+    for (i = 0; i < 4; i++)
+        for (j = 0; j < 4; j++)
+            if (c & (1u << (15 - (4 * (3 - j) + i))))
+                r |= (uint16_t)(1u << (15 - (4 * i + j)));
+    return r;
 }
 
-// ---- OpenCV 5.0.0 aruco_dictionary.cpp : Dictionary::identify (line 121) ----
-// bool Dictionary::identify(const Mat &onlyBits, CV_OUT int &idx, CV_OUT int &rotation, double maxCorrectionRate) const {
-//     CV_Assert(onlyBits.rows == markerSize && onlyBits.cols == markerSize);
-//
-//     Mat candidateBitRatio;
-//     onlyBits.convertTo(candidateBitRatio, CV_32F);
-//     const float validBitIdThreshold = DEFAULT_VALID_BIT_ID_THRESHOLD;
-//     return identify(candidateBitRatio, idx, rotation, maxCorrectionRate, validBitIdThreshold);
-// }
-
-static int get_distance_to_id(const uint8_t bits[16], int id)
+static int popcount16(uint16_t v)
 {
-    /* TODO */
-    return 0;
+    int n = 0;
+    while (v) { n += v & 1; v >>= 1; }
+    return n;
 }
 
-// ---- OpenCV 5.0.0 aruco_dictionary.cpp : Dictionary::getDistanceToId (line 131) ----
-// int Dictionary::getDistanceToId(InputArray bits, int id, bool allRotations) const {
-//
-//     CV_Assert(id >= 0 && id < bytesList.rows);
-//
-//     unsigned int nRotations = 4;
-//     if(!allRotations) nRotations = 1;
-//
-//     Mat candidateBytes = getByteListFromBits(bits.getMat());
-//     int currentMinDistance = int(bits.total() * bits.total());
-//     for(unsigned int r = 0; r < nRotations; r++) {
-//         int currentHamming = cv::hal::normHamming(
-//                 bytesList.ptr(id) + r*candidateBytes.cols,
-//                 candidateBytes.ptr(),
-//                 candidateBytes.cols);
-//
-//         if(currentHamming < currentMinDistance) {
-//             currentMinDistance = currentHamming;
-//         }
-//     }
-//     return currentMinDistance;
-// }
+/* distance from code to marker id over all rotations, rotation of the best match */
+static int get_distance_to_id(uint16_t code, int id, int *rot)
+{
+    uint16_t c = ac_dict[id];
+    int r, best = 17;
+    for (r = 0; r < 4; r++) {
+        int d = popcount16(code ^ c);
+        if (d < best) { best = d; *rot = r; }
+        c = rotate_code(c);
+    }
+    return best;
+}
 
+/* try to identify the marker */
+static int dictionary_identify(uint16_t code, int *id, int *rotation)
+{
+    int i, best = MAX_HAMMING + 1;
+    for (i = 0; i < ARUCO_NUM_MARKERS; i++) {
+        int rot, d = get_distance_to_id(code, i, &rot);
+        if (d < best) {
+            best = d;
+            *id = i;
+            *rotation = rot;
+        }
+    }
+    return best <= MAX_HAMMING;
+}
+
+/* identifies the candidate and reorders its corners to the marker's own order */
 static int identify_one_candidate(const uint8_t *gray, int w, int h, aruco_quad_t *q, int *id)
 {
-    /* TODO */
-    return 0;
+    uint16_t code;
+    aruco_quad_t o;
+    int rot, k;
+    if (!extract_bits(gray, w, h, q, &code))
+        return 0;
+    if (!dictionary_identify(code, id, &rot))
+        return 0;
+    for (k = 0; k < 4; k++) {
+        o.p[k][0] = q->p[(k + rot) % 4][0];
+        o.p[k][1] = q->p[(k + rot) % 4][1];
+    }
+    *q = o;
+    return 1;
 }
 
-// ---- OpenCV 5.0.0 aruco_detector.cpp : _identifyOneCandidate (line 466) ----
-// static uint8_t _identifyOneCandidate(const Dictionary& dictionary, const Mat& _image,
-//                                      const vector<Point2f>& _corners, int& idx,
-//                                      const DetectorParameters& params, int& rotation,
-//                                      float &markerConfidence, bool confidenceNeeded,
-//                                      const float scale = 1.f) {
-//     CV_DbgAssert(params.markerBorderBits > 0);
-//     uint8_t typ=1;
-//     // get bits
-//     // scale corners to the correct size to search on the corresponding image pyramid
-//     vector<Point2f> scaled_corners(4);
-//     for (int i = 0; i < 4; ++i) {
-//         scaled_corners[i].x = _corners[i].x * scale;
-//         scaled_corners[i].y = _corners[i].y * scale;
-//     }
-//
-//     Mat cellPixelRatio =
-//         _extractCellPixelRatio(_image, scaled_corners, dictionary.markerSize, params.markerBorderBits,
-//                                params.perspectiveRemovePixelPerCell,
-//                                params.perspectiveRemoveIgnoredMarginPerCell, params.minOtsuStdDev);
-//
-//     // analyze border bits
-//     int maximumErrorsInBorder =
-//     int(dictionary.markerSize * dictionary.markerSize * params.maxErroneousBitsInBorderRate);
-//     int borderErrors =
-//         _getBorderErrors(cellPixelRatio, dictionary.markerSize, params.markerBorderBits, params.validBitIdThreshold);
-//
-//     // check if it is a white marker
-//     if(params.detectInvertedMarker){
-//         Mat invCellPixelRatio = 1.f - cellPixelRatio;
-//         int invBError = _getBorderErrors(invCellPixelRatio, dictionary.markerSize, params.markerBorderBits, params.validBitIdThreshold);
-//         // white marker
-//         if(invBError<borderErrors){
-//             borderErrors = invBError;
-//             invCellPixelRatio.copyTo(cellPixelRatio);
-//             typ=2;
-//         }
-//     }
-//     if(borderErrors > maximumErrorsInBorder) return 0; // border is wrong
-//
-//     // take only inner bits
-//     Mat onlyCellPixelRatio =
-//         cellPixelRatio.rowRange(params.markerBorderBits,
-//                                 cellPixelRatio.rows - params.markerBorderBits)
-//             .colRange(params.markerBorderBits, cellPixelRatio.cols - params.markerBorderBits);
-//
-//     // try to identify the marker
-//     if(!dictionary.identify(onlyCellPixelRatio, idx, rotation, params.errorCorrectionRate, params.validBitIdThreshold))
-//         return 0;
-//
-//     // compute the candidate's confidence
-//     if(confidenceNeeded) {
-//         Mat groundTruthbits = dictionary.getMarkerBits(idx, rotation);
-//         markerConfidence = _getMarkerConfidence(groundTruthbits, cellPixelRatio, dictionary.markerSize, params.markerBorderBits);
-//     }
-//
-//     return typ;
-// }
+static aruco_marker_t pool[MAX_POOL];
+static int            npool;
+
+static void pool_add(int id, const aruco_quad_t *q)
+{
+    aruco_marker_t *m;
+    int i, k, same = 0;
+
+    if (npool >= MAX_POOL)
+        return;
+    m = &pool[npool];
+    m->id = id;
+    m->center[0] = m->center[1] = 0;
+    for (k = 0; k < 4; k++) {
+        m->corners[k][0] = q->p[k][0];
+        m->corners[k][1] = q->p[k][1];
+        m->center[0] += q->p[k][0] / 4.0;
+        m->center[1] += q->p[k][1] / 4.0;
+    }
+    for (i = 0; i < npool; i++) {
+        if (pool[i].id != id)
+            continue;
+        if (fabs(pool[i].center[0] - m->center[0]) < DUP_DIST
+                && fabs(pool[i].center[1] - m->center[1]) < DUP_DIST)
+            return;
+        same++;
+    }
+    if (same < MAX_PER_ID)
+        npool++;
+}
+
+/* RMS residual (px) of the board -> image homography over the chosen markers, -1 if it fails */
+static double fit_rms(const aruco_marker_t *const *m, int n)
+{
+    double bsrc[ARUCO_NUM_MARKERS][2], raw[ARUCO_NUM_MARKERS][2], und[ARUCO_NUM_MARKERS][2], H[9], sq = 0;
+    int i;
+    for (i = 0; i < n; i++) {
+        bsrc[i][0] = aruco_board[m[i]->id][0];
+        bsrc[i][1] = aruco_board[m[i]->id][1];
+        raw[i][0] = m[i]->center[0];
+        raw[i][1] = m[i]->center[1];
+    }
+    undistort_points((const double (*)[2])raw, und, n);
+    if (find_homography((const double (*)[2])bsrc, (const double (*)[2])und, n, H) != 0)
+        return -1;
+    for (i = 0; i < n; i++) {
+        double d[2];
+        perspective_transform(H, bsrc[i], d);
+        sq += (d[0] - und[i][0]) * (d[0] - und[i][0]) + (d[1] - und[i][1]) * (d[1] - und[i][1]);
+    }
+    return sqrt(sq / n);
+}
+
+/*
+ * Picks at most one candidate per id so that the board geometry agrees. Tries every
+ * choice (candidate k of an id, or the id absent), keeps the largest set whose
+ * homography residual is within FIT_RMS_MAX, ties go to the smaller residual.
+ * Four markers always fit exactly, so such a set is only accepted when it is the whole
+ * pool (nothing left that could disagree). Fewer than 4 candidates cannot be checked and
+ * are returned as they are (first per id).
+ */
+static int select_markers(aruco_marker_t *out, int max_out)
+{
+    int idx[ARUCO_NUM_MARKERS][MAX_PER_ID], cnt[ARUCO_NUM_MARKERS] = {0};
+    int choice[ARUCO_NUM_MARKERS], best[ARUCO_NUM_MARKERS], best_n = 0, n = 0, i, id;
+    double best_rms = 1e30;
+
+    for (i = 0; i < npool; i++)
+        idx[pool[i].id][cnt[pool[i].id]++] = i;
+
+    if (npool < 4) {
+        for (id = 0; id < ARUCO_NUM_MARKERS && n < max_out; id++)
+            if (cnt[id])
+                out[n++] = pool[idx[id][0]];
+        return n;
+    }
+
+    for (id = 0; id < ARUCO_NUM_MARKERS; id++)
+        choice[id] = -1;
+    for (;;) {
+        const aruco_marker_t *m[ARUCO_NUM_MARKERS];
+        int k = 0;
+        for (id = 0; id < ARUCO_NUM_MARKERS; id++)
+            if (choice[id] >= 0)
+                m[k++] = &pool[idx[id][choice[id]]];
+        if (k >= 4 && k >= best_n) {
+            double r = fit_rms(m, k);
+            if (r >= 0 && r <= FIT_RMS_MAX && (k > best_n || r < best_rms)) {
+                best_n = k;
+                best_rms = r;
+                memcpy(best, choice, sizeof(best));
+            }
+        }
+        /* odometer over choice[id] in -1 .. cnt[id]-1 */
+        for (id = 0; id < ARUCO_NUM_MARKERS; id++) {
+            if (++choice[id] < cnt[id])
+                break;
+            choice[id] = -1;
+        }
+        if (id == ARUCO_NUM_MARKERS)
+            break;
+    }
+
+    if (best_n == 4 && npool > 4)
+        best_n = 0;
+    for (id = 0; id < ARUCO_NUM_MARKERS && n < max_out; id++)
+        if (best_n && best[id] >= 0)
+            out[n++] = pool[idx[id][best[id]]];
+    return n;
+}
 
 int detect_markers(const uint8_t *rgb, int w, int h, int stride, aruco_marker_t *out, int max_out)
 {
-    /* TODO */
-    return 0;
-}
+    static aruco_quad_t cand[MAX_CAND];
+    int x, y, i, wi, nc, n = 0;
 
-// ---- OpenCV 5.0.0 aruco_detector.cpp : ArucoDetectorImpl::detectMarkers (line 719) ----
-//     void detectMarkers(InputArray _image, OutputArrayOfArrays _corners, OutputArray _ids,
-//             OutputArrayOfArrays _rejectedImgPoints, OutputArray _dictIndices, OutputArray _markersConfidence, DictionaryMode dictMode) {
-//         CV_Assert(!_image.empty());
-//
-//         CV_Assert(detectorParams.markerBorderBits > 0);
-//         // check that the parameters are set correctly if Aruco3 is used
-//         CV_Assert(!(detectorParams.useAruco3Detection == true &&
-//                     detectorParams.minSideLengthCanonicalImg == 0 &&
-//                     detectorParams.minMarkerLengthRatioOriginalImg == 0.0));
-//
-//         Mat grey;
-//         _convertToGrey(_image, grey);
-//
-//         // Aruco3 functionality is the extension of Aruco.
-//         // The description can be found in:
-//         // [1] Speeded up detection of squared fiducial markers, 2018, FJ Romera-Ramirez et al.
-//         // if Aruco3 functionality if not wanted
-//         // change some parameters to be sure to turn it off
-//         if (!detectorParams.useAruco3Detection) {
-//             detectorParams.minMarkerLengthRatioOriginalImg = 0.0;
-//             detectorParams.minSideLengthCanonicalImg = 0;
-//         }
-//         else {
-//             // always turn on corner refinement in case of Aruco3, due to upsampling
-//             detectorParams.cornerRefinementMethod = (int)CORNER_REFINE_SUBPIX;
-//             // only CORNER_REFINE_SUBPIX implement correctly for useAruco3Detection
-//             // Todo: update other CORNER_REFINE methods
-//         }
-//
-//         /// Step 0: equation (2) from paper [1]
-//         const float fxfy = (!detectorParams.useAruco3Detection ? 1.f : detectorParams.minSideLengthCanonicalImg /
-//                 (detectorParams.minSideLengthCanonicalImg + std::max(grey.cols, grey.rows)*
-//                  detectorParams.minMarkerLengthRatioOriginalImg));
-//
-//         /// Step 1: create image pyramid. Section 3.4. in [1]
-//         vector<Mat> grey_pyramid;
-//         int closest_pyr_image_idx = 0, num_levels = 0;
-//         //// Step 1.1: resize image with equation (1) from paper [1]
-//         if (detectorParams.useAruco3Detection) {
-//             const float scale_pyr = 2.f;
-//             const float img_area = static_cast<float>(grey.rows*grey.cols);
-//             const float min_area_marker = static_cast<float>(detectorParams.minSideLengthCanonicalImg*
-//                     detectorParams.minSideLengthCanonicalImg);
-//             // find max level
-//             num_levels = static_cast<int>(log2(img_area / min_area_marker)/scale_pyr);
-//             // the closest pyramid image to the downsampled segmentation image
-//             // will later be used as start index for corner upsampling
-//             const float scale_img_area = img_area * fxfy * fxfy;
-//             closest_pyr_image_idx = cvRound(log2(img_area / scale_img_area)/scale_pyr);
-//         }
-//         buildPyramid(grey, grey_pyramid, num_levels);
-//
-//         // resize to segmentation image
-//         // in this reduces size the contours will be detected
-//         if (fxfy != 1.f)
-//             resize(grey, grey, Size(cvRound(fxfy * grey.cols), cvRound(fxfy * grey.rows)));
-//
-//         /// STEP 2: Detect marker candidates
-//         vector<vector<Point2f> > candidates;
-//         vector<vector<Point> > contours;
-//         vector<int> ids;
-//         vector<float> markersConfidence;
-//
-//         /// STEP 2.a Detect marker candidates :: using AprilTag
-//         if(detectorParams.cornerRefinementMethod == (int)CORNER_REFINE_APRILTAG){
-//             _apriltag(grey, detectorParams, candidates, contours);
-//         }
-//         /// STEP 2.b Detect marker candidates :: traditional way
-//         else {
-//             detectCandidates(grey, candidates, contours);
-//         }
-//
-//         /// STEP 2.c FILTER OUT NEAR CANDIDATE PAIRS
-//         vector<int> dictIndices;
-//         vector<vector<Point2f>> rejectedImgPoints;
-//         if (DictionaryMode::Single == dictMode) {
-//             Dictionary& dictionary = dictionaries.at(0);
-//             auto selectedCandidates = filterTooCloseCandidates(grey.size(), candidates, contours, dictionary.markerSize);
-//             candidates.clear();
-//             contours.clear();
-//
-//             /// STEP 2: Check candidate codification (identify markers)
-//             identifyCandidates(grey, grey_pyramid, selectedCandidates, candidates, contours,
-//                     ids, dictionary, rejectedImgPoints, markersConfidence, _markersConfidence.needed());
-//
-//             /// STEP 3: Corner refinement :: use corner subpix
-//             if (detectorParams.cornerRefinementMethod == (int)CORNER_REFINE_SUBPIX) {
-//                 performCornerSubpixRefinement(grey, grey_pyramid, closest_pyr_image_idx, candidates, dictionary);
-//             }
-//         } else if (DictionaryMode::Multi == dictMode) {
-//             map<int, vector<MarkerCandidateTree>> candidatesPerDictionarySize;
-//             for (const Dictionary& dictionary : dictionaries) {
-//                 candidatesPerDictionarySize.emplace(dictionary.markerSize, vector<MarkerCandidateTree>());
-//             }
-//
-//             // create candidate trees for each dictionary size
-//             for (auto& candidatesTreeEntry : candidatesPerDictionarySize) {
-//                 // copy candidates
-//                 vector<vector<Point2f>> candidatesCopy = candidates;
-//                 vector<vector<Point> > contoursCopy = contours;
-//                 candidatesTreeEntry.second = filterTooCloseCandidates(grey.size(), candidatesCopy, contoursCopy, candidatesTreeEntry.first);
-//             }
-//             candidates.clear();
-//             contours.clear();
-//
-//             /// STEP 2: Check candidate codification (identify markers)
-//             int dictIndex = 0;
-//             for (const Dictionary&  currentDictionary : dictionaries) {
-//                 // temporary variable to store the current candidates
-//                 vector<vector<Point2f>> currentCandidates;
-//                 identifyCandidates(grey, grey_pyramid, candidatesPerDictionarySize.at(currentDictionary.markerSize), currentCandidates, contours,
-//                         ids, currentDictionary, rejectedImgPoints, markersConfidence, _markersConfidence.needed());
-//                 if (_dictIndices.needed()) {
-//                     dictIndices.insert(dictIndices.end(), currentCandidates.size(), dictIndex);
-//                 }
-//
-//                 /// STEP 3: Corner refinement :: use corner subpix
-//                 if (detectorParams.cornerRefinementMethod == (int)CORNER_REFINE_SUBPIX) {
-//                     performCornerSubpixRefinement(grey, grey_pyramid, closest_pyr_image_idx, currentCandidates, currentDictionary);
-//                 }
-//                 candidates.insert(candidates.end(), currentCandidates.begin(), currentCandidates.end());
-//                 dictIndex++;
-//             }
-//
-//             // Clean up rejectedImgPoints by comparing to itself and all candidates
-//             const float epsilon = 0.000001f;
-//             auto compareCandidates = [epsilon](vector<Point2f> a, vector<Point2f> b) {
-//                 for (int i = 0; i < 4; i++) {
-//                     if (std::abs(a[i].x - b[i].x) > epsilon || std::abs(a[i].y - b[i].y) > epsilon) {
-//                         return false;
-//                     }
-//                 }
-//                 return true;
-//             };
-//             std::sort(rejectedImgPoints.begin(), rejectedImgPoints.end(), [](const vector<Point2f>& a, const vector<Point2f>&b){
-//                     float avgX = (a[0].x + a[1].x + a[2].x + a[3].x)*.25f;
-//                     float avgY = (a[0].y + a[1].y + a[2].y + a[3].y)*.25f;
-//                     float aDist = avgX*avgX + avgY*avgY;
-//                     avgX = (b[0].x + b[1].x + b[2].x + b[3].x)*.25f;
-//                     avgY = (b[0].y + b[1].y + b[2].y + b[3].y)*.25f;
-//                     float bDist = avgX*avgX + avgY*avgY;
-//                     return aDist < bDist;
-//                 });
-//             auto last = std::unique(rejectedImgPoints.begin(), rejectedImgPoints.end(), compareCandidates);
-//             rejectedImgPoints.erase(last, rejectedImgPoints.end());
-//
-//             for (auto it = rejectedImgPoints.begin(); it != rejectedImgPoints.end();) {
-//                 bool erased = false;
-//                 for (const auto& candidate : candidates) {
-//                     if (compareCandidates(candidate, *it)) {
-//                         it = rejectedImgPoints.erase(it);
-//                         erased = true;
-//                         break;
-//                     }
-//                 }
-//                 if (!erased) {
-//                     it++;
-//                 }
-//             }
-//         }
-//
-//         /// STEP 3, Optional : Corner refinement :: use contour container
-//         if (detectorParams.cornerRefinementMethod == (int)CORNER_REFINE_CONTOUR){
-//
-//             if (!ids.empty()) {
-//
-//                 // do corner refinement using the contours for each detected markers
-//                 parallel_for_(Range(0, (int)candidates.size()), [&](const Range& range) {
-//                         for (int i = range.start; i < range.end; i++) {
-//                         _refineCandidateLines(contours[i], candidates[i]);
-//                         }
-//                         });
-//             }
-//         }
-//
-//         if (detectorParams.cornerRefinementMethod != (int)CORNER_REFINE_SUBPIX && fxfy != 1.f) {
-//             // only CORNER_REFINE_SUBPIX implement correctly for useAruco3Detection
-//             // Todo: update other CORNER_REFINE methods
-//
-//             // scale to original size, this however will lead to inaccurate detections!
-//             for (auto &vecPoints : candidates)
-//                 for (auto &point : vecPoints)
-//                     point *= 1.f/fxfy;
-//         }
-//
-//         // copy to output arrays
-//         _copyVector2Output(candidates, _corners);
-//         Mat(ids).copyTo(_ids);
-//         if(_rejectedImgPoints.needed()) {
-//             _copyVector2Output(rejectedImgPoints, _rejectedImgPoints);
-//         }
-//         if (_dictIndices.needed()) {
-//             Mat(dictIndices).copyTo(_dictIndices);
-//         }
-//         if (_markersConfidence.needed()) {
-//             Mat(markersConfidence).copyTo(_markersConfidence);
-//         }
-//     }
+    if (!rgb || !out || w > ARUCO_FRAME_W || h > ARUCO_FRAME_H)
+        return 0;
+    for (y = 0; y < h; y++)
+        for (x = 0; x < w; x++) {
+            const uint8_t *p = rgb + y * stride + x * 3;
+            gray_buf[y * w + x] = (uint8_t)(((p[0] + p[1] + p[2]) * 21846) >> 16);
+        }
+
+    npool = 0;
+    for (wi = 0; wi < (int)(sizeof(thresh_wins) / sizeof(thresh_wins[0])); wi++) {
+        nc = detect_candidates(gray_buf, w, h, thresh_wins[wi], cand, MAX_CAND);
+        for (i = 0; i < nc; i++) {
+            int id;
+            if (identify_one_candidate(gray_buf, w, h, &cand[i], &id))
+                pool_add(id, &cand[i]);
+        }
+        n = select_markers(out, max_out);
+        if (n == ARUCO_NUM_MARKERS)     /* all six found and consistent, skip the other windows */
+            break;
+    }
+    return n;
+}
