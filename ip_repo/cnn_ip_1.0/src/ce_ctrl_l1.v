@@ -80,33 +80,12 @@ module ce_ctrl_l1 (
         endcase
     end
 
-    // ch_done signal generate based on s_axis_tlast
-    reg [$clog2(28)-1:0] done_cnt, done_cnt_next;
-    wire row_last = pixel_valid & s_axis_tlast;
-    wire ch_done = row_last & (done_cnt == 28 - 1);
-
-    always @(posedge clk or negedge rst_n) begin
-        if (~rst_n) begin
-            done_cnt <= 0;
-        end else begin
-            done_cnt <= done_cnt_next;
-        end
-    end
-
-    always @(*) begin
-        done_cnt_next = done_cnt;
-        if (row_last) begin
-            done_cnt_next = ch_done ? 0 : done_cnt + 1;
-        end
-    end
-
-
     // ----- channel count logic -----
     always @(*) begin
         ch_count_next = ch_count;
         if (c_state == STOP) begin
             ch_count_next = 0;
-        end else if (ch_done & pixel_valid) begin
+        end else if (s_axis_tlast & pixel_valid) begin
             ch_count_next = ch_count + 1;
         end
     end
