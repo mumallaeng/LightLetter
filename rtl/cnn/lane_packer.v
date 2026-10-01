@@ -1,0 +1,63 @@
+`timescale 1ns / 1ps
+// Lane Packer: gathers PACK quantized values into one reorder-buffer entry.
+//   pack_data = {v[PACK-1], ..., v[0]}, first value in [15:0]
+
+module lane_packer #(
+    parameter PACK = 3  // 1..3
+) (
+    input  wire             clk,
+    input  wire             rst_n,
+    input  wire [15:0]      q_in,
+    input  wire             q_valid,
+    output wire [16*PACK-1:0] pack_data,
+    output wire             pack_valid
+);
+
+    localparam CNT_W  = (PACK > 1) ? $clog2(PACK) : 1;
+    localparam HOLD_W = (PACK > 1) ? 16*(PACK-1) : 16;   // GEN_PACK only
+
+    generate
+        if (PACK == 1) begin : GEN_PASS
+            // pack_data is 16 bits wide in this branch, so the value passes straight through
+            assign pack_data  = q_in;
+            assign pack_valid = q_valid;
+        end else begin : GEN_PACK
+            // registers: reg / reg_next
+            reg [CNT_W-1:0] cnt, cnt_next;
+            reg [HOLD_W-1:0] hold, hold_next;
+
+            localparam [31:0] LAST_IDX = PACK - 1;   // sliced at the use site to match cnt
+
+            wire last = (cnt == LAST_IDX[CNT_W-1:0]);
+
+            // held values in the low lanes, the incoming value in the top lane
+            assign pack_data  = {q_in, hold};
+            assign pack_valid = q_valid & last;
+
+            always @(*) begin
+                cnt_next  = cnt;
+                hold_next = hold;
+
+                if (q_valid) begin
+                    cnt_next = last ? {CNT_W{1'b0}} : cnt + 1'b1;
+                    // lane 0 first, then the top lane of hold (PACK <= 3)
+                    if (!last) begin
+                        if (cnt == {CNT_W{1'b0}}) hold_next[15:0]           = q_in;
+                        else                      hold_next[HOLD_W-1 -: 16] = q_in;
+                    end
+                end
+            end
+
+            always @(posedge clk) begin
+                if (!rst_n) begin
+                    cnt  <= {CNT_W{1'b0}};
+                    hold <= {HOLD_W{1'b0}};
+                end else begin
+                    cnt  <= cnt_next;
+                    hold <= hold_next;
+                end
+            end
+        end
+    endgenerate
+
+endmodule
