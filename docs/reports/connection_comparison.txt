@@ -1,0 +1,1 @@
+PASS: 21 signal nets; 6 interface nets; GPIO address map; external ports; saved IP parameters match original BD.

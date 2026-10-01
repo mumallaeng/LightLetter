@@ -1,12 +1,12 @@
 `timescale 1ns / 1ps
 
 module rx_bin_detector #(
-    parameter MAG_W = 24
+    parameter MAG_W = 40
 ) (
     input  wire                 clk,
     input  wire                 rst_n,
 
-    // FFTëŠ” bin 0ë¶€í„° bin 127ê¹Œì§€ Powerë¥¼ ìˆœì„œëŒ€ë¡œ ì¶œë ¥í•œë‹¤.
+    // FFT?Š” bin 0ë¶??„° bin 127ê¹Œì? Powerë¥? ?ˆœ?„œ??ë¡? ì¶œë ¥?•œ?‹¤.
     input  wire [MAG_W-1:0]     fft_mag,
     input  wire                 fft_mag_valid,
 
@@ -16,10 +16,10 @@ module rx_bin_detector #(
     output wire                 fft_block_done
 );
 
-    // í•œ ë²ˆì˜ 128-point FFTì—ì„œ ì¶œë ¥ë˜ëŠ” binë³„ Power ì €ì¥ ê³µê°„
+    // ?•œ ë²ˆì˜ 128-point FFT?—?„œ ì¶œë ¥?˜?Š” binë³? Power ???¥ ê³µê°„
     reg [MAG_W-1:0] fft_power_mem [0:127];
 
-    // validê°€ ë“¤ì–´ì˜¨ ìˆœì„œê°€ ê³§ bin ë²ˆí˜¸ë‹¤.
+    // validê°? ?“¤?–´?˜¨ ?ˆœ?„œê°? ê³? bin ë²ˆí˜¸?‹¤.
     reg [6:0] fft_counter;
     reg       fft_block_done_reg;
 
@@ -33,13 +33,13 @@ module rx_bin_detector #(
             fft_counter        <= 7'd0;
             fft_block_done_reg <= 1'b0;
 
-            // ì¶œë ¥ìœ¼ë¡œ ì‚¬ìš©í•˜ëŠ” ìœ„ì¹˜ë§Œ ì´ˆê¸°í™”í•œë‹¤.
+            // ì¶œë ¥?œ¼ë¡? ?‚¬?š©?•˜?Š” ?œ„ì¹˜ë§Œ ì´ˆê¸°?™”?•œ?‹¤.
             fft_power_mem[8]   <= {MAG_W{1'b0}};
             fft_power_mem[16]  <= {MAG_W{1'b0}};
             fft_power_mem[20]  <= {MAG_W{1'b0}};
         end
         else begin
-            // 128ë²ˆì§¸ ìœ íš¨ Powerë¥¼ ë°›ì€ í´ëŸ­ì—ë§Œ í•œ í´ëŸ­ ë°œìƒí•œë‹¤.
+            // 128ë²ˆì§¸ ?œ ?š¨ Powerë¥? ë°›ì? ?´?Ÿ­?—ë§? ?•œ ?´?Ÿ­ ë°œìƒ?•œ?‹¤.
             fft_block_done_reg <= 1'b0;
 
             if (fft_mag_valid) begin
