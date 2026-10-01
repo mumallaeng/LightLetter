@@ -14,8 +14,8 @@
 
 #define ARUCO_NUM_CELLS  5
 #define ARUCO_OUT_N      112
-#define ARUCO_INSET      0.055000
-#define ARUCO_MARGIN_X   0.025000
+#define ARUCO_INSET      0.075000
+#define ARUCO_MARGIN_X   0.045000
 #define ARUCO_SEAM_X     2.500000
 
 /* marker center in board units, index = marker id */

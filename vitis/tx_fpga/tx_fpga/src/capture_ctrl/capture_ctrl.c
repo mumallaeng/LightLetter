@@ -8,7 +8,6 @@
 #include "xtime_l.h"
 
 #include "../roi_dma/roi_dma.h"
-#include "../cpu_cnn/cpu_bench.h"
 #include "../cnn_ctrl/cnn_ctrl.h"
 #include "../aruco/aruco_crop.h"
 
@@ -65,8 +64,6 @@ static void capture_send_cell(void)
     }
     XTime_GetTime(&cell_sent_at);
     cell_next++;
-    /* Same 112x112 bytes through the CPU model while the PL computes. */
-    cpu_bench_roi(roi_dma_frame());
 }
 
 /* cnn_ctrl hook: runs in the main loop right after a result was read */
@@ -86,9 +83,6 @@ void capture_ctrl_trigger(void)
 {
     aruco_frame_t f;
     const u8 *frame;
-    XTime t0;
-    XTime t1;
-    u32 us;
     int rc;
 
     if (!ready) {
@@ -99,10 +93,6 @@ void capture_ctrl_trigger(void)
         return;
     }
 
-    /* End-to-end timing starts here (before the log print below). */
-    roi_dma_mark_request();
-    xil_printf("capture: camera frame -> ArUco crop -> ROI DMA\r\n");
-
     /* VDMA wrote the frame store, so drop stale cache lines before the CPU reads it all. */
     frame = capture_last_frame();
     Xil_DCacheInvalidateRange((INTPTR)frame, fb_frame_bytes);
@@ -111,19 +101,11 @@ void capture_ctrl_trigger(void)
     f.width  = (int)(fb_stride / FB_BYTES_PER_PIXEL);
     f.height = (int)(fb_frame_bytes / fb_stride);
     f.stride = (int)fb_stride;
-    XTime_GetTime(&t0);
     rc = aruco_crop_run(&f, &aruco_cells, &aruco_res);
-    XTime_GetTime(&t1);
-    us = (u32)(((t1 - t0) * 1000000ULL) / COUNTS_PER_SECOND);
     if (rc != ARUCO_OK) {
-        xil_printf("capture: ArUco crop failed (%d) after %u.%03u ms\r\n",
-                   rc, (unsigned)(us / 1000u), (unsigned)(us % 1000u));
+        xil_printf("capture: ArUco crop failed (%d)\r\n", rc);
         return;
     }
-    xil_printf("capture: ArUco %d markers, fit %d.%02d px, %u.%03u ms\r\n",
-               aruco_res.n_markers, (int)aruco_res.fit_rms_px,
-               (int)(aruco_res.fit_rms_px * 100.0) % 100,
-               (unsigned)(us / 1000u), (unsigned)(us % 1000u));
 
     cell_next  = 0;
     seq_active = 1;

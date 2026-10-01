@@ -123,8 +123,8 @@ set_property -dict { PACKAGE_PIN V8    IOSTANDARD LVCMOS33     } [get_ports { st
                                                                                                                                  
                                                                                                                                  
 ##Pmod Header JC                                                                                                                  
-#set_property -dict { PACKAGE_PIN V15   IOSTANDARD LVCMOS33     } [get_ports { jc[0] }]; #IO_L10P_T1_34 Sch=jc_p[1]   			 
-#set_property -dict { PACKAGE_PIN W15   IOSTANDARD LVCMOS33     } [get_ports { jc[1] }]; #IO_L10N_T1_34 Sch=jc_n[1]		     
+set_property -dict { PACKAGE_PIN V15   IOSTANDARD LVCMOS33     } [get_ports { optical_tx }]; #IO_L10P_T1_34 Sch=jc_p[1]   			 
+set_property -dict { PACKAGE_PIN W15   IOSTANDARD LVCMOS33     } [get_ports { tx_enable }]; #IO_L10N_T1_34 Sch=jc_n[1]		     
 #set_property -dict { PACKAGE_PIN T11   IOSTANDARD LVCMOS33     } [get_ports { jc[2] }]; #IO_L1P_T0_34 Sch=jc_p[2]              
 #set_property -dict { PACKAGE_PIN T10   IOSTANDARD LVCMOS33     } [get_ports { jc[3] }]; #IO_L1N_T0_34 Sch=jc_n[2]              
 #set_property -dict { PACKAGE_PIN W14   IOSTANDARD LVCMOS33     } [get_ports { jc[4] }]; #IO_L8P_T1_34 Sch=jc_p[3]              

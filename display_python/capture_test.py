@@ -8,21 +8,27 @@
     q / ESC : 종료
     s       : 현재 프레임 PNG + CNN 입력값(txt/npy)을 captures/ 에 저장
     p       : 현재 CNN 입력 28x28 값을 콘솔에 출력
-    g       : ROI 가이드 + 전처리 미리보기 on/off
+    g       : 가이드 + 전처리 미리보기 on/off
+    a       : 미리보기 경로 전환 ArUco 5칸 (기본) <-> 정중앙 ROI (이전 방식)
 
 미리보기는 보드의 버튼 캡처 경로를 그대로 흉내 낸다.
-    PS  (roi_dma.c)          : 정중앙 224x224 -> 112x112 nearest 다운스케일
+    ArUco (aruco_c.py = src/aruco/*.c) : 마커 6개 검출 -> homography -> 칸 5개 112x112
+    중앙 ROI (roi_dma.c)               : 정중앙 224x224 -> 112x112 nearest 다운스케일
     PL  (img_preprocess.v)   : luma -> 반전 -> threshold -> bbox -> 22x22 맞춤
                                -> 28x28 가운데 배치 -> x64.25 (2^-14 스케일)
 캡처보드가 MJPG 로 압축한 영상에서 계산하므로 보드 안의 값과 몇 LSB 차이가
-날 수 있다. 형태(bbox, 맞춤, 배치)는 같다.
+날 수 있다. 형태(bbox, 맞춤, 배치)는 같다. ArUco 는 프레임당 100 ms 이상 걸려
+별도 스레드에서 돌고, 화면에는 가장 최근 결과를 겹쳐 그린다.
 """
 import argparse
+import threading
 import time
 from pathlib import Path
 
 import cv2
 import numpy as np
+
+import aruco_c
 
 IN_W, IN_H = 1280, 720
 
@@ -41,6 +47,11 @@ SAVE_DIR = Path(__file__).resolve().parent / "captures"
 WIN_CAP = "FPGA Capture"
 WIN_ROI = "ROI 112x112: RGB | threshold (x3)"
 WIN_CNN = "CNN input 28x28 (x10)"
+WIN_CELLS = "ArUco cells: RGB | threshold | CNN input"
+
+MARKER_COLOR = (0, 255, 0)
+CELL_COLOR = (0, 220, 255)
+MISSING_COLOR = (0, 0, 255)
 
 
 def open_device(index, width, height, fps, mjpg):
@@ -165,6 +176,170 @@ def show_preview(roi, proc, out8, info):
                                    interpolation=cv2.INTER_NEAREST))
 
 
+class ArucoWorker:
+    """보드의 aruco_crop_run 을 별도 스레드에서 돌린다. 화면은 가장 최근 결과를 쓴다."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._wake = threading.Event()
+        self._frame = None
+        self._result = None
+        self._stop = False
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def submit(self, frame):
+        """가장 최근 프레임만 남긴다. 계산 중에 들어온 프레임은 덮어쓴다."""
+        with self._lock:
+            self._frame = frame
+        self._wake.set()
+
+    def latest(self):
+        with self._lock:
+            return self._result
+
+    def close(self):
+        self._stop = True
+        self._wake.set()
+        self._thread.join(timeout=1)
+
+    def _run(self):
+        while True:
+            self._wake.wait()
+            self._wake.clear()
+            if self._stop:
+                return
+            with self._lock:
+                frame, self._frame = self._frame, None
+            if frame is None:
+                continue
+            result = run_aruco(frame)
+            with self._lock:
+                self._result = result
+
+
+def run_aruco(frame):
+    """프레임 하나에 보드와 같은 ArUco 크롭 + img_preprocess 를 돌린다."""
+    t0 = time.perf_counter()
+    dbg = {}
+    rc, cells, res, markers = aruco_c.crop_run(to_board_frame(frame), dbg)
+    cnn = [cell_cnn(c) for c in cells] if rc == aruco_c.OK else None
+    return dict(rc=rc, cells=cells, res=res, markers=markers, debug=dbg, cnn=cnn,
+                ms=(time.perf_counter() - t0) * 1000)
+
+
+def to_board_frame(frame):
+    """보드 frame store 와 같은 1280x720 으로 맞춘다 (ArUco 는 이 크기만 받는다)."""
+    h, w = frame.shape[:2]
+    if (w, h) != (IN_W, IN_H):
+        frame = cv2.resize(frame, (IN_W, IN_H), interpolation=cv2.INTER_NEAREST)
+    return frame
+
+
+def cell_cnn(cell):
+    """ArUco 칸 하나 -> img_preprocess.v -> (threshold, 28x28 8비트, cnn 16비트, info)."""
+    proc = rtl_threshold(cell)
+    out8, info = rtl_fit(proc)
+    return proc, out8, cnn_scale(out8), info
+
+
+def draw_aruco(frame, ar):
+    """검출된 마커, 안 보여서 투영으로 채운 마커, 칸 5개 크롭 영역을 겹쳐 그린다."""
+    h, w = frame.shape[:2]
+    s = np.array([w / IN_W, h / IN_H])
+
+    def pt(p):
+        return tuple(int(round(v)) for v in np.asarray(p) * s)
+
+    found = set()
+    for m in ar["markers"]:
+        found.add(m["id"])
+        quad = np.round(m["corners"] * s).astype(np.int32)
+        cv2.polylines(frame, [quad], True, MARKER_COLOR, 2)
+        cv2.circle(frame, pt(m["corners"][0]), 5, MARKER_COLOR, -1)   # 마커의 왼쪽 위 꼭짓점
+        org = (int(quad[:, 0].min()), int(quad[:, 1].min()) - 8)     # 마커 바로 위
+        cv2.putText(frame, f"id{m['id']}", org, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 4)
+        cv2.putText(frame, f"id{m['id']}", org, cv2.FONT_HERSHEY_SIMPLEX, 0.6, MARKER_COLOR, 2)
+
+    res = ar["res"]
+    if ar["rc"] == aruco_c.OK:
+        raw = aruco_c.distort_points(res["center"])
+        for mid in range(aruco_c.NUM_MARKERS):
+            if mid not in found:
+                c = pt(raw[mid])
+                cv2.drawMarker(frame, c, MISSING_COLOR, cv2.MARKER_TILTED_CROSS, 18, 2)
+                cv2.putText(frame, f"id{mid}?", (c[0] + 10, c[1] - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, MISSING_COLOR, 2)
+        for k in range(aruco_c.NUM_CELLS):
+            poly = np.round(aruco_c.cell_outline(res, k) * s).astype(np.int32)
+            cv2.polylines(frame, [poly], True, CELL_COLOR, 2)
+            cv2.putText(frame, str(k), tuple(poly[0] + (6, 22)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, CELL_COLOR, 2)
+        status = (f"ArUco OK  {res['n_markers']}/6 markers  fit {res['fit_rms_px']:.2f}px  "
+                  f"{ar['ms']:.0f} ms")
+        color = MARKER_COLOR
+    else:
+        status = (f"ArUco {aruco_c.ERR_NAME[ar['rc']]}  {len(ar['markers'])}/6 markers  "
+                  f"{ar['ms']:.0f} ms")
+        color = MISSING_COLOR
+    cv2.putText(frame, status, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 0), 5)
+    cv2.putText(frame, status, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+
+
+def show_cells(ar):
+    """칸 5개를 열로: 위 RGB 112 (x2), 가운데 threshold + bbox (x2), 아래 CNN 28x28 (x8)."""
+    T, GAP, HEAD = 224, 6, 26
+    canvas = np.full((HEAD + 3 * T + 2 * GAP, 5 * T + 4 * GAP, 3), 40, np.uint8)
+    for k in range(aruco_c.NUM_CELLS):
+        x = k * (T + GAP)
+        cv2.putText(canvas, f"cell {k}", (x + 4, 19), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                    CELL_COLOR, 1)
+        if ar["cnn"] is None:
+            continue
+        proc, out8, _, info = ar["cnn"][k]
+        rgb = cv2.resize(ar["cells"][k], (T, T), interpolation=cv2.INTER_NEAREST)
+        thr = cv2.resize(cv2.cvtColor(proc, cv2.COLOR_GRAY2BGR), (T, T),
+                         interpolation=cv2.INTER_NEAREST)
+        if info is not None:
+            bx, by, bw, bh = info["bbox"]
+            cv2.rectangle(thr, (bx * 2, by * 2), ((bx + bw) * 2 - 1, (by + bh) * 2 - 1),
+                          (0, 0, 255), 1)
+        cnn = cv2.resize(cv2.cvtColor(out8, cv2.COLOR_GRAY2BGR), (T, T),
+                         interpolation=cv2.INTER_NEAREST)
+        y = HEAD
+        for img in (rgb, thr, cnn):
+            canvas[y:y + T, x:x + T] = img
+            y += T + GAP
+    if ar["cnn"] is None:
+        cv2.putText(canvas, f"crop failed: {aruco_c.ERR_NAME[ar['rc']]}", (20, HEAD + 60),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, MISSING_COLOR, 2)
+    cv2.imshow(WIN_CELLS, canvas)
+
+
+def format_aruco(ar):
+    lines = [f"ArUco rc={aruco_c.ERR_NAME[ar['rc']]}  markers="
+             f"{[m['id'] for m in ar['markers']]}  fit={ar['res']['fit_rms_px']:.3f}px  "
+             f"{ar['ms']:.0f} ms"]
+    for wnd in ar["debug"].get("windows", []):
+        lines.append(f"  threshold win {wnd['win']}: candidates {wnd['candidates']}, "
+                     f"identified {wnd['identified']}, pool {wnd['pool']}")
+    for m in ar["markers"]:
+        lines.append(f"  id {m['id']}: center ({m['center'][0]:.1f}, {m['center'][1]:.1f})")
+    if ar["cnn"] is not None:
+        for k, (_, _, cnn, info) in enumerate(ar["cnn"]):
+            lines.append(f"--- cell {k}")
+            lines.append(format_cnn(cnn, info))
+    return "\n".join(lines)
+
+
+def save_aruco(stem, ar):
+    if ar["cnn"] is not None:
+        for k, (_, _, cnn, _) in enumerate(ar["cnn"]):
+            cv2.imwrite(f"{stem}_cell{k}.png", ar["cells"][k])
+            np.save(f"{stem}_cell{k}_cnn28.npy", cnn)
+    Path(f"{stem}_aruco.txt").write_text(format_aruco(ar) + "\n", encoding="utf-8")
+
+
 def draw_overlay(frame, fps, guide):
     h, w = frame.shape[:2]
     if guide:
@@ -184,25 +359,39 @@ def main():
     ap.add_argument("--fps", type=int, default=60)
     ap.add_argument("--no-mjpg", action="store_true", help="MJPG 요청을 끈다 (화면이 안 나오면 시도)")
     ap.add_argument("--list", action="store_true", help="장치 목록만 출력")
+    ap.add_argument("--image", help="캡처보드 대신 저장한 프레임(PNG 등)을 계속 보여준다")
     args = ap.parse_args()
 
     if args.list:
         list_devices()
         return
 
-    cap = open_device(args.device, args.width, args.height, args.fps, not args.no_mjpg)
-    if cap is None:
-        print(f"캡처보드(device {args.device})를 열 수 없습니다. --list 로 번호를 확인하세요.")
-        return
-
-    print(f"device {args.device}: "
-          f"{int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}")
+    still = None
+    if args.image:
+        still = cv2.imread(args.image, cv2.IMREAD_COLOR)
+        if still is None:
+            print(f"이미지를 읽을 수 없습니다: {args.image}")
+            return
+        print(f"image {args.image}: {still.shape[1]}x{still.shape[0]}")
+    else:
+        cap = open_device(args.device, args.width, args.height, args.fps, not args.no_mjpg)
+        if cap is None:
+            print(f"캡처보드(device {args.device})를 열 수 없습니다. --list 로 번호를 확인하세요.")
+            return
+        print(f"device {args.device}: "
+              f"{int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}")
     cv2.namedWindow(WIN_CAP, cv2.WINDOW_NORMAL)
 
     guide = True
+    mode = "aruco"                              # "aruco" | "center"
+    worker = ArucoWorker()
     fps, t_prev, fails = 0.0, time.perf_counter(), 0
     while True:
-        ok, frame = cap.read()
+        if still is not None:
+            ok, frame = True, still.copy()
+            time.sleep(1 / 30)
+        else:
+            ok, frame = cap.read()
         if not ok:
             fails += 1
             if fails > 30:
@@ -216,35 +405,63 @@ def main():
         t_prev = now
 
         raw = frame.copy()                      # 저장·미리보기는 오버레이 없는 원본으로
-        draw_overlay(frame, fps, guide)
-        cv2.imshow(WIN_CAP, frame)
+        draw_overlay(frame, fps, guide and mode == "center")
 
-        roi, proc, out8, cnn, info = cnn_pipeline(raw)
-        if guide:
-            show_preview(roi, proc, out8, info)
+        if mode == "aruco":
+            worker.submit(raw)
+            ar = worker.latest()
+            if guide and ar is not None:
+                draw_aruco(frame, ar)
+                show_cells(ar)
+        else:
+            roi, proc, out8, cnn, info = cnn_pipeline(raw)
+            if guide:
+                show_preview(roi, proc, out8, info)
+        cv2.putText(frame, f"[a] mode: {mode}", (20, frame.shape[0] - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+        cv2.imshow(WIN_CAP, frame)
 
         key = cv2.waitKey(1) & 0xFF
         if key in (ord("q"), 27):
             break
         if key == ord("p"):
-            print(format_cnn(cnn, info))
+            if mode == "aruco":
+                print(format_aruco(run_aruco(raw)))
+            else:
+                print(format_cnn(cnn, info))
         if key == ord("s"):
             SAVE_DIR.mkdir(exist_ok=True)
             stem = SAVE_DIR / time.strftime("capture_%Y%m%d_%H%M%S")
             cv2.imwrite(f"{stem}.png", raw)
-            cv2.imwrite(f"{stem}_roi112.png", roi)
-            np.save(f"{stem}_cnn28.npy", cnn)
-            Path(f"{stem}_cnn28.txt").write_text(format_cnn(cnn, info) + "\n",
-                                                 encoding="utf-8")
-            print("saved", f"{stem}.png", "+ roi112.png / cnn28.npy / cnn28.txt")
+            if mode == "aruco":
+                save_aruco(stem, run_aruco(raw))
+                print("saved", f"{stem}.png", "+ cell0..4.png / cell*_cnn28.npy / aruco.txt")
+            else:
+                cv2.imwrite(f"{stem}_roi112.png", roi)
+                np.save(f"{stem}_cnn28.npy", cnn)
+                Path(f"{stem}_cnn28.txt").write_text(format_cnn(cnn, info) + "\n",
+                                                     encoding="utf-8")
+                print("saved", f"{stem}.png", "+ roi112.png / cnn28.npy / cnn28.txt")
+        if key == ord("a"):
+            mode = "center" if mode == "aruco" else "aruco"
+            close_previews()
         if key == ord("g"):
             guide = not guide
             if not guide:
-                cv2.destroyWindow(WIN_ROI)
-                cv2.destroyWindow(WIN_CNN)
+                close_previews()
 
-    cap.release()
+    worker.close()
+    if still is None:
+        cap.release()
     cv2.destroyAllWindows()
+
+
+def close_previews():
+    for name in (WIN_ROI, WIN_CNN, WIN_CELLS):
+        try:
+            cv2.destroyWindow(name)
+        except cv2.error:
+            pass                                # 아직 안 열린 창
 
 
 if __name__ == "__main__":
