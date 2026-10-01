@@ -1,15 +1,15 @@
 """Export the conv weight/bias ROM files from the Python golden model dump.
 
-Reads tb/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json and writes
+Reads tx/cnn/model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json and writes
 
-    rtl/cnn/rtl_ref/conv1_weight.mem     12 rows  [och][grp], 432 bit  (reference copy of weight_rom_l1)
-    rtl/cnn/rtl_ref/conv2_weight.mem     32 rows  [och][grp], 432 bit  (reference copy of weight_rom_l2)
-    rtl/cnn/rtl_ref/conv1_bias_ce.mem     6 rows  INT32 at the conv1 accumulator scale
-    rtl/cnn/rtl_ref/conv2_bias_ce.mem    16 rows  INT32 at the conv2 accumulator scale
-    rtl/cnn/mem/l2_weight_chNN.mem        2 rows  (grp 0, grp 1) per output channel = weight_rom_l2 ROM
-    rtl/cnn/rtl_ref/conv1_weight_rom_l1.txt   the case constants weight_rom_l1.v must carry (it has no .mem)
+    tx/cnn/rtl/rtl_ref/conv1_weight.mem     12 rows  [och][grp], 432 bit  (reference copy of weight_rom_l1)
+    tx/cnn/rtl/rtl_ref/conv2_weight.mem     32 rows  [och][grp], 432 bit  (reference copy of weight_rom_l2)
+    tx/cnn/rtl/rtl_ref/conv1_bias_ce.mem     6 rows  INT32 at the conv1 accumulator scale
+    tx/cnn/rtl/rtl_ref/conv2_bias_ce.mem    16 rows  INT32 at the conv2 accumulator scale
+    tx/cnn/rtl/mem/l2_weight_chNN.mem        2 rows  (grp 0, grp 1) per output channel = weight_rom_l2 ROM
+    tx/cnn/rtl/rtl_ref/conv1_weight_rom_l1.txt   the case constants weight_rom_l1.v must carry (it has no .mem)
 
-Row layout (rtl/cnn/rtl_ref/README.md): lane l = in_ch grp*3+l in bits [144*l +: 144],
+Row layout (tx/cnn/rtl/rtl_ref/README.md): lane l = in_ch grp*3+l in bits [144*l +: 144],
 tap k = ky*3+kx in bits [16*k +: 16] of its lane, lane 0 / tap 0 at the LSB. conv1 has one
 input channel, so only grp 0 lane 0 carries values. Prints the SCALE_EXP each conv layer's
 quantizer needs (conv_l1.v / conv_l2.v parameters).
@@ -24,9 +24,9 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-DUMP = HERE.parents[1] / "tb/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json"
-REF = HERE.parents[1] / "rtl/cnn/rtl_ref"
-MEM = HERE.parents[1] / "rtl/cnn/mem"
+DUMP = HERE.parents[1] / "model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json"
+REF = HERE.parents[1] / "rtl/rtl_ref"
+MEM = HERE.parents[1] / "rtl/mem"
 
 
 def pow2_scale_of(values, tol=0.05):

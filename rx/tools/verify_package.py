@@ -6,7 +6,7 @@ bad=[]
 for rel,digest in expected.items():
     f=r/rel
     if not f.is_file() or hashlib.sha256(f.read_bytes()).hexdigest()!=digest:bad.append(rel)
-with zipfile.ZipFile(r/'hardware/FFT_RX_FINAL.xsa') as z:
+with zipfile.ZipFile(r/'vivado/export/FFT_RX_FINAL.xsa') as z:
     bits=[n for n in z.namelist() if n.endswith('.bit')]
     assert len(bits)==1 and z.read(bits[0])==(r/'prebuilt/design_1_wrapper.bit').read_bytes()
 elf=(r/'prebuilt/BFSK_RX_UART.elf').read_bytes()

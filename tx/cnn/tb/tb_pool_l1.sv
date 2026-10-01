@@ -6,9 +6,9 @@
 //   - every pooled output is compared with a behavioral 2x2 max model
 //   - handshake check: out_ready / pool_valid / pool_ch_done vs. input position
 //
-// Vivado XSim (run from tb/cnn):
-//   xvlog ../../rtl/cnn/max_logic.v ../../rtl/cnn/pool_datapath_l1.v \
-//         ../../rtl/cnn/pool_ctrl_l1.v ../../rtl/cnn/pool_l1.v
+// Vivado XSim (run from tx/cnn/tb):
+//   xvlog ../rtl/max_logic.v ../rtl/pool_datapath_l1.v \
+//         ../rtl/pool_ctrl_l1.v ../rtl/pool_l1.v
 //   xvlog -sv tb_pool_l1.sv
 //   xelab tb_pool_l1 -s tb_pool_l1_sim
 //   xsim tb_pool_l1_sim -runall

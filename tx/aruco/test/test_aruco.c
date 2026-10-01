@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include "../../tx_fpga/tx_fpga/src/aruco/aruco_crop.h"
+#include "../../vitis/tx_fpga/src/aruco/aruco_crop.h"
 
 static uint8_t frame[1280 * 720 * 3];
 static aruco_cells_t cells;

@@ -1,6 +1,6 @@
 # Third-party notices
 
-Function skeletons in `src/aruco_geom.c` and `src/aruco_detect.c` quote OpenCV 5.0.0
+Function skeletons in `aruco_geom.c` and `aruco_detect.c` quote OpenCV 5.0.0
 source as comments (modules/objdetect, imgproc, geometry, calib). Excerpts come from
 the files listed below. The comments are removed as each function is reimplemented
 in C, and the C code that replaces them is a modified, derived work.

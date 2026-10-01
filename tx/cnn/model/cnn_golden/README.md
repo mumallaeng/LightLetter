@@ -119,7 +119,7 @@ BRAM 필드는 INT16 weight만 연속 적재할 때의 하한이며, bias·featu
 
 ## 실행
 
-5개 후보 비교/탐색은 `cnn_golden.ipynb`에서 이뤄졌다(`tb`에서 `lightletter-tb` 커널로
+5개 후보 비교/탐색은 `cnn_golden.ipynb`에서 이뤄졌다(`tx/cnn/model`에서 `lightletter-tb` 커널로
 연다). 확정 구조로 실제 재현 학습을 돌릴 땐 `cnn_golden/train.py` CLI를 쓴다:
 
 ```bash

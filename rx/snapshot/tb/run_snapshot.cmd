@@ -1,10 +1,10 @@
 @echo off
 setlocal
-set "PKG_ROOT=%~dp0.."
+set "BLOCK_ROOT=%~dp0.."
 set "TEST_OUT=%TEMP%\lightletter_snapshot_%RANDOM%"
 mkdir "%TEST_OUT%"
 pushd "%TEST_OUT%"
-call xvlog --sv "%PKG_ROOT%\rtl\snapshot\fft_snapshot_buffer.v" "%PKG_ROOT%\tests\rtl\tb_fft_snapshot_gpio.sv"
+call xvlog --sv "%BLOCK_ROOT%\rtl\fft_snapshot_buffer.v" "%~dp0tb_fft_snapshot_gpio.sv"
 if errorlevel 1 goto failed
 call xelab tb_fft_snapshot_gpio -s snapshot_gpio_tb
 if errorlevel 1 goto failed

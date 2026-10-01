@@ -1,11 +1,11 @@
 """Reference streams for the CNN chain testbenches, from the ROM/vector files the RTL reads.
 
-Writes rtl/cnn/rtl_ref/{ce1_stim,ce1_out,pool1_out,ce2_out,pool2_out}.mem, ce_params.txt
-and tb/cnn/cnn_top/vectors/{fc1_out,fc2_out,logit_out,class_out}.mem for FRAMES = 2:
-frame 0 is the image, frame 1 is its left-right mirror (rtl/cnn/rtl_ref/README.md).
+Writes tx/cnn/rtl/rtl_ref/{ce1_stim,ce1_out,pool1_out,ce2_out,pool2_out}.mem, ce_params.txt
+and tx/cnn/tb/cnn_top/vectors/{fc1_out,fc2_out,logit_out,class_out}.mem for FRAMES = 2:
+frame 0 is the image, frame 1 is its left-right mirror (tx/cnn/rtl/rtl_ref/README.md).
 
 Inputs: conv weights/biases from rtl_ref/conv{1,2}_weight.mem + conv{1,2}_bias_ce.mem,
-FC layers from cnn/golden_model/vectors/fc{1,2,3}.txt, the image from the golden dump's
+FC layers from tx/cnn/golden/vectors/fc{1,2,3}.txt, the image from the golden dump's
 "input (quantized)" stage (pixel_in = value * 2^14). Conv SCALE_EXP per layer are
 arguments because they are RTL parameters (conv_l1.v / conv_l2.v).
 
@@ -21,12 +21,12 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
+ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 from gen_fc_golden import fc, read_fc_txt, read_mem  # noqa: E402
 
-DUMP = ROOT / "tb/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json"
-REF = ROOT / "rtl/cnn/rtl_ref"
+DUMP = ROOT / "model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json"
+REF = ROOT / "rtl/rtl_ref"
 OUT = HERE / "vectors"
 
 
@@ -109,7 +109,7 @@ def main():
     ap.add_argument("--conv2-scale", type=int, default=16)
     ap.add_argument("--ref-dir", type=Path, default=REF)
     ap.add_argument("--out-dir", type=Path, default=OUT)
-    ap.add_argument("--fc-dir", type=Path, default=None, help="directory with fc{1,2,3}.txt (default cnn/golden_model/vectors)")
+    ap.add_argument("--fc-dir", type=Path, default=None, help="directory with fc{1,2,3}.txt (default tx/cnn/golden/vectors)")
     ap.add_argument("--stim", type=Path, default=None, help="use this ce1_stim.mem instead of the dump image")
     ap.add_argument("--check", action="store_true")
     a = ap.parse_args()
@@ -169,7 +169,7 @@ def main():
         old = (a.ref_dir / "ce_params.txt").read_text() if (a.ref_dir / "ce_params.txt").exists() else ""
         tail = "".join(l + "\n" for l in old.splitlines() if l.startswith("CHAIN_CYCLES"))
         (a.ref_dir / "ce_params.txt").write_text(params + tail)
-        print("  wrote rtl/cnn/rtl_ref/ce_params.txt")
+        print("  wrote tx/cnn/rtl/rtl_ref/ce_params.txt")
     print("classes:", class_out, "| conv1 SCALE_EXP", a.conv1_scale, "| conv2 SCALE_EXP", a.conv2_scale)
     return 0 if ok else 1
 

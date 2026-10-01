@@ -1,6 +1,6 @@
 """Export Fully Connected test vectors and ROM files from the Python golden model dump.
 
-Reads tb/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json and writes, per layer,
+Reads tx/cnn/model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json and writes, per layer,
 integer stimulus / expected values for test_fc.c plus the weight/bias ROM contents:
 
 The project is uppercase-only (26 classes, 0='A'). The dump still comes from the 36-class
@@ -28,7 +28,7 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-DUMP = HERE.parents[1] / "tb/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json"
+DUMP = HERE.parents[1] / "model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json"
 
 # per-layer multiplier count: FC1 400->120, FC2 120->84, FC3 84->26 (sum = 40 DSP)
 FC_LANES = {1: 25, 2: 10, 3: 5}
@@ -110,7 +110,7 @@ def export(layer, x_int, in_exp, w, bias, y_q, out_dir, mem_dir):
 def main():
     dump = Path(sys.argv[1]) if len(sys.argv) > 1 else DUMP
     out_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else HERE / "vectors"
-    mem_dir = Path(sys.argv[3]) if len(sys.argv) > 3 else HERE.parents[1] / "rtl/cnn/mem"
+    mem_dir = Path(sys.argv[3]) if len(sys.argv) > 3 else HERE.parents[1] / "rtl/mem"
     out_dir.mkdir(parents=True, exist_ok=True)
     mem_dir.mkdir(parents=True, exist_ok=True)
 

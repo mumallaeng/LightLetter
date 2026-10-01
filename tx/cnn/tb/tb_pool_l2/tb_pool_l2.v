@@ -6,7 +6,7 @@
 //       아래 .mem 이 sim 소스로 들어가 있어야 한다 (bare 파일명으로 읽는다).
 //   options (xelab): -generic_top "VALID_PCT=70" -generic_top "READY_PCT=40" -generic_top "SEED=5"
 //
-// 입력 / 기대값 (rtl/cnn/rtl_ref/, FRAMES = 2)
+// 입력 / 기대값 (tx/cnn/rtl/rtl_ref/, FRAMES = 2)
 //   ce2_out.mem   : 17bit {ch_done, data} x 3872  conv_l2 출력 = pool_l2 입력, frame 당 och0 11x11 raster -> ... -> och15
 //   pool2_out.mem : 17bit {ch_done, data} x  800  pool_l2 출력, frame 당 och0 5x5 raster -> ... -> och15, 채널마다 (4,4) 에 ch_done
 //   11 은 홀수라 마지막 행 / 열 (r10, c10) 은 버린다.

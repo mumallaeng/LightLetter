@@ -2,12 +2,12 @@
 #   make -f output_buffer.mk          build the test
 #   make -f output_buffer.mk test     build and run
 #   make -f output_buffer.mk vectors  regenerate vectors/ from the Python dump
-#   make -f output_buffer.mk rtl-vectors  bias ROM files (rtl/cnn/mem) + golden files for the RTL testbench (tb/cnn/vectors)
+#   make -f output_buffer.mk rtl-vectors  bias ROM files (tx/cnn/rtl/mem) + golden files for the RTL testbench (tx/cnn/tb/vectors)
 #   make -f output_buffer.mk clean
 
 CC      ?= cc
 CFLAGS  ?= -std=c99 -Wall -Wextra -O1
-PYTHON  ?= ../../tb/.venv/bin/python
+PYTHON  ?= ../model/.venv/bin/python
 
 BUILD   := build
 TARGET  := $(BUILD)/test_output_buffer
@@ -15,8 +15,8 @@ TARGET  := $(BUILD)/test_output_buffer
 SRCS    := test_output_buffer.c output_buffer.c partial_sum.c buffer_ctrl.c bias_rom.c \
            relu_quant.c lane_packer.c out_reorder.c
 MODEL   := output_buffer.c partial_sum.c buffer_ctrl.c bias_rom.c relu_quant.c lane_packer.c out_reorder.c
-RTL_VEC := ../../tb/cnn/vectors
-RTL_MEM := ../../rtl/cnn/mem
+RTL_VEC := ../tb/vectors
+RTL_MEM := ../rtl/mem
 
 HDRS    := ob_common.h output_buffer.h partial_sum.h buffer_ctrl.h bias_rom.h \
            relu_quant.h lane_packer.h out_reorder.h

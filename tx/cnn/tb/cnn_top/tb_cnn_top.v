@@ -9,8 +9,8 @@
 //       .mem 은 모두 bare 파일명으로 읽으므로 run_sim.sh 가 build/ 에 모아 두고 거기서 돌린다.
 //
 // 입력 / 기대값 (FRAMES = 2 : frame 0 = 26 클래스 재학습 덤프의 샘플 이미지 (EMNIST 'I', class 8), frame 1 = 좌우 반전)
-//   클래스는 대문자 26 개뿐 (0 = 'A' .. 25 = 'Z', 숫자 없음) - tb/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json
-//   rtl/cnn/rtl_ref/ (C 골든모델 cnn_chain rtl-vectors)
+//   클래스는 대문자 26 개뿐 (0 = 'A' .. 25 = 'Z', 숫자 없음) - tx/cnn/model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json
+//   tx/cnn/rtl/rtl_ref/ (C 골든모델 cnn_chain rtl-vectors)
 //     ce1_stim.mem      16bit x 1568  conv_l1 pixel 입력, frame 당 28x28 raster
 //     ce1_out.mem       49bit x 2704  conv_l1 출력 {ch_done, d2, d1, d0}
 //     pool1_out.mem     49bit x  676  pool_l1 출력 {ch_done, d2, d1, d0}
@@ -19,9 +19,9 @@
 //     conv1_weight.mem 432bit x   12  conv_l1 weight 기대값 ([och][grp], grp0 lane0 = weight_rom_l1 case 상수)
 //     conv2_weight.mem 432bit x   32  conv_l2 weight ROM 기대값 ([och][is_ch35])
 //     conv1_bias_ce.mem / conv2_bias_ce.mem  INT32 bias 기대값
-//   RTL 은 rtl/cnn/mem/ (conv{1,2}_bias, l2_weight_ch*, fc*) 과 weight_rom_l1.v 의 case 상수를 쓴다. TB 는 ROM 을
+//   RTL 은 tx/cnn/rtl/mem/ (conv{1,2}_bias, l2_weight_ch*, fc*) 과 weight_rom_l1.v 의 case 상수를 쓴다. TB 는 ROM 을
 //   덮어쓰지 않는다 - mem/ 이 rtl_ref/ 와 다르면 [ROM1] [ROM] [BIAS] 와 그 뒤 단계에서 드러난다.
-//   tb/cnn/cnn_top/vectors/ (gen_fc_golden.py : pool2_out.mem 에서 FC 골든 규칙으로 계산)
+//   tx/cnn/tb/cnn_top/vectors/ (gen_fc_golden.py : pool2_out.mem 에서 FC 골든 규칙으로 계산)
 //     fc1_out.mem       16bit x  240  FC1 출력 (neuron 0..119)
 //     fc2_out.mem       16bit x  168  FC2 출력 (neuron 0..83)
 //     logit_out.mem     16bit x   52  FC3 출력 = logit (signed, class 0..25)
@@ -825,9 +825,9 @@ module tb_cnn_top;
                    ^bref1[0] === 1'bx || ^bref2[0] === 1'bx);
         if (!mem_ok) begin
             $display("[FAIL] golden .mem not loaded - run from build/ via run_sim.sh (or add the .mem files to the sim sources)");
-            $display("       TB : ce1_stim ce1_out pool1_out ce2_out pool2_out conv1/2_weight conv1/2_bias_ce (rtl/cnn/rtl_ref),");
-            $display("            fc1_out fc2_out logit_out class_out (tb/cnn/cnn_top/vectors)");
-            $display("       RTL: fc1..3_weight fc1..3_bias l2_weight_ch00..15 conv1/2_bias (rtl/cnn/mem)");
+            $display("       TB : ce1_stim ce1_out pool1_out ce2_out pool2_out conv1/2_weight conv1/2_bias_ce (tx/cnn/rtl/rtl_ref),");
+            $display("            fc1_out fc2_out logit_out class_out (tx/cnn/tb/cnn_top/vectors)");
+            $display("       RTL: fc1..3_weight fc1..3_bias l2_weight_ch00..15 conv1/2_bias (tx/cnn/rtl/mem)");
             $finish;
         end
 
@@ -839,7 +839,7 @@ module tb_cnn_top;
         @(negedge clk);
         rst_n = 1'b1;
 
-        // [BIAS] RTL bias ROM (rtl/cnn/mem/conv{1,2}_bias.mem) == rtl_ref/conv{1,2}_bias_ce.mem
+        // [BIAS] RTL bias ROM (tx/cnn/rtl/mem/conv{1,2}_bias.mem) == rtl_ref/conv{1,2}_bias_ce.mem
         for (i = 0; i < OCH1; i = i + 1)
             if (neq32(dut.U_CONV_L1.U_OUTPUT_STAGE_L1.GEN_CONV1.u_output_buffer.u_bias_rom.mem[i], bref1[i])) begin
                 bias_errs = bias_errs + 1;

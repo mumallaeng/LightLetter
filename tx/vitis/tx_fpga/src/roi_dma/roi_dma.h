@@ -13,7 +13,7 @@
 /*
  * Camera ROI: centre 224x224 square of the 1280x720 frame
  * (X 528..751, Y 248..471). Nearest-neighbour downscale to 112x112.
- * display_python/capture_test.py ROI_X0/ROI_Y0/ROI_SIZE must match.
+ * tx/ui/capture_test.py ROI_X0/ROI_Y0/ROI_SIZE must match.
  */
 #define ROI_SRC_X0          528U
 #define ROI_SRC_Y0          248U

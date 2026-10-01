@@ -1,4 +1,4 @@
-"""vitis/tx_fpga/tx_fpga/src/aruco/ 의 C 코드를 numpy 로 옮긴 것.
+"""tx/vitis/tx_fpga/src/aruco/ 의 C 코드를 numpy 로 옮긴 것.
 
 보드가 버튼 캡처 때 하는 일을 PC 에서 그대로 재현한다.
     detect_markers  (aruco_detect.c) : 적응 threshold -> 4연결 blob -> 사각형 후보

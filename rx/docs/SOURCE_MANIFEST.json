@@ -4,112 +4,112 @@
   "ui_upstream_commit": "54271a4307fc3492f8417fbd15a71771ee6b8b1a",
   "files": [
     {
-      "file": "rtl/fft_top/address_generator.v",
+      "file": "fft/rtl/address_generator.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/address_generator.v",
       "sha256_source": "777696a3ecdc4180f62f76f1705afe8fed538357959d721f5fdd16ff59419209"
     },
     {
-      "file": "rtl/fft_top/butterfly.v",
+      "file": "fft/rtl/butterfly.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/butterfly.v",
       "sha256_source": "ae7661cad262db87e0e00f43bc0653577cca84c6b064a2f19b0b16b34d54eb1f"
     },
     {
-      "file": "rtl/fft_top/data_memory.v",
+      "file": "fft/rtl/data_memory.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/data_memory.v",
       "sha256_source": "2b90b842d5bea72c09d4362dd41738ae6290cc2c55552f6b13e6b4032099b201"
     },
     {
-      "file": "rtl/fft_top/fft_buffer.v",
+      "file": "fft/rtl/fft_buffer.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/fft_buffer.v",
       "sha256_source": "a5ff3c2962c1357cdfc8042ddcd54227c7528e01b2f1a0f79c5827402f63d49b"
     },
     {
-      "file": "rtl/fft_top/fft_core.v",
+      "file": "fft/rtl/fft_core.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/fft_core.v",
       "sha256_source": "92d6a7f70dc428fbdf474b101f6b28e8f82a715b0884d4cb25cd5fba1939a03d"
     },
     {
-      "file": "rtl/fft_top/fft_core_controller.v",
+      "file": "fft/rtl/fft_core_controller.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/fft_core_controller.v",
       "sha256_source": "30e50b678d20c9c06dc7f74849256681c847e70f8506c77d4e97293849257258"
     },
     {
-      "file": "rtl/fft_top/fft_power.v",
+      "file": "fft/rtl/fft_power.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/fft_power.v",
       "sha256_source": "db3231d4b2f099c513ed42604d93fcc146146cac39fe4122c7611506a9a52284"
     },
     {
-      "file": "rtl/fft_top/fft_top.v",
+      "file": "fft/rtl/fft_top.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/fft_top.v",
       "sha256_source": "b9d8a5660b928b1137793d71b956675bc71c21b64699e29a489df29449a774dc"
     },
     {
-      "file": "rtl/fft_top/mem_read_path.v",
+      "file": "fft/rtl/mem_read_path.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/mem_read_path.v",
       "sha256_source": "73d59e67a3bae23fc27fb4d1fbb47d3675297586647d8ace36225732baee029a"
     },
     {
-      "file": "rtl/fft_top/mem_write_path.v",
+      "file": "fft/rtl/mem_write_path.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/mem_write_path.v",
       "sha256_source": "30f527d946e0aa145a01bd6a1a4cdfbfb805a33fd036a860d81f5504282751b1"
     },
     {
-      "file": "rtl/fft_top/multiplier.v",
+      "file": "fft/rtl/multiplier.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/multiplier.v",
       "sha256_source": "f1976804130c9c3964edc770e3b8a02615b17bd93b4699825d05cdb73c45f8ee"
     },
     {
-      "file": "rtl/fft_top/twiddle_rom.v",
+      "file": "fft/rtl/twiddle_rom.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/twiddle_rom.v",
       "sha256_source": "d43b5042b78987915f5ba427304f93fe3305b420fffb2d8adbf27b934f29c2cc"
     },
     {
-      "file": "rtl/fft_top/twiddle_128_q14.mem",
+      "file": "fft/rtl/twiddle_128_q14.mem",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/twiddle_128_q14.mem",
       "sha256_source": "191513d50c5aec3dcb90d072ff19a9d8665f9219d65edec475c9632c97e4fedc"
     },
     {
-      "file": "rtl/rx/rx_top.v",
+      "file": "bfsk_rx/rtl/rx_top.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/rx/rx_top.v",
       "sha256_source": "5f61aa3d222fe499977186f108072f4a0a953b09338f79b68067f4f38b505d26"
     },
     {
-      "file": "rtl/rx/rx_bin_detector.v",
+      "file": "bfsk_rx/rtl/rx_bin_detector.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/rx/rx_bin_detector.v",
       "sha256_source": "d7c3f606667f7cf3fb8e0cadf634f80a5567d2d523b17d6c9cfab7503aa46a66"
     },
     {
-      "file": "rtl/rx/rx_symbol_detector.v",
+      "file": "bfsk_rx/rtl/rx_symbol_detector.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/rx/rx_symbol_detector.v",
       "sha256_source": "7661e31eef76a21ca1e39512199727d48a973667a194b4cd0299b7448fcef1a8"
     },
     {
-      "file": "rtl/rx/rx_symbol_sync.v",
+      "file": "bfsk_rx/rtl/rx_symbol_sync.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/rx/rx_symbol_sync.v",
       "sha256_source": "27e97eee2e9681a19ec9892eb72bfd1c6df0fda699173c61ad15504054517c85"
     },
     {
-      "file": "rtl/rx/rx_frame_decoder.v",
+      "file": "bfsk_rx/rtl/rx_frame_decoder.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/rx/rx_frame_decoder.v",
       "sha256_source": "31eb1b7df465e1048e9d38175faf1fcf94793413081169b2f3ab759502632a24"
     },
     {
-      "file": "rtl/rx/rx_crc8_check.v",
+      "file": "bfsk_rx/rtl/rx_crc8_check.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/rx/rx_crc8_check.v",
       "sha256_source": "d9c8c14999d96a956dc7699051972a0eed097f37eb0ea78c17c4a93abbf58c12"
     },
     {
-      "file": "rtl/rx/rx_latch.v",
+      "file": "bfsk_rx/rtl/rx_latch.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/rx/rx_latch.v",
       "sha256_source": "e60fff8e520475dcc0b5971bd9181411c4dc84c351b3d88a28bcccc5feba4f73"
     },
     {
-      "file": "rtl/snapshot/fft_snapshot_buffer.v",
+      "file": "snapshot/rtl/fft_snapshot_buffer.v",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/new/fft_snapshot_buffer.v",
       "sha256_source": "8f27c77c962df1415ffebbed6668d4b1d50717a62d424db6ba38502c4599776e"
     },
     {
-      "file": "constraints/Zybo-Z7-RX.xdc",
+      "file": "vivado/constraints/Zybo-Z7-RX.xdc",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/constrs_1/imports/rx/Zybo-Z7-RX.xdc",
       "sha256_source": "617bd4a5880b15222df81e6202132ade15f43a67518bf9639158160af630f064"
     },
@@ -344,7 +344,7 @@
       "sha256_source": "49559cfbe2171d999dc9eee8efded459aba743db4bca7be1b581394e83f18550"
     },
     {
-      "file": "hardware/FFT_RX_FINAL.xsa",
+      "file": "vivado/export/FFT_RX_FINAL.xsa",
       "source": "TEMP/BFSK_RX_UART/vitis_workspace/FFT_RX_PLATFORM/hw/FFT_RX_FINAL.xsa",
       "sha256_source": "9cf2a40afea02d3b4d3296aa18d4b396ed5ff6a46f7d2ede1281e40c831a9a79"
     },
@@ -389,7 +389,7 @@
       "sha256_source": "aba1b959a6d73446e194cc841d563201e39d8ed632a2eb53db01adf9eb638272"
     },
     {
-      "file": "tests/rtl/tb_fft_snapshot_gpio.sv",
+      "file": "snapshot/tb/tb_fft_snapshot_gpio.sv",
       "source": "TEMP/snapshot_gpio/tb_fft_snapshot_gpio.sv",
       "sha256_source": "6177b7487f0a1f648d98f44e9489dab6775d808b4455fa2030e729defb8251a4"
     },
@@ -399,52 +399,52 @@
       "sha256_source": "d116a5430bd62ab5c065cb6486608e411be37210fcc08f1808b10f90fe3a0b30"
     },
     {
-      "file": "tests/firmware/test_dashboard.c",
+      "file": "vitis/tests/firmware/test_dashboard.c",
       "source": "TEMP/BFSK_RX_UART/dashboard_integration/tests/test_dashboard.c",
       "sha256_source": "fa7d274d9dd2ef823e413f6abc0d8716b54efd85677db6b4a5ee4c282acbcce1"
     },
     {
-      "file": "tests/firmware/test_protocol.cjs",
+      "file": "vitis/tests/firmware/test_protocol.cjs",
       "source": "TEMP/BFSK_RX_UART/dashboard_integration/tests/test_protocol.cjs",
       "sha256_source": "99504d9407e221220fd4b7be9aa3e96958bef7fda7f7d9c190f5a87ad4230f9a"
     },
     {
-      "file": "tests/fixtures/firmware_output.jsonl",
+      "file": "vitis/tests/fixtures/firmware_output.jsonl",
       "source": "TEMP/BFSK_RX_UART/dashboard_integration/build/firmware_output.jsonl",
       "sha256_source": "ab9352cfff46f2c7998377e4fdf8e0acbc6a1dc7688ed9bac3956b41db2effa8"
     },
     {
-      "file": "tests/reference_rx/tb_rx_bin_detector.sv",
+      "file": "bfsk_rx/tb/tb_rx_bin_detector.sv",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sim_1/tb_rx_bin_detector.sv",
       "sha256_source": "c48c68666425d932d124d5f0c014067e62774c6cbaa7f12c43d144ea4b1f540d"
     },
     {
-      "file": "tests/reference_rx/tb_rx_crc8_check.sv",
+      "file": "bfsk_rx/tb/tb_rx_crc8_check.sv",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sim_1/tb_rx_crc8_check.sv",
       "sha256_source": "b37a465223a1805237c649e407d30bf729c57e14831b6bb3dd254b7b7c80f5f4"
     },
     {
-      "file": "tests/reference_rx/tb_rx_frame_decoder.sv",
+      "file": "bfsk_rx/tb/tb_rx_frame_decoder.sv",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sim_1/tb_rx_frame_decoder.sv",
       "sha256_source": "cd7c9b76b3966de97b85a8e74c5acd449119b360d789b8e294210741e0994f7c"
     },
     {
-      "file": "tests/reference_rx/tb_rx_latch.sv",
+      "file": "bfsk_rx/tb/tb_rx_latch.sv",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sim_1/tb_rx_latch.sv",
       "sha256_source": "f9d220458a716705b252a65bad547f5c8d42e465ea481405803a3f261124a0f6"
     },
     {
-      "file": "tests/reference_rx/tb_rx_symbol_detector.sv",
+      "file": "bfsk_rx/tb/tb_rx_symbol_detector.sv",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sim_1/tb_rx_symbol_detector.sv",
       "sha256_source": "9d9196cf103273b6f4697a5263012c1813d29def1deeeb3d21b61c3dfbdc6859"
     },
     {
-      "file": "tests/reference_rx/tb_rx_symbol_sync.sv",
+      "file": "bfsk_rx/tb/tb_rx_symbol_sync.sv",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sim_1/tb_rx_symbol_sync.sv",
       "sha256_source": "5ce5255f137172ead37dd84195a9fc5b83bf106c6610132e086d765f8a4c0ff6"
     },
     {
-      "file": "tests/reference_rx/tb_rx_top.sv",
+      "file": "bfsk_rx/tb/tb_rx_top.sv",
       "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sim_1/tb_rx_top.sv",
       "sha256_source": "8ce074b8371a125596746f15c807b3471c897ea3c110f468e1a1c217df85e1ea"
     }

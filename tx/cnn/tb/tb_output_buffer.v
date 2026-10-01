@@ -1,9 +1,9 @@
 `timescale 1ns / 1ps
 // Bit-exact test: output_buffer -> relu_quant against the C golden model.
-//   stimulus / expected files come from `make -f output_buffer.mk rtl-vectors` (cnn/golden_model):
+//   stimulus / expected files come from `make -f output_buffer.mk rtl-vectors` (tx/cnn/golden):
 //   frame 1 = real image from the Python model, frame 2 = synthetic corner cases
 //   (negatives, .5 rounding ties, 32767 clamp, widest inputs)
-//   run with `make -f sim.mk` (tb/cnn); defaults below are the conv2 configuration.
+//   run with `make -f sim.mk` (tx/cnn/tb); defaults below are the conv2 configuration.
 //   +vcd dumps build/<config>.vcd
 
 module tb_output_buffer;
@@ -19,7 +19,7 @@ module tb_output_buffer;
     parameter VALID_PCT = 75;  // chance that mac_array delivers a result each cycle
     parameter READY_PCT = 100;  // chance that MaxPooling accepts each cycle
     parameter SEED = 1;
-    parameter BIAS_FILE = "../../rtl/cnn/mem/conv2_bias.mem";
+    parameter BIAS_FILE = "../rtl/mem/conv2_bias.mem";
     parameter STIM_FILE = "vectors/conv2_stim.mem";
     parameter SUM_FILE = "vectors/conv2_sum.mem";
     parameter OUT_FILE = "vectors/conv2_out.mem";

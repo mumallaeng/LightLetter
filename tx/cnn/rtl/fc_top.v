@@ -5,7 +5,7 @@
 // FC3 ends the Fully Connected scope: 26 signed logits in class order (0 = 'A' .. 25 = 'Z').
 
 module fc_top #(
-    // ROM contents; the testbench overrides these with paths relative to tb/cnn
+    // ROM contents; the testbench overrides these with paths relative to tx/cnn/tb
     parameter FC1_WEIGHT = "fc1_weight.mem",
     parameter FC1_BIAS   = "fc1_bias.mem",
     parameter FC2_WEIGHT = "fc2_weight.mem",

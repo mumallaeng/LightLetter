@@ -2,13 +2,13 @@
 // Weight ROM: one row per (chunk, neuron), L weights per row, lane 0 in the low 16 bits.
 // Row index = chunk * N_OUT + neuron, which is what fc_ctrl drives on rom_addr.
 // The read is synchronous, so the address leads the mac_en it belongs to by one clock.
-// Contents come from export_fc_vectors.py (rtl/cnn/mem/fcK_weight.mem).
+// Contents come from export_fc_vectors.py (tx/cnn/rtl/mem/fcK_weight.mem).
 
 module fc_weight_rom #(
     parameter L         = 25,               // FC1=25; FC2=10; FC3=5
     parameter N_OUT     = 120,              // FC1=120; FC2=84; FC3=26
     parameter NUM_CHUNK = 16,               // FC1=16; FC2=12; FC3=17
-    parameter ROM_FILE  = "fc1_weight.mem"  // rtl/cnn/mem
+    parameter ROM_FILE  = "fc1_weight.mem"  // tx/cnn/rtl/mem
 ) (
     input  wire                               clk,
     input  wire [$clog2(NUM_CHUNK*N_OUT)-1:0] addr,

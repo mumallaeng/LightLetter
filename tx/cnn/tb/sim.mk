@@ -10,14 +10,14 @@ IVERILOG ?= iverilog
 VVP      ?= vvp
 IVFLAGS  ?= -g2005 -Wall
 
-RTL   := ../../rtl/cnn
+RTL   := ../rtl
 BUILD := build
 SRCS  := $(wildcard $(RTL)/*.v)
 
 CONV1 := -Ptb_output_buffer.N=676 -Ptb_output_buffer.C_OUT=6 -Ptb_output_buffer.NUM_GROUPS=1 \
          -Ptb_output_buffer.PACK=3 -Ptb_output_buffer.SCALE_EXP=15 \
          -Ptb_output_buffer.NSTIM=8112 -Ptb_output_buffer.NSUM=8112 -Ptb_output_buffer.NOUT=2704 \
-         '-Ptb_output_buffer.BIAS_FILE="../../rtl/cnn/mem/conv1_bias.mem"' '-Ptb_output_buffer.STIM_FILE="vectors/conv1_stim.mem"' \
+         '-Ptb_output_buffer.BIAS_FILE="../rtl/mem/conv1_bias.mem"' '-Ptb_output_buffer.STIM_FILE="vectors/conv1_stim.mem"' \
          '-Ptb_output_buffer.SUM_FILE="vectors/conv1_sum.mem"' '-Ptb_output_buffer.OUT_FILE="vectors/conv1_out.mem"'
 CONV2 :=
 
@@ -25,7 +25,7 @@ CONV2 :=
 define run_fc
 	@$(IVERILOG) $(IVFLAGS) -s tb_fc -o $(BUILD)/$(1).vvp \
 	    -Ptb_fc.VALID_PCT=$(2) -Ptb_fc.READY_PCT=$(3) -Ptb_fc.SEED=$(4) \
-	    '-Ptb_fc.MEM="../../rtl/cnn/mem"' \
+	    '-Ptb_fc.MEM="../rtl/mem"' \
 	    '-Ptb_fc.VCD_FILE="$(BUILD)/$(1).vcd"' tb_fc.v $(SRCS)
 	@$(VVP) -n $(BUILD)/$(1).vvp $(5) | grep -E "^\[|FAIL|rtl "
 endef
@@ -64,10 +64,10 @@ wave: | $(BUILD)
 	@echo "wrote $(BUILD)/conv2.vcd"
 
 vectors:
-	$(MAKE) -C ../../cnn/golden_model -f output_buffer.mk rtl-vectors
+	$(MAKE) -C ../golden -f output_buffer.mk rtl-vectors
 
 fc-vectors:
-	$(MAKE) -C ../../cnn/golden_model -f fc.mk rtl-vectors
+	$(MAKE) -C ../golden -f fc.mk rtl-vectors
 
 clean:
 	rm -rf $(BUILD)

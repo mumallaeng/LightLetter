@@ -2,7 +2,7 @@
 
 // Full-path testbench for conv_l2 (13x13x6 -> 11x11x16), checked against the C golden model.
 //
-// 실행 (Windows, tb/cnn/tb_conv_l2 에서):
+// 실행 (Windows, tx/cnn/tb/tb_conv_l2 에서):
 //   run_sim.bat          batch 실행 -> work/ 에 report / trace txt + 파형(wdb)
 //   run_sim.bat gui      XSim GUI 로 실행 (wave.tcl 의 신호 그룹이 뜬 상태로 run all)
 //   run_sim.bat wave     batch 실행 후 저장된 파형(work/tb_conv_l2_sim.wdb)을 GUI 로 연다

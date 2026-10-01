@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
-const P=require(process.argv[3] || '../ui/protocol.js');
+const P=require(process.argv[3] || '../../../ui/protocol.js');
 const raw=fs.readFileSync(process.argv[2],'utf8');
 const lines=new P.Lines();let parsed=[];
 for(let i=0;i<raw.length;i+=7)parsed.push(...lines.push(raw.slice(i,i+7)).map(JSON.parse));

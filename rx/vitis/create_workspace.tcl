@@ -3,7 +3,7 @@ set root [file dirname $here]
 set ws [file join $here workspace]
 if {[file exists $ws]} { error "Workspace exists. Open it in Vitis instead of overwriting." }
 setws $ws
-platform create -name FFT_RX_PLATFORM -hw [file join $root hardware FFT_RX_FINAL.xsa] -proc ps7_cortexa9_0 -os standalone
+platform create -name FFT_RX_PLATFORM -hw [file join $root vivado export FFT_RX_FINAL.xsa] -proc ps7_cortexa9_0 -os standalone
 bsp config stdin ps7_uart_1
 bsp config stdout ps7_uart_1
 platform generate

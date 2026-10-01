@@ -4,14 +4,14 @@
 #   ./run_sim.sh                    4 runs: valid/ready 100/100, 60/70, 35/50 with junk tlast while tvalid = 0,
 #                                   and 100/100 with tlast = 0 while tvalid = 0
 #   ./run_sim.sh one [VALID] [READY] [JUNK] [SEED] [FRAMES]
-#   CE=path/to/ce_ctrl_l1.v ./run_sim.sh ...   compile another ce_ctrl_l1.v instead of rtl/cnn/ce_ctrl_l1.v
+#   CE=path/to/ce_ctrl_l1.v ./run_sim.sh ...   compile another ce_ctrl_l1.v instead of tx/cnn/rtl/ce_ctrl_l1.v
 #   ./run_sim.sh clean
 #
 # Each run writes build/<name>_report.txt and build/<name>_trace.txt, <name> = v<VALID>_r<READY>_j<JUNK>_s<SEED>.
 set -u
 cd "$(dirname "$0")"
-ROOT=../../..
-RTL=$ROOT/rtl/cnn
+CNN=../..
+RTL=$CNN/rtl
 BUILD=build
 CE=${CE:-$RTL/ce_ctrl_l1.v}
 CE=$(cd "$(dirname "$CE")" && pwd)/$(basename "$CE")

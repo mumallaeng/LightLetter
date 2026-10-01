@@ -1,13 +1,13 @@
 # CNN RTL 검증 벡터
 
-이 폴더(`cnn/rtl_ref/`)의 파일은 전부 C 골든모델(`cnn/golden_model`)이 만든 `$readmemh` 데이터다.
+이 폴더(`tx/cnn/rtl/rtl_ref/`)의 파일은 전부 C 골든모델(`tx/cnn/golden`)이 만든 `$readmemh` 데이터다.
 RTL 은 이 값과 **bit-exact** 여야 한다.
 
-재생성 (2026-09-27부터, 26클래스 재학습본 `tb/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json` 기준):
+재생성 (2026-09-27부터, 26클래스 재학습본 `tx/cnn/model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json` 기준):
 
 ```
-python cnn/golden_model/export_conv_roms.py                       # conv ROM: conv{1,2}_weight.mem, conv{1,2}_bias_ce.mem, rtl/cnn/mem/l2_weight_ch*.mem, conv1_weight_rom_l1.txt
-python tb/cnn/cnn_top/gen_chain_vectors.py --conv1-scale 15 --conv2-scale 16   # 단계 경계 스트림 + tb/cnn/cnn_top/vectors
+python tx/cnn/golden/export_conv_roms.py                       # conv ROM: conv{1,2}_weight.mem, conv{1,2}_bias_ce.mem, tx/cnn/rtl/mem/l2_weight_ch*.mem, conv1_weight_rom_l1.txt
+python tx/cnn/tb/cnn_top/gen_chain_vectors.py --conv1-scale 15 --conv2-scale 16   # 단계 경계 스트림 + tx/cnn/tb/cnn_top/vectors
 ```
 
 `gen_chain_vectors.py --check`는 디스크의 파일과 대조만 한다(생성기 자체 검사). `weight_rom_l1.v`는 `.mem`이 아니라
@@ -103,5 +103,5 @@ RTL 도 같은 제약을 지켜야 `rb_overrun` 이 안 난다.
 `conv1_*.mem` / `conv2_*.mem` / `conv{1,2}_params.txt` 는 `tb_output_buffer.v` 전용으로,
 `gen_rtl_vectors.c` 가 `vectors/ob_conv{1,2}.txt` 에서 만든다. 위 CE 벡터와는 별개 세트다.
 
-> 2026-09-27부터 두 세트 모두 같은 덤프에서 나온다: `rtl/cnn/mem/conv{1,2}_bias.mem`(`output_buffer.mk rtl-vectors`)과
-> `conv{1,2}_bias_ce.mem`(`export_conv_roms.py`)은 값이 같다. `tb/cnn/sim.mk`의 conv1 `SCALE_EXP`도 15다.
+> 2026-09-27부터 두 세트 모두 같은 덤프에서 나온다: `tx/cnn/rtl/mem/conv{1,2}_bias.mem`(`output_buffer.mk rtl-vectors`)과
+> `conv{1,2}_bias_ce.mem`(`export_conv_roms.py`)은 값이 같다. `tx/cnn/tb/sim.mk`의 conv1 `SCALE_EXP`도 15다.

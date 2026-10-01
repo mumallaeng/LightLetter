@@ -2,7 +2,7 @@
 #define SRC_CPU_CNN_CPU_PREPROCESS_H_
 
 /*
- * rtl/cnn_cam/img_preprocess.v 를 CPU 에서 그대로 하는 bit-exact 버전.
+ * tx/preprocess/rtl/img_preprocess.v 를 CPU 에서 그대로 하는 bit-exact 버전.
  *
  *   112x112 RGB (roi_dma 의 roi_frame, PL 로 DMA 되는 것과 같은 버퍼)
  *   -> grayscale (77R + 150G + 29B + 128) >> 8 -> 반전 -> THRESHOLD 미만 0
@@ -12,7 +12,7 @@
  * 픽셀은 3 byte, DMA 스트림 tdata 의 byte 순서 그대로
  *   byte 0 = tdata[7:0] = G, byte 1 = tdata[15:8] = B, byte 2 = tdata[23:16] = R
  *
- * display_python/capture_test.py 의 rtl_threshold / rtl_fit / cnn_scale 과
+ * tx/ui/capture_test.py 의 rtl_threshold / rtl_fit / cnn_scale 과
  * 같은 알고리즘이고, 그 Python 모델은 xsim 에서 RTL 과 bit-exact 로 확인됨.
  */
 

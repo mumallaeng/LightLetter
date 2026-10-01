@@ -8,7 +8,7 @@
 //   28x28 raster, tuser = 프레임 첫 pixel (r0 c0), tlast = 행 마지막 pixel (c27) -> 프레임마다 tlast 28 번
 //   valid 가 올라간 beat 는 받을 때까지 tdata / tuser / tlast 를 그대로 유지한다.
 //   IDLE_JUNK = 1 이면 tvalid = 0 인 클럭의 tdata / tuser / tlast 는 랜덤 (AXIS 에서 의미 없는 값).
-//   frame f 의 stimulus = rtl/cnn/rtl_ref/ce1_stim.mem 의 frame (f % 2), 기대 출력 = ce1_out.mem 의 같은 frame.
+//   frame f 의 stimulus = tx/cnn/rtl/rtl_ref/ce1_stim.mem 의 frame (f % 2), 기대 출력 = ce1_out.mem 의 같은 frame.
 //   out_reorder 는 한 프레임만 담으므로 다음 프레임은 앞 프레임 출력 1352 개를 다 받은 뒤 넣는다.
 //
 // 확인하는 것
@@ -270,7 +270,7 @@ module tb_ce_ctrl_l1_tlast;
         $readmemh("ce1_stim.mem", stim);
         $readmemh("ce1_out.mem", gold);
         if (^stim[0] === 1'bx || ^gold[0] === 1'bx) begin
-            $display("[FAIL] ce1_stim.mem / ce1_out.mem not loaded (rtl/cnn/rtl_ref) - run via run_sim.sh");
+            $display("[FAIL] ce1_stim.mem / ce1_out.mem not loaded (tx/cnn/rtl/rtl_ref) - run via run_sim.sh");
             $finish;
         end
         fd_trace = $fopen(TRACE_FILE, "w");

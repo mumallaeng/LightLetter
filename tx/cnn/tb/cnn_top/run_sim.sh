@@ -14,12 +14,12 @@
 #
 # Every run writes build/<name>_report.txt (summary + per stage grids / tables) and build/<name>_trace.txt
 # (every handshake with its sim time). <name> = v<VALID>_g<GATE>_s<SEED>.
-# The RTL reads its ROMs from rtl/cnn/mem (and weight_rom_l1.v); the TB compares them with rtl/cnn/rtl_ref.
+# The RTL reads its ROMs from tx/cnn/rtl/mem (and weight_rom_l1.v); the TB compares them with tx/cnn/rtl/rtl_ref.
 # The .mem files are read by bare file name, so everything is copied into build/ and the sim runs there.
 set -u
 cd "$(dirname "$0")"
-ROOT=../../..
-RTL=$ROOT/rtl/cnn
+CNN=../..
+RTL=$CNN/rtl
 BUILD=build
 
 XVLOG=xvlog; XELAB=xelab; XSIM=xsim

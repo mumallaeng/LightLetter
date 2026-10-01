@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-// cnn_top (conv_l1 -> pool_l1 -> conv_l2) checked against the C golden model (rtl/cnn/rtl_ref/).
+// cnn_top (conv_l1 -> pool_l1 -> conv_l2) checked against the C golden model (tx/cnn/rtl/rtl_ref/).
 //
 //   28x28x1 -> conv_l1 -> 26x26x6 -> pool_l1 -> 13x13x6 -> conv_l2 -> 11x11x16
 //

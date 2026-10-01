@@ -3,7 +3,7 @@
  *
  *   <mem>/convN_bias.mem   32-bit bias per output channel - the ROM contents used by the RTL itself
  *
- * and, for the RTL testbench (tb/cnn/tb_output_buffer.v):
+ * and, for the RTL testbench (tx/cnn/tb/tb_output_buffer.v):
  *
  *   <out>/convN_stim.mem   {ch_result2, ch_result1, ch_result0}, 36 bits each, arrival order
  *   <out>/convN_sum.mem    golden Output Buffer stream: sum_data[39:0]
@@ -180,8 +180,8 @@ static int convert(const char *in_path, const char *out_dir, const char *mem_dir
 int main(int argc, char **argv)
 {
     const char *in_dir  = argc > 1 ? argv[1] : "vectors";
-    const char *out_dir = argc > 2 ? argv[2] : "../../tb/cnn/vectors";
-    const char *mem_dir = argc > 3 ? argv[3] : "../../rtl/cnn/mem";
+    const char *out_dir = argc > 2 ? argv[2] : "../tb/vectors";
+    const char *mem_dir = argc > 3 ? argv[3] : "../rtl/mem";
     char path[512];
     int bad = 0;
 

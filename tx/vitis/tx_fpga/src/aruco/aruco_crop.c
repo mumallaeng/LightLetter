@@ -5,7 +5,7 @@
 #include "aruco_geom.h"
 
 /*
- * Reference: tb/aruco_crop/aruco_crop.ipynb (Python golden model)
+ * Reference: tx/aruco/aruco_crop.ipynb (Python golden model)
  */
 
 /* bilinear sample of the raw frame, coordinates clamped to the image (border replicate) */

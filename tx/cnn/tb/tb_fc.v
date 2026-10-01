@@ -1,9 +1,9 @@
 `timescale 1ns / 1ps
 // Bit-exact test: fc_top against the C golden model.
-//   vectors come from `make -f fc.mk rtl-vectors` (cnn/golden_model):
+//   vectors come from `make -f fc.mk rtl-vectors` (tx/cnn/golden):
 //   frame 1 = the real image, frame 2 = every input at 32767, which clamps the quantizers
 //   the FC1 and FC2 streams are checked at the layer boundaries, FC3 at the logit port
-//   run with `make -f sim.mk fc` (tb/cnn); +vcd dumps build/<config>.vcd
+//   run with `make -f sim.mk fc` (tx/cnn/tb); +vcd dumps build/<config>.vcd
 
 module tb_fc;
 
@@ -18,7 +18,7 @@ module tb_fc;
     parameter SEED = 1;
     parameter VCD_FILE = "build/tb_fc.vcd";
     // ROM files: "." is where Vivado puts the project's .mem files for a run; sim.mk points
-    // iverilog at rtl/cnn/mem instead
+    // iverilog at tx/cnn/rtl/mem instead
     parameter MEM = ".";
 
     reg         clk;
@@ -88,26 +88,26 @@ module tb_fc;
     // a path override, and say so plainly if none of them held the files.
     task load_vectors;
         begin
-            // tb/cnn, where iverilog runs
+            // tx/cnn/tb, where iverilog runs
             $readmemh("vectors/fc_stim.mem", stim_mem);
             $readmemh("vectors/fc1_out.mem", out1_mem);
             $readmemh("vectors/fc2_out.mem", out2_mem);
             $readmemh("vectors/fc3_out.mem", out3_mem);
 
-            // rtl/cnn/mem, where a batch run reads the ROMs from
+            // tx/cnn/rtl/mem, where a batch run reads the ROMs from
             if (stim_mem[0] === 16'hxxxx) begin
-                $readmemh("../../tb/cnn/vectors/fc_stim.mem", stim_mem);
-                $readmemh("../../tb/cnn/vectors/fc1_out.mem", out1_mem);
-                $readmemh("../../tb/cnn/vectors/fc2_out.mem", out2_mem);
-                $readmemh("../../tb/cnn/vectors/fc3_out.mem", out3_mem);
+                $readmemh("../../tb/vectors/fc_stim.mem", stim_mem);
+                $readmemh("../../tb/vectors/fc1_out.mem", out1_mem);
+                $readmemh("../../tb/vectors/fc2_out.mem", out2_mem);
+                $readmemh("../../tb/vectors/fc3_out.mem", out3_mem);
             end
 
             // <project>.sim/sim_1/behav/xsim, where Vivado runs
             if (stim_mem[0] === 16'hxxxx) begin
-                $readmemh("../../../../tb/cnn/vectors/fc_stim.mem", stim_mem);
-                $readmemh("../../../../tb/cnn/vectors/fc1_out.mem", out1_mem);
-                $readmemh("../../../../tb/cnn/vectors/fc2_out.mem", out2_mem);
-                $readmemh("../../../../tb/cnn/vectors/fc3_out.mem", out3_mem);
+                $readmemh("../../../../tx/cnn/tb/vectors/fc_stim.mem", stim_mem);
+                $readmemh("../../../../tx/cnn/tb/vectors/fc1_out.mem", out1_mem);
+                $readmemh("../../../../tx/cnn/tb/vectors/fc2_out.mem", out2_mem);
+                $readmemh("../../../../tx/cnn/tb/vectors/fc3_out.mem", out3_mem);
             end
 
             if (stim_mem[0] === 16'hxxxx) begin

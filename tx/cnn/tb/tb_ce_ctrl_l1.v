@@ -2,8 +2,8 @@
 
 // Self-checking testbench for ce_ctrl_l1.
 //
-// Vivado XSim example (run from tb/cnn):
-//   xvlog ../../rtl/cnn/ce_ctrl_l1.v tb_ce_ctrl_l1.v
+// Vivado XSim example (run from tx/cnn/tb):
+//   xvlog ../rtl/ce_ctrl_l1.v tb_ce_ctrl_l1.v
 //   xelab tb_ce_ctrl_l1 -s tb_ce_ctrl_l1_sim
 //   xsim tb_ce_ctrl_l1_sim -runall
 

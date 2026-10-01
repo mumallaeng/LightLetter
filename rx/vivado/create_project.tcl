@@ -9,12 +9,12 @@ set boards [get_board_parts -quiet digilentinc.com:zybo-z7-20:part0:*]
 if {[llength $boards]} { set_property board_part [lindex $boards end] [current_project] }
 set_property target_language Verilog [current_project]
 set_property simulator_language Mixed [current_project]
-foreach dir {fft_top rx snapshot} {
-    add_files -norecurse [glob [file join $root rtl $dir *.v]]
+foreach block {fft bfsk_rx snapshot} {
+    add_files -norecurse [glob [file join $root $block rtl *.v]]
 }
-add_files -norecurse [file join $root rtl fft_top twiddle_128_q14.mem]
+add_files -norecurse [file join $root fft rtl twiddle_128_q14.mem]
 import_ip -files [file join $here ip xadc_wiz_0 xadc_wiz_0.xci]
-add_files -fileset constrs_1 -norecurse [file join $root constraints Zybo-Z7-RX.xdc]
+add_files -fileset constrs_1 -norecurse [file join $here constraints Zybo-Z7-RX.xdc]
 # Recreate IP and wiring from the original project export.
 update_compile_order -fileset sources_1
 source [file join $here recreate_bd.tcl]

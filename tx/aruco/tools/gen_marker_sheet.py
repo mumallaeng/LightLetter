@@ -20,7 +20,7 @@ LABEL_H = 8.0             # strip under each marker for the id and the arrow
 
 
 def load_codes():
-    text = (HERE / "../src/aruco_dict.h").read_text()
+    text = (HERE / "../../vitis/tx_fpga/src/aruco/aruco_dict.h").read_text()
     body = text[text.index("ac_dict[AC_DICT_SIZE]"):]
     return [int(v, 16) for v in re.findall(r"0x([0-9A-Fa-f]{4})", body)]
 

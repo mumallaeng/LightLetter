@@ -1,6 +1,6 @@
 """Integer FC model shared by the cnn_top vector generators.
 
-read_fc_txt(k) parses cnn/golden_model/vectors/fcK.txt (layout in export_fc_vectors.py)
+read_fc_txt(k) parses tx/cnn/golden/vectors/fcK.txt (layout in export_fc_vectors.py)
 and fc(p, x) evaluates one layer exactly as the C golden model / RTL do: INT32 bias plus
 the integer products, then round-half-to-even shift by scale_exp, ReLU when the layer
 has one, clamp to INT16. read_mem() reads a $readmemh file into a list of ints.
@@ -8,8 +8,8 @@ has one, clamp to INT16. read_mem() reads a $readmemh file into a list of ints.
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
-FC_TXT = ROOT / "cnn/golden_model/vectors"
+ROOT = HERE.parents[1]
+FC_TXT = ROOT / "golden/vectors"
 
 
 def read_mem(path):

@@ -1,6 +1,6 @@
 /*
  * Runs the C golden model on vectors/fc{1,2,3}.txt and writes $readmemh files
- * for the RTL testbench (tb/cnn/tb_fc.v):
+ * for the RTL testbench (tx/cnn/tb/tb_fc.v):
  *
  *   <out>/fc_stim.mem    input codes fed to fc_top, arrival order (16 bits)
  *   <out>/fc1_out.mem    golden FC1 output stream, neuron order (16 bits)
@@ -9,7 +9,7 @@
  *   <out>/fc_params.txt  parameters and entry counts
  *
  * The weight and bias ROM files themselves come from export_fc_vectors.py
- * (rtl/cnn/mem/fc*_weight.mem, fc*_bias.mem).
+ * (tx/cnn/rtl/mem/fc*_weight.mem, fc*_bias.mem).
  *
  * Frame 1 is the real image from the Python golden model. Frame 2 is synthetic:
  * every input at the largest activation code, which drives the accumulators past
@@ -149,7 +149,7 @@ static void run_frame(const fc_param_t p[3], const uint16_t *x, int ready_pct,
 int main(int argc, char **argv)
 {
     const char *in_dir  = argc > 1 ? argv[1] : "vectors";
-    const char *out_dir = argc > 2 ? argv[2] : "../../tb/cnn/vectors";
+    const char *out_dir = argc > 2 ? argv[2] : "../tb/vectors";
 
     for (int i = 0; i < 3; i++)
         if (read_vec(in_dir, i + 1, &v[i]) != 0)

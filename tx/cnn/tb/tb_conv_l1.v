@@ -2,18 +2,18 @@
 
 // Full-path testbench for conv_l1 (28x28x1 -> 26x26x6), checked against the C golden model.
 //
-// Vivado XSim (run from tb/cnn):
-//   xvlog ../../rtl/cnn/conv_l1.v ../../rtl/cnn/ce_ctrl_l1.v ../../rtl/cnn/weight_addr_ctrl_l1.v \
-//         ../../rtl/cnn/weight_rom_l1.v ../../rtl/cnn/line_buffer.v ../../rtl/cnn/mac_array_l1.v \
-//         ../../rtl/cnn/MAC_unit.v ../../rtl/cnn/conv_out_stage.v ../../rtl/cnn/output_buffer.v \
-//         ../../rtl/cnn/partial_sum.v ../../rtl/cnn/buffer_ctrl.v ../../rtl/cnn/bias_rom.v \
-//         ../../rtl/cnn/relu_quant.v ../../rtl/cnn/quantizer.v ../../rtl/cnn/relu.v \
-//         ../../rtl/cnn/lane_packer.v ../../rtl/cnn/out_reorder.v tb_conv_l1.v
+// Vivado XSim (run from tx/cnn/tb):
+//   xvlog ../rtl/conv_l1.v ../rtl/ce_ctrl_l1.v ../rtl/weight_addr_ctrl_l1.v \
+//         ../rtl/weight_rom_l1.v ../rtl/line_buffer.v ../rtl/mac_array_l1.v \
+//         ../rtl/MAC_unit.v ../rtl/conv_out_stage.v ../rtl/output_buffer.v \
+//         ../rtl/partial_sum.v ../rtl/buffer_ctrl.v ../rtl/bias_rom.v \
+//         ../rtl/relu_quant.v ../rtl/quantizer.v ../rtl/relu.v \
+//         ../rtl/lane_packer.v ../rtl/out_reorder.v tb_conv_l1.v
 //   xelab tb_conv_l1 -s tb_conv_l1_sim
 //   xsim tb_conv_l1_sim -runall
 //
 // Icarus:
-//   iverilog -g2005 -o tb_conv_l1.vvp tb_conv_l1.v ../../rtl/cnn/*.v && vvp -n tb_conv_l1.vvp
+//   iverilog -g2005 -o tb_conv_l1.vvp tb_conv_l1.v ../rtl/*.v && vvp -n tb_conv_l1.vvp
 //
 // ---------------------------------------------------------------------------
 // weight_rom_l1 이 $readmemh 배열에서 하드코딩 case 문으로 바뀌면서 TB 도 같이 바뀌었다.

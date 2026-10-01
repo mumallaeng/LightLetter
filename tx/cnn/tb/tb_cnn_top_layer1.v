@@ -1,10 +1,10 @@
 `timescale 1ns / 1ps
 
-// cnn_top (conv_l1 -> pool_l1) checked against the C golden vectors in rtl/cnn/rtl_ref/.
+// cnn_top (conv_l1 -> pool_l1) checked against the C golden vectors in tx/cnn/rtl/rtl_ref/.
 //
 //   input 28x28 -> conv1 3x3 (6 och) + ReLU/quant -> 26x26x6 -> maxpool 2x2 -> 13x13x6
 //
-// Vectors (rtl/cnn/rtl_ref/, see README.md there) - FRAMES = 2:
+// Vectors (tx/cnn/rtl/rtl_ref/, see README.md there) - FRAMES = 2:
 //   frame 0 = the real EMNIST sample of the Python model ('6'), frame 1 = the same image flipped L/R
 //   ce1_stim.mem          16 bit x 1568   conv_l1 pixel input, 28x28 raster per frame
 //   ce1_out.mem           49 bit x 2704   conv_l1 output = pool_l1 input  {ch_done, d2, d1, d0}
@@ -41,7 +41,7 @@
 module tb_cnn_top_layer1;
 
     // ---------------- parameters ----------------
-    parameter REF_DIR     = "../../../rtl/cnn/rtl_ref/";
+    parameter REF_DIR     = "../../rtl/rtl_ref/";
     parameter FRAMES      = 2;
     parameter TRACE_FILE  = "sim_trace.log";
     parameter REPORT_FILE = "compare_report.txt";

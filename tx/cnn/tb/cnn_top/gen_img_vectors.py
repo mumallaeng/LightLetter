@@ -1,17 +1,17 @@
 """Test image stimulus + expected results for tb_cnn_top_img.v (cnn_top with real EMNIST images).
 
-test/<folder>/*.png : 28x28 grayscale, upright (already transposed like tb/cnn_golden/data.py), folder = EMNIST byclass
+test/<folder>/*.png : 28x28 grayscale, upright (already transposed like tx/cnn/model/cnn_golden/data.py), folder = EMNIST byclass
                       index (10..35 = A..Z). The network is uppercase only (FC3 26 outputs, class 0 = 'A'), so
                       label = folder - 10; digit folders (0..9) are skipped. The first N_PER_CLASS files of each
                       folder (sorted by name) are used.
 
-Input quantization (conv_l1 input scale 2^-14, rtl/cnn/rtl_ref/README.md):
+Input quantization (conv_l1 input scale 2^-14, tx/cnn/rtl/rtl_ref/README.md):
     pixel_in = round(p / 255 * 2^14)          p = 0..255 -> 0..16384 (never a .5 tie, 255 is odd)
 
 A bit-exact integer model of the whole chain (gen_chain_vectors.py conv / pool, gen_fc_golden.py FC,
 conv SCALE_EXP from rtl_ref/ce_params.txt) (conv_l1 -> pool_l1 -> conv_l2 -> pool_l2 -> FC1..3 -> argmax) gives
 the expected logits / class, so a wrong answer can be told apart: RTL != model -> RTL bug, RTL == model != label ->
-the network itself misclassifies the image. The model is checked first against rtl/cnn/rtl_ref (ce1_stim ->
+the network itself misclassifies the image. The model is checked first against tx/cnn/rtl/rtl_ref (ce1_stim ->
 ce1_out / pool1_out / ce2_out / pool2_out) and vectors/logit_out.mem.
 
     python gen_img_vectors.py [N_PER_CLASS]      (default 5)
@@ -34,8 +34,8 @@ import numpy as np
 from PIL import Image
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[2]
-RTL_REF = ROOT / "rtl/cnn/rtl_ref"
+ROOT = HERE.parents[1]
+RTL_REF = ROOT / "rtl/rtl_ref"
 TEST = HERE / "test"
 BUILD = HERE / "build"
 SAVED = HERE / "vectors"

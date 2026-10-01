@@ -1,6 +1,6 @@
 """Export Output Buffer test vectors from the Python golden model dump.
 
-Reads tb/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json (written by
+Reads tx/cnn/model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json (written by
 cnn_golden.ipynb) and writes integer stimulus / expected values for
 test_output_buffer.c:
 
@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-DUMP = HERE.parents[1] / "tb/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json"
+DUMP = HERE.parents[1] / "model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json"
 
 
 def pow2_scale_of(values, tol=0.05):
