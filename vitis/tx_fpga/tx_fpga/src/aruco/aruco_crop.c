@@ -1,4 +1,3 @@
-#include <math.h>
 #include <string.h>
 #include "aruco_config.h"
 #include "aruco_crop.h"
@@ -118,7 +117,7 @@ int aruco_crop_from_centers(const aruco_frame_t *f, const double centers[6][2], 
             warp_region(f, HR, x0, y0, x1, y1, ARUCO_CELL_W, ARUCO_CELL_H, 0, out->pix[k]);
         } else {
             /* cell straddles the seam, split the output width proportionally */
-            int cut = (int)floor(ARUCO_CELL_W * (ARUCO_SEAM_X - x0) / (x1 - x0) + 0.5);
+            int cut = (int)(ARUCO_CELL_W * (ARUCO_SEAM_X - x0) / (x1 - x0) + 0.5);
             warp_region(f, HL, x0, y0, ARUCO_SEAM_X, y1, cut, ARUCO_CELL_H, 0, out->pix[k]);
             warp_region(f, HR, ARUCO_SEAM_X, y0, x1, y1, ARUCO_CELL_W - cut, ARUCO_CELL_H, cut, out->pix[k]);
         }
@@ -129,7 +128,7 @@ int aruco_crop_from_centers(const aruco_frame_t *f, const double centers[6][2], 
         res->marker_mask = mask;
         for (k = 0; k < ARUCO_CELL_COUNT; k++)
             res->cell_ok[k] = 1;
-        res->fit_rms_px = sqrt(sq / n);
+        res->fit_rms_px = aruco_sqrt(sq / n);
         memcpy(res->center, c, sizeof(res->center));
     }
     return ARUCO_OK;

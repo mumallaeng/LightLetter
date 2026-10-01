@@ -29,6 +29,7 @@ static volatile u32 done_count;
 static volatile u32 overrun_count;
 static volatile XTime irq_time;
 static XTime result_time;
+static void (*done_hook)(void);
 
 static void cnn_isr(void *ref)
 {
@@ -109,6 +110,11 @@ int cnn_ctrl_get_result(u8 *cls)
     }
     XScuGic_Enable(&gic, CNN_IRQ_ID);
     return has_result;
+}
+
+void cnn_ctrl_set_done_hook(void (*hook)(void))
+{
+    done_hook = hook;
 }
 
 /* Global-timer ticks (CPU clock / 2, 3 ns) -> "us.nnn" */
@@ -211,5 +217,9 @@ void cnn_ctrl_poll(void)
         xil_printf("cnn: WARNING %d result(s) overwritten before read\r\n",
                    (int)overrun_count);
         overrun_count = 0;
+    }
+
+    if (done_hook) {
+        done_hook();
     }
 }

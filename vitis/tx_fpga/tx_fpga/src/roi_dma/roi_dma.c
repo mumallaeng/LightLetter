@@ -1,5 +1,7 @@
 #include "roi_dma.h"
 
+#include <string.h>
+
 #include "xaxidma.h"
 #include "xil_cache.h"
 #include "xil_printf.h"
@@ -168,6 +170,21 @@ int roi_dma_send_test_frame(void)
     xil_printf("ROI DMA: sent %u bytes (112x112 RGB, one frame TLAST)\r\n",
                (unsigned)ROI_DMA_FRAME_BYTES);
     return XST_SUCCESS;
+}
+
+/*
+ * img112 : 112x112 image already cropped by the ArUco step. Pixel bytes keep the
+ *          frame store order (G, B, R), so they go to the DMA without any shuffle.
+ */
+int roi_dma_send_image(const u8 *img112)
+{
+    if (!roi_dma_ready) {
+        xil_printf("ROI DMA: not initialized\r\n");
+        return XST_FAILURE;
+    }
+
+    memcpy(roi_frame, img112, ROI_DMA_FRAME_BYTES);
+    return roi_dma_send_frame();
 }
 
 /*

@@ -30,6 +30,8 @@ typedef struct {
 int roi_dma_init(void);
 int roi_dma_send_test_frame(void);
 int roi_dma_send_camera_frame(const u8 *frame, u32 stride);
+/* One already-cropped 112x112 image, bytes G,B,R per pixel, copied into roi_frame and sent. */
+int roi_dma_send_image(const u8 *img112);
 const Roi_dma_times *roi_dma_last_times(void);
 /* Stamp Roi_dma_times.request; call first thing when a capture is requested. */
 void roi_dma_mark_request(void);

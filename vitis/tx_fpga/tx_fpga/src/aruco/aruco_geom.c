@@ -1,4 +1,3 @@
-#include <math.h>
 #include "aruco_config.h"
 #include "aruco_geom.h"
 
@@ -9,6 +8,19 @@
 
 #define UNDIST_ITERS 20
 
+/* Newton iteration, libm is not linked in the Vitis app */
+double aruco_sqrt(double x)
+{
+    double r;
+    int i;
+    if (x <= 0)
+        return 0;
+    r = x > 1 ? x : 1;
+    for (i = 0; i < 30; i++)
+        r = 0.5 * (r + x / r);
+    return r;
+}
+
 /* Gauss elimination with partial pivoting. A is n x n row-major, destroyed */
 static int solve_linear(int n, double *A, double *b, double *x)
 {
@@ -17,9 +29,9 @@ static int solve_linear(int n, double *A, double *b, double *x)
         int p = i;
         double t;
         for (j = i + 1; j < n; j++)
-            if (fabs(A[j * n + i]) > fabs(A[p * n + i]))
+            if (aruco_fabs(A[j * n + i]) > aruco_fabs(A[p * n + i]))
                 p = j;
-        if (fabs(A[p * n + i]) < 1e-12)
+        if (aruco_fabs(A[p * n + i]) < 1e-12)
             return -1;
         if (p != i) {
             for (k = 0; k < n; k++) {
@@ -113,7 +125,7 @@ static void normalize_points(const double (*p)[2], int n, double *cx, double *cy
     for (i = 0; i < n; i++) { *cx += p[i][0]; *cy += p[i][1]; }
     *cx /= n; *cy /= n;
     for (i = 0; i < n; i++)
-        d += sqrt((p[i][0] - *cx) * (p[i][0] - *cx) + (p[i][1] - *cy) * (p[i][1] - *cy));
+        d += aruco_sqrt((p[i][0] - *cx) * (p[i][0] - *cx) + (p[i][1] - *cy) * (p[i][1] - *cy));
     d /= n;
     *s = d > 0 ? 1.41421356237 / d : 1.0;
 }
@@ -167,7 +179,7 @@ int find_homography(const double (*src)[2], const double (*dst)[2], int n, doubl
         H[3 + j] = t[3 + j] / ds + dy * t[6 + j];
         H[6 + j] = t[6 + j];
     }
-    if (fabs(H[8]) < 1e-12)
+    if (aruco_fabs(H[8]) < 1e-12)
         return -1;
     for (i = 0; i < 9; i++)
         H[i] /= H[8];

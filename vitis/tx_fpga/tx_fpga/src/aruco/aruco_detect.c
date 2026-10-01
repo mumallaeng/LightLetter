@@ -1,4 +1,3 @@
-#include <math.h>
 #include <string.h>
 #include "aruco_detect.h"
 #include "aruco_config.h"
@@ -396,8 +395,8 @@ static void pool_add(int id, const aruco_quad_t *q)
     for (i = 0; i < npool; i++) {
         if (pool[i].id != id)
             continue;
-        if (fabs(pool[i].center[0] - m->center[0]) < DUP_DIST
-                && fabs(pool[i].center[1] - m->center[1]) < DUP_DIST)
+        if (aruco_fabs(pool[i].center[0] - m->center[0]) < DUP_DIST
+                && aruco_fabs(pool[i].center[1] - m->center[1]) < DUP_DIST)
             return;
         same++;
     }
@@ -424,7 +423,7 @@ static double fit_rms(const aruco_marker_t *const *m, int n)
         perspective_transform(H, bsrc[i], d);
         sq += (d[0] - und[i][0]) * (d[0] - und[i][0]) + (d[1] - und[i][1]) * (d[1] - und[i][1]);
     }
-    return sqrt(sq / n);
+    return aruco_sqrt(sq / n);
 }
 
 /*

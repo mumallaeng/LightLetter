@@ -1,6 +1,7 @@
 CC ?= cc
+A = ../../tx_fpga/tx_fpga/src/aruco
 CFLAGS = -std=c99 -Wall -Wextra -Wno-unused-function -Wno-unused-parameter -O1 -g
-SRC = ../src/aruco_geom.c ../src/aruco_detect.c ../src/aruco_crop.c \
+SRC = $(A)/aruco_geom.c $(A)/aruco_detect.c $(A)/aruco_crop.c \
        test_aruco.c
 
 test_aruco: $(SRC)
