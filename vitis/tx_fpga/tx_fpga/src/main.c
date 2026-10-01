@@ -62,6 +62,7 @@
 #include "capture_ctrl/capture_ctrl.h"
 #include "roi_dma/roi_dma.h"
 #include "cnn_ctrl/cnn_ctrl.h"
+#include "cpu_cnn/cpu_bench.h"
 /*===========================================================================
  *  Platform glue
  *===========================================================================*/
@@ -91,9 +92,11 @@ VideoMode    vd_mode;
 static void menu_help()
 {
 	xil_printf("\r\n--- keys ---------------------\r\n");
-	xil_printf(" external button : capture next complete frame \r\n");
-	xil_printf(" c    : request capture from UART \r\n");
+	xil_printf(" external button : last camera frame -> 112x112 ROI -> CNN \r\n");
+	xil_printf(" c    : same as the button, from UART \r\n");
 	xil_printf(" d    : send synthetic 112x112 RGB frame through ROI DMA \r\n");
+	xil_printf("        (c / d / button also run the CPU model on the same ROI) \r\n");
+	xil_printf(" b    : CPU CNN bench, 70 built-in images (bit-exact + latency) \r\n");
 	xil_printf(" ? : help \r\n");
 }
 
@@ -110,7 +113,13 @@ static void menu_run()
 	switch(c)
 	{
 	case 'c' : capture_ctrl_trigger(); break;
-	case 'd' : roi_dma_send_test_frame(); break;
+	case 'd' :
+		roi_dma_mark_request();
+		if (roi_dma_send_test_frame() == XST_SUCCESS) {
+			cpu_bench_roi(roi_dma_frame());
+		}
+		break;
+	case 'b' : cpu_bench_testset(); break;
 	case '?' : menu_help();
 	default:	break;
 	}
@@ -254,7 +263,8 @@ int main(void)
     xil_printf("frame buffer at 0x%08X\r\n", (unsigned)FRAME_BUFFER_ADDR);
     xil_printf("init done. nothing else to do.\r\n");
 
-    if (capture_ctrl_init() != XST_SUCCESS) {
+    if (capture_ctrl_init(&vdma, FRAME_BUFFER_ADDR,
+                          vd_mode.width, vd_mode.height) != XST_SUCCESS) {
         xil_printf("Capture GPIO initialization failed. Stopping.\r\n");
         return 1;
     }

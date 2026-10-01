@@ -136,10 +136,13 @@ module tb_img_preprocess;
             expected = ((ox >= OFF_X) && (ox < OFF_X + GLYPH_W) &&
                         (oy >= OFF_Y) && (oy < OFF_Y + GLYPH_H)) ? 227 : 0;
 
-            if (m_data !== {8'd0, expected[7:0]})
+            // cnn_ip input scale 2^-14: p * 64.25 (~ p / 255 * 2^14)
+            expected = {2'b00, expected[7:0], 6'd0} + {10'd0, expected[7:2]};
+
+            if (m_data !== expected[15:0])
                 $fatal(1,
                     "Pixel %0d (%0d,%0d) mismatch: got %0d expected %0d",
-                    out_count, ox, oy, m_data[7:0], expected);
+                    out_count, ox, oy, m_data, expected);
 
             if (m_user !== (out_count == 0))
                 $fatal(1, "TUSER mismatch at output %0d", out_count);
@@ -150,7 +153,8 @@ module tb_img_preprocess;
             if (m_user) user_count = user_count + 1;
             if (m_last) last_count = last_count + 1;
 
-            $fwrite(pgm, "%0d%c", m_data[7:0],
+            // m_data >> 6 recovers the 8-bit pixel.
+            $fwrite(pgm, "%0d%c", m_data[13:6],
                     (ox == OUT_W-1) ? 10 : 32);
             out_count = out_count + 1;
         end

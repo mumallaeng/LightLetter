@@ -126,6 +126,15 @@ module img_preprocess #(
     wire [7:0] input_processed =
         (input_inverted < THRESHOLD) ? 8'd0 : input_inverted;
 
+    // cnn_ip input scale is 2^-14: pixel_in = round(p / 255 * 2^14).
+    // p * 64.25 = (p << 6) + (p >> 2), at most 1 LSB off (255 -> 16383).
+    wire [15:0] cnn_pixel =
+        {2'b00, read_data, 6'd0} + {10'd0, read_data[7:2]};
+
+    // Centering pad; offset = pad / 2 is taken as pad[5:1].
+    wire [5:0] fit_pad_x = OUT_WIDTH  - fit_final_size;
+    wire [5:0] fit_pad_y = OUT_HEIGHT - fit_final_size;
+
     wire fit_candidate_ok =
         ((fit_candidate * fit_long_side_reg) <=
          (fit_short_side_reg * GLYPH_LIMIT));
@@ -327,11 +336,11 @@ module img_preprocess #(
                             glyph_width  <= GLYPH_LIMIT;
                             glyph_height <= fit_final_size;
                             offset_x     <= (OUT_WIDTH - GLYPH_LIMIT) / 2;
-                            offset_y     <= (OUT_HEIGHT - fit_final_size) / 2;
+                            offset_y     <= fit_pad_y[5:1];
                         end else begin
                             glyph_width  <= fit_final_size;
                             glyph_height <= GLYPH_LIMIT;
-                            offset_x     <= (OUT_WIDTH - fit_final_size) / 2;
+                            offset_x     <= fit_pad_x[5:1];
                             offset_y     <= (OUT_HEIGHT - GLYPH_LIMIT) / 2;
                         end
                         map_index  <= 0;
@@ -408,7 +417,7 @@ module img_preprocess #(
                 end
 
                 ST_OUT_LOAD: begin
-                    m_axis_tdata  <= {8'd0, read_data};
+                    m_axis_tdata  <= cnn_pixel;
                     m_axis_tuser  <= (out_x == 0) && (out_y == 0);
                     m_axis_tlast  <= (out_x == OUT_WIDTH - 1) &&
                                      (out_y == OUT_HEIGHT - 1);
