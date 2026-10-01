@@ -1,0 +1,28 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const P=require(process.argv[3] || '../ui/protocol.js');
+const raw=fs.readFileSync(process.argv[2],'utf8');
+const lines=new P.Lines();let parsed=[];
+for(let i=0;i<raw.length;i+=7)parsed.push(...lines.push(raw.slice(i,i+7)).map(JSON.parse));
+const spectra=parsed.filter(x=>x.type==='fft');
+assert.equal(spectra.length,1);
+assert.equal(spectra[0].bins.length,128);
+assert.equal(spectra[0].bins[0],0xffffffffff);
+assert.equal(spectra[0].bins[127],0xffffffffff-127);
+const packets=parsed.filter(x=>x.type==='rx');
+assert.equal(packets.length,145);
+assert.equal(packets.slice(0,17).map(x=>P.decodeEvent(x).char).join(''),'HELLO BFSK WORLD\n');
+assert(parsed.some(x=>x.rx_queue_dropped===12&&x.rx_ack_timeouts===1&&x.fft_timeouts===1));
+assert.equal(P.decodeEvent({type:'rx',data:65,crc_ok:false}),null);
+assert.equal(P.decodeEvent({type:'rx',data:256,crc_ok:true}),null);
+assert.equal(P.decodeEvent({type:'fft',bins:Array(127).fill(0)}),null);
+for(const bad of [NaN,Infinity,-1,1.5,0x10000000000])
+  assert.equal(P.decodeEvent({type:'fft',bins:Array(128).fill(bad)}),null);
+assert.deepEqual(P.decodeEvent({type:'recognition',class_id:0}),{type:'recognition',class_id:0});
+const crlf=[13,10].map(data=>P.decodeEvent({type:'rx',data,crc_ok:true}).char).join('');
+assert.equal(crlf,'\r\n');
+assert.equal(P.charLabel(' '),'공백');
+assert.equal(P.charLabel('\n'),'LF');
+const recovery=new P.Lines();
+assert.deepEqual(recovery.push('x'.repeat(9000)+'\n{"type":"capture"}\r\n'),['{"type":"capture"}']);
+console.log('PASS: firmware JSON to UI parser, 128 bins, text/CRLF, malformed and fragmented input');

@@ -179,3 +179,12 @@ vitis/BFSK_TX_Test_system/_ide/scripts/systemdebugger_*.tcl
 
 # macOS debug symbols from local builds
 **/*.dSYM/
+
+# Recreated project/workspace and tool caches (from BFSK_Rx_UI)
+vivado/project/
+vitis/workspace/
+*.pb
+*.o
+*.obj
+# Keep the selected final verification logs.
+!docs/reports/*.log

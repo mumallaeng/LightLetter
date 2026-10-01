@@ -1,3 +1,4 @@
+`timescale 1ns / 1ps
 module rx_frame_decoder (
     input wire clk,
     input wire rst_n,
@@ -67,7 +68,7 @@ module rx_frame_decoder (
         packet_error   = 1'b0;
 
         if (frame_abort) begin
-            // 오류/종료 신호를 여기서 출력하므로 ERROR를 다시 거치지 않는다.
+            // ??/?? ??? ??? ????? ERROR? ?? ??? ???.
             n_state      = ST_IDLE;
             n_shift_reg  = 8'h00;
             n_bit_count  = 3'd0;
@@ -103,7 +104,7 @@ module rx_frame_decoder (
                         if (c_bit_count == 7) begin
                             n_state = ST_READ_DATA;
                             n_bit_count = 0;
-                            n_frame_id = n_shift_reg;
+                            n_frame_id = {c_shift_reg[6:0], sym_bit};
                         end
                     end
                 end
@@ -114,7 +115,7 @@ module rx_frame_decoder (
                         if (c_bit_count == 7) begin
                             n_state = ST_READ_CRC;
                             n_bit_count = 0;
-                            n_data = n_shift_reg;
+                            n_data = {c_shift_reg[6:0], sym_bit};
                         end
                     end
                 end
@@ -125,7 +126,7 @@ module rx_frame_decoder (
                         if (c_bit_count == 7) begin
                             n_state = ST_DONE;
                             n_bit_count = 0;
-                            n_received_crc = n_shift_reg;
+                            n_received_crc = {c_shift_reg[6:0], sym_bit};
                         end
                     end
                 end
@@ -151,3 +152,5 @@ module rx_frame_decoder (
 
     end
 endmodule
+
+

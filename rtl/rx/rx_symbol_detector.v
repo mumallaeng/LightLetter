@@ -1,18 +1,18 @@
 `timescale 1ns / 1ps
 
 module rx_symbol_detector #(
-    parameter MAG_W = 24
+    parameter MAG_W = 40
 ) (
     input  wire                 clk,
     input  wire                 rst_n,
 
-    // rx_bin_detectorì—ì„œ 128-sample FFT ë¸”ë¡ë§ˆë‹¤ ì „ë‹¬ë˜ëŠ” ê°’
+    // rx_bin_detector?—?„œ 128-sample FFT ë¸”ë¡ë§ˆë‹¤ ? „?‹¬?˜?Š” ê°?
     input  wire [MAG_W-1:0]     bin8_power,
     input  wire [MAG_W-1:0]     bin16_power,
     input  wire [MAG_W-1:0]     bin20_power,
     input  wire                 fft_block_done,
 
-    // 128-sample FFT ë¸”ë¡ í•˜ë‚˜ì— ëŒ€í•œ ì£¼íŒŒìˆ˜ íŒì • ê²°ê³¼
+    // 128-sample FFT ë¸”ë¡ ?•˜?‚˜?— ???•œ ì£¼íŒŒ?ˆ˜ ?Œ? • ê²°ê³¼
     output wire [1:0]           block_code,
     output wire                 block_code_valid
 );
@@ -25,9 +25,9 @@ module rx_symbol_detector #(
     reg [1:0] block_code_reg;
     reg       block_code_valid_reg;
 
-    // ë‘ ë²ˆì§¸ Power ëŒ€ë¹„ 20% ì´í•˜ì˜ ì°¨ì´ëŠ” INVALIDë¡œ ì²˜ë¦¬í•œë‹¤.
-    // 10 * ìµœëŒ€ê°’ > 12 * ë‚˜ë¨¸ì§€ ê°’ ë‘ ê°œë¥¼ ëª¨ë‘ ë§Œì¡±í•´ì•¼ ìœ íš¨í•˜ë‹¤.
-    // ê³±ì…ˆ ê²°ê³¼ê°€ ë„˜ì¹˜ì§€ ì•Šë„ë¡ MAG_W + 4ë¹„íŠ¸ë¡œ í™•ì¥í•œë‹¤.
+    // ?‘ ë²ˆì§¸ Power ??ë¹? 20% ?´?•˜?˜ ì°¨ì´?Š” INVALIDë¡? ì²˜ë¦¬?•œ?‹¤.
+    // 10 * ìµœë?ê°? > 12 * ?‚˜ë¨¸ì? ê°? ?‘ ê°œë?? ëª¨ë‘ ë§Œì¡±?•´?•¼ ?œ ?š¨?•˜?‹¤.
+    // ê³±ì…ˆ ê²°ê³¼ê°? ?„˜ì¹˜ì? ?•Š?„ë¡? MAG_W + 4ë¹„íŠ¸ë¡? ?™•?¥?•œ?‹¤.
     wire [MAG_W+3:0] p8  = {4'b0000, bin8_power};
     wire [MAG_W+3:0] p16 = {4'b0000, bin16_power};
     wire [MAG_W+3:0] p20 = {4'b0000, bin20_power};
@@ -47,7 +47,7 @@ module rx_symbol_detector #(
             block_code_valid_reg <= 1'b0;
         end
         else begin
-            // ìƒˆë¡œìš´ FFT ë¸”ë¡ íŒì •ì´ ìˆì„ ë•Œë§Œ í•œ í´ëŸ­ ë°œìƒí•œë‹¤.
+            // ?ƒˆë¡œìš´ FFT ë¸”ë¡ ?Œ? •?´ ?ˆ?„ ?•Œë§? ?•œ ?´?Ÿ­ ë°œìƒ?•œ?‹¤.
             block_code_valid_reg <= 1'b0;
 
             if (fft_block_done) begin
@@ -64,11 +64,11 @@ module rx_symbol_detector #(
                     block_code_reg <= CODE_SYNC;
                 end
                 else begin
-                    // ë™ë¥ , ëª¨ë‘ 0 ë˜ëŠ” ìš°ì„¸ ì°¨ì´ê°€ 20% ì´í•˜ì´ë©´ INVALID.
+                    // ?™ë¥?, ëª¨ë‘ 0 ?˜?Š” ?š°?„¸ ì°¨ì´ê°? 20% ?´?•˜?´ë©? INVALID.
                     block_code_reg <= CODE_INVALID;
                 end
 
-                // INVALIDë„ í•˜ë‚˜ì˜ ì™„ë£Œëœ íŒì • ê²°ê³¼ì´ë¯€ë¡œ validë¥¼ ë°œìƒì‹œí‚¨ë‹¤.
+                // INVALID?„ ?•˜?‚˜?˜ ?™„ë£Œëœ ?Œ? • ê²°ê³¼?´ë¯?ë¡? validë¥? ë°œìƒ?‹œ?‚¨?‹¤.
                 block_code_valid_reg <= 1'b1;
             end
         end
