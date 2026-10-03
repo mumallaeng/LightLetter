@@ -5,9 +5,9 @@
 //           The group's first input carries `first` (the accumulators start from the bias,
 //           DSP opmode C + M); the group's last input waits until the drain register is free
 //   FLUSH : after a layer's last group, until the MAC pipeline and the drain are empty
-// rom_addr is the row the NEXT cycle needs (BRAM prefetch) and re-addresses the same row while
+// weight_addr is the row the NEXT cycle needs (BRAM prefetch) and re-addresses the same row while
 // RUN stalls. grp_base tracks ROM_BASE + group * N_IN with adds only, like the conv-side
-// address counters. fill_cnt counts the frame's inputs in act_in and clears after FC1.
+// address counters. fill_cnt counts the frame's inputs in fc1_in and clears after FC1.
 
 module fc_ctrl #(
     parameter N_IN1      = 400,
@@ -32,13 +32,13 @@ module fc_ctrl #(
     input  wire               mac_busy,   // <- fc_mac
     input  wire               hold_free,  // <- fc_drain
     output wire               fc_in_ready,
-    output wire               in_we,      // act_in write of fc_in_data at in_waddr
-    output wire [ IN_AW-1:0]  in_waddr,
+    output wire               fc1_in_we,      // fc1_in write of fc_in_data at fc1_in_waddr
+    output wire [ IN_AW-1:0]  fc1_in_waddr,
     output wire [       1:0]  layer,      // 1..3, 0 in IDLE
     output wire [       2:0]  group,
-    output wire [ IN_AW-1:0]  x_raddr,    // input index i
-    output reg  [ROM_AW-1:0]  rom_addr,   // prefetch for the next cycle
-    output reg  [BIAS_AW-1:0] bias_addr,  // the group's bias row, read with the first input
+    output wire [ IN_AW-1:0]  feature_raddr, // input index i
+    output reg  [ROM_AW-1:0]  weight_addr, // prefetch for the next cycle
+    output reg  [BIAS_AW-1:0] bias_addr,   // the group's bias row, read with the first input
     output reg                first,
     output reg                mac_en,
     output reg                last
@@ -76,8 +76,8 @@ module fc_ctrl #(
 
     // ========== input fill (independent of the FSM) ==========
     assign fc_in_ready = (fill_cnt < FILL_FULL[IN_AW-1:0]);
-    assign in_we       = fc_in_valid & fc_in_ready;
-    assign in_waddr    = fill_cnt;
+    assign fc1_in_we    = fc_in_valid & fc_in_ready;
+    assign fc1_in_waddr = fill_cnt;
 
     // ========== Next State Logic ==========
     always @(*) begin : fc_ctrl_comb
@@ -85,7 +85,7 @@ module fc_ctrl #(
         layer_next    = layer_r;
         group_next    = group_r;
         i_next        = i;
-        fill_cnt_next = in_we ? fill_cnt + 1'b1 : fill_cnt;
+        fill_cnt_next = fc1_in_we ? fill_cnt + 1'b1 : fill_cnt;
         grp_base_next = grp_base;
         first         = 1'b0;
         mac_en        = 1'b0;
@@ -122,7 +122,7 @@ module fc_ctrl #(
             end
             default: begin  // S_FLUSH
                 if (!mac_busy & hold_free) begin
-                    if (layer_r == 2'd1) fill_cnt_next = in_we ? {{(IN_AW - 1) {1'b0}}, 1'b1} : {IN_AW{1'b0}};
+                    if (layer_r == 2'd1) fill_cnt_next = fc1_in_we ? {{(IN_AW - 1) {1'b0}}, 1'b1} : {IN_AW{1'b0}};
                     if (layer_r != 2'd3) begin
                         layer_next    = layer_r + 1'b1;
                         group_next    = 3'd0;
@@ -139,7 +139,7 @@ module fc_ctrl #(
 
         // ========== Output Logic ==========
         // the row the next cycle issues: where the counters land after this cycle
-        rom_addr = grp_base_next + {{(ROM_AW - IN_AW) {1'b0}}, i_next};
+        weight_addr = grp_base_next + {{(ROM_AW - IN_AW) {1'b0}}, i_next};
         case (layer_r)
             2'd1:    bias_addr = BIAS_BASE1 + group_r;
             2'd2:    bias_addr = BIAS_BASE2 + group_r;
@@ -150,7 +150,7 @@ module fc_ctrl #(
 
     assign layer   = layer_r;
     assign group   = group_r;
-    assign x_raddr = i;
+    assign feature_raddr = i;
 
     always @(posedge clk) begin
         if (!rst_n) begin

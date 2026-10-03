@@ -1,11 +1,11 @@
 `timescale 1ns / 1ps
-// P multipliers and P accumulators of the shared engine. Every `mac_en` adds x * w[lane]; the
+// P multipliers and P accumulators of the shared engine. Every `mac_en` adds feature * weight[lane]; the
 // group's first input (`first`) starts from the bias instead of the running sum, which is the
 // DSP48E1's own opmode switch (C + M, then P + M) rather than a fabric mux. Three register
 // stages after the issue cycle: operands (DSP A/B registers) -> products (M register) ->
 // accumulate (the P register). The flags ride along, so the sums of the group's last input are
 // announced on sum_valid in the cycle the accumulate stage handles it.
-// x is an unsigned activation code, w a signed weight; lane l sits in bits [16*l +: 16].
+// feature is an unsigned activation code, weight is signed; lane l sits in bits [16*l +: 16].
 
 module fc_mac #(
     parameter P     = 20,
@@ -13,9 +13,9 @@ module fc_mac #(
 ) (
     input  wire                clk,
     input  wire                rst_n,
-    input  wire [        15:0] x,
-    input  wire [    16*P-1:0] w,
-    input  wire [    32*P-1:0] b,
+    input  wire [        15:0] feature,
+    input  wire [    16*P-1:0] weight,
+    input  wire [    32*P-1:0] bias,
     input  wire                first,
     input  wire                mac_en,
     input  wire                last,
@@ -29,16 +29,16 @@ module fc_mac #(
 );
 
     // ========== stage 1: operand registers ==========
-    reg [    15:0] s1_x;
-    reg [16*P-1:0] s1_w;
-    reg [32*P-1:0] s1_b;
+    reg [    15:0] s1_feature;
+    reg [16*P-1:0] s1_weight;
+    reg [32*P-1:0] s1_bias;
     reg            s1_first, s1_mac, s1_last, s1_valid;
     reg [     1:0] s1_layer;
     reg [     2:0] s1_group;
 
     // ========== stage 2: products ==========
     reg signed [31:0] s2_prod[0:P-1];
-    reg [32*P-1:0]    s2_b;
+    reg [32*P-1:0]    s2_bias;
     reg               s2_first, s2_mac, s2_last, s2_valid;
     reg [     1:0]    s2_layer;
     reg [     2:0]    s2_group;
@@ -48,16 +48,16 @@ module fc_mac #(
 
     always @(posedge clk) begin
         if (!rst_n) begin
-            s1_x <= 16'd0;  s1_w <= {(16 * P) {1'b0}};  s1_b <= {(32 * P) {1'b0}};
+            s1_feature <= 16'd0;  s1_weight <= {(16 * P) {1'b0}};  s1_bias <= {(32 * P) {1'b0}};
             s1_first <= 1'b0; s1_mac <= 1'b0; s1_last <= 1'b0; s1_valid <= 1'b0;
             s1_layer <= 2'd0; s1_group <= 3'd0;
-            s2_b <= {(32 * P) {1'b0}};
+            s2_bias <= {(32 * P) {1'b0}};
             s2_first <= 1'b0; s2_mac <= 1'b0; s2_last <= 1'b0; s2_valid <= 1'b0;
             s2_layer <= 2'd0; s2_group <= 3'd0;
         end else begin
-            s1_x     <= x;
-            s1_w     <= w;
-            s1_b     <= b;
+            s1_feature <= feature;
+            s1_weight  <= weight;
+            s1_bias    <= bias;
             s1_first <= first & mac_en;
             s1_mac   <= mac_en;
             s1_last  <= last & mac_en;
@@ -65,7 +65,7 @@ module fc_mac #(
             s1_layer <= layer;
             s1_group <= group;
 
-            s2_b     <= s1_b;
+            s2_bias  <= s1_bias;
             s2_first <= s1_first;
             s2_mac   <= s1_mac;
             s2_last  <= s1_last;
@@ -78,14 +78,14 @@ module fc_mac #(
     genvar l;
     generate
         for (l = 0; l < P; l = l + 1) begin : GEN_LANE
-            // product register: unsigned x (17-bit signed) times signed w
+            // product register: unsigned feature (17-bit signed) times signed weight
             always @(posedge clk) begin
                 if (!rst_n) s2_prod[l] <= 32'sd0;
-                else s2_prod[l] <= $signed({1'b0, s1_x}) * $signed(s1_w[16*l+:16]);
+                else s2_prod[l] <= $signed({1'b0, s1_feature}) * $signed(s1_weight[16*l+:16]);
             end
 
             // accumulate: the group's first input adds to the bias, the rest to the running sum
-            wire signed [ACC_W-1:0] bias_ext = $signed({{(ACC_W - 32) {s2_b[32*l+31]}}, s2_b[32*l+:32]});
+            wire signed [ACC_W-1:0] bias_ext = $signed({{(ACC_W - 32) {s2_bias[32*l+31]}}, s2_bias[32*l+:32]});
             wire signed [ACC_W-1:0] prod_ext = $signed({{(ACC_W - 32) {s2_prod[l][31]}}, s2_prod[l]});
             wire signed [ACC_W-1:0] base     = s2_first ? bias_ext : acc[l];
             wire signed [ACC_W-1:0] lane_sum = (s2_valid & s2_mac) ? base + prod_ext : acc[l];

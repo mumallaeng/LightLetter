@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 // Drain of the shared engine: holds one group's P sums and quantizes them one per clock in
-// lane order. FC1 / FC2 values are written into the next layer's activation buffer, FC3 values
+// lane order. FC1 / FC2 values are written into the next layer's feature buffer, FC3 values
 // leave on the logit stream and wait for logit_ready. hold_free tells fc_ctrl the register is
 // empty; fc_ctrl only issues a group's last input when it is, so sums never land on a full one.
 
@@ -22,10 +22,10 @@ module fc_drain #(
     input  wire [        2:0] sum_group,
     input  wire               logit_ready,
     output wire               hold_free,
-    output wire               act_we,     // one FC1 / FC2 value into act_a / act_b
-    output wire [        1:0] act_layer,
-    output wire [        6:0] act_waddr,  // neuron = group * P + lane
-    output wire [       15:0] act_wdata,
+    output wire               feature_we,     // one FC1 / FC2 value into fc2_in / fc3_in
+    output wire [        1:0] feature_layer,
+    output wire [        6:0] feature_waddr,  // neuron = group * P + lane
+    output wire [       15:0] feature_wdata,
     output wire signed [15:0] logit_data,
     output wire               logit_valid
 );
@@ -73,10 +73,10 @@ module fc_drain #(
     wire pop      = valid & (to_logit ? logit_ready : 1'b1);
 
     assign hold_free   = ~valid;
-    assign act_we      = valid & ~to_logit;
-    assign act_layer   = layer;
-    assign act_waddr   = {4'd0, group} * 7'd20 + {2'd0, idx};
-    assign act_wdata   = y;
+    assign feature_we      = valid & ~to_logit;
+    assign feature_layer   = layer;
+    assign feature_waddr   = {4'd0, group} * 7'd20 + {2'd0, idx};
+    assign feature_wdata   = y;
     assign logit_data  = $signed(y);
     assign logit_valid = valid & to_logit;
 

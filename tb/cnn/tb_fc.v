@@ -2,7 +2,7 @@
 // Bit-exact test: fc_top against the C golden model.
 //   vectors come from `make -f fc.mk rtl-vectors` (cnn/golden_model):
 //   frame 1 = the real image, frame 2 = every input at 32767, which clamps the quantizers
-//   the FC1 and FC2 values are checked as the drain writes them into act_a / act_b, FC3 at the logit port
+//   the FC1 and FC2 values are checked as the drain writes them into fc2_in / fc3_in, FC3 at the logit port
 //   run with `make -f sim.mk fc` (tb/cnn); +vcd dumps build/<config>.vcd
 
 module tb_fc;
@@ -57,9 +57,9 @@ module tb_fc;
     reg [15:0] logit_prev;
 
     // layer boundaries: the drain writes one FC1 / FC2 value per clock into the next buffer
-    wire        fc1_fire = u_fc_top.u_drain.act_we & (u_fc_top.u_drain.act_layer == 2'd1);
-    wire        fc2_fire = u_fc_top.u_drain.act_we & (u_fc_top.u_drain.act_layer == 2'd2);
-    wire [15:0] fc_wdata = u_fc_top.u_drain.act_wdata;
+    wire        fc1_fire = u_fc_top.u_drain.feature_we & (u_fc_top.u_drain.feature_layer == 2'd1);
+    wire        fc2_fire = u_fc_top.u_drain.feature_we & (u_fc_top.u_drain.feature_layer == 2'd2);
+    wire [15:0] fc_wdata = u_fc_top.u_drain.feature_wdata;
 
     // a group's sums arriving while the drain register is still full would be lost
     wire drain_overrun = u_fc_top.u_mac.sum_valid & u_fc_top.u_drain.valid;

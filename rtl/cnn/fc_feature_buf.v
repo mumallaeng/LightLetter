@@ -1,9 +1,9 @@
 `timescale 1ns / 1ps
-// Activation buffer: one layer's inputs. Written one value per clock, read asynchronously
+// Feature buffer: one layer's inputs. Written one value per clock, read asynchronously
 // (distributed RAM), so the value at raddr is on rdata in the same cycle.
 // Three instances in fc_top: the MaxPooling frame (400), the FC1 outputs (120), the FC2 outputs (84).
 
-module fc_act_buf #(
+module fc_feature_buf #(
     parameter DEPTH = 400,
     parameter AW    = (DEPTH > 1) ? $clog2(DEPTH) : 1
 ) (
