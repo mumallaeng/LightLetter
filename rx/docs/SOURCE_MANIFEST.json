@@ -1,0 +1,453 @@
+{
+  "created": "2026-09-29T15:21:01.197102",
+  "ui_upstream_branch": "feat/ui-dashboard",
+  "ui_upstream_commit": "54271a4307fc3492f8417fbd15a71771ee6b8b1a",
+  "files": [
+    {
+      "file": "fft/rtl/address_generator.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/address_generator.v",
+      "sha256_source": "777696a3ecdc4180f62f76f1705afe8fed538357959d721f5fdd16ff59419209"
+    },
+    {
+      "file": "fft/rtl/butterfly.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/butterfly.v",
+      "sha256_source": "ae7661cad262db87e0e00f43bc0653577cca84c6b064a2f19b0b16b34d54eb1f"
+    },
+    {
+      "file": "fft/rtl/data_memory.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/data_memory.v",
+      "sha256_source": "2b90b842d5bea72c09d4362dd41738ae6290cc2c55552f6b13e6b4032099b201"
+    },
+    {
+      "file": "fft/rtl/fft_buffer.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/fft_buffer.v",
+      "sha256_source": "a5ff3c2962c1357cdfc8042ddcd54227c7528e01b2f1a0f79c5827402f63d49b"
+    },
+    {
+      "file": "fft/rtl/fft_core.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/fft_core.v",
+      "sha256_source": "92d6a7f70dc428fbdf474b101f6b28e8f82a715b0884d4cb25cd5fba1939a03d"
+    },
+    {
+      "file": "fft/rtl/fft_core_controller.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/fft_core_controller.v",
+      "sha256_source": "30e50b678d20c9c06dc7f74849256681c847e70f8506c77d4e97293849257258"
+    },
+    {
+      "file": "fft/rtl/fft_power.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/fft_power.v",
+      "sha256_source": "db3231d4b2f099c513ed42604d93fcc146146cac39fe4122c7611506a9a52284"
+    },
+    {
+      "file": "fft/rtl/fft_top.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/fft_top.v",
+      "sha256_source": "b9d8a5660b928b1137793d71b956675bc71c21b64699e29a489df29449a774dc"
+    },
+    {
+      "file": "fft/rtl/mem_read_path.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/mem_read_path.v",
+      "sha256_source": "73d59e67a3bae23fc27fb4d1fbb47d3675297586647d8ace36225732baee029a"
+    },
+    {
+      "file": "fft/rtl/mem_write_path.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/mem_write_path.v",
+      "sha256_source": "30f527d946e0aa145a01bd6a1a4cdfbfb805a33fd036a860d81f5504282751b1"
+    },
+    {
+      "file": "fft/rtl/multiplier.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/multiplier.v",
+      "sha256_source": "f1976804130c9c3964edc770e3b8a02615b17bd93b4699825d05cdb73c45f8ee"
+    },
+    {
+      "file": "fft/rtl/twiddle_rom.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/twiddle_rom.v",
+      "sha256_source": "d43b5042b78987915f5ba427304f93fe3305b420fffb2d8adbf27b934f29c2cc"
+    },
+    {
+      "file": "fft/rtl/twiddle_128_q14.mem",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/fft_2_rx/twiddle_128_q14.mem",
+      "sha256_source": "191513d50c5aec3dcb90d072ff19a9d8665f9219d65edec475c9632c97e4fedc"
+    },
+    {
+      "file": "bfsk_rx/rtl/rx_top.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/rx/rx_top.v",
+      "sha256_source": "5f61aa3d222fe499977186f108072f4a0a953b09338f79b68067f4f38b505d26"
+    },
+    {
+      "file": "bfsk_rx/rtl/rx_bin_detector.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/rx/rx_bin_detector.v",
+      "sha256_source": "d7c3f606667f7cf3fb8e0cadf634f80a5567d2d523b17d6c9cfab7503aa46a66"
+    },
+    {
+      "file": "bfsk_rx/rtl/rx_symbol_detector.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/rx/rx_symbol_detector.v",
+      "sha256_source": "7661e31eef76a21ca1e39512199727d48a973667a194b4cd0299b7448fcef1a8"
+    },
+    {
+      "file": "bfsk_rx/rtl/rx_symbol_sync.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/rx/rx_symbol_sync.v",
+      "sha256_source": "27e97eee2e9681a19ec9892eb72bfd1c6df0fda699173c61ad15504054517c85"
+    },
+    {
+      "file": "bfsk_rx/rtl/rx_frame_decoder.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/rx/rx_frame_decoder.v",
+      "sha256_source": "31eb1b7df465e1048e9d38175faf1fcf94793413081169b2f3ab759502632a24"
+    },
+    {
+      "file": "bfsk_rx/rtl/rx_crc8_check.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/rx/rx_crc8_check.v",
+      "sha256_source": "d9c8c14999d96a956dc7699051972a0eed097f37eb0ea78c17c4a93abbf58c12"
+    },
+    {
+      "file": "bfsk_rx/rtl/rx_latch.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/imports/rx/rx_latch.v",
+      "sha256_source": "e60fff8e520475dcc0b5971bd9181411c4dc84c351b3d88a28bcccc5feba4f73"
+    },
+    {
+      "file": "snapshot/rtl/fft_snapshot_buffer.v",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/new/fft_snapshot_buffer.v",
+      "sha256_source": "8f27c77c962df1415ffebbed6668d4b1d50717a62d424db6ba38502c4599776e"
+    },
+    {
+      "file": "vivado/constraints/Zybo-Z7-RX.xdc",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/constrs_1/imports/rx/Zybo-Z7-RX.xdc",
+      "sha256_source": "617bd4a5880b15222df81e6202132ade15f43a67518bf9639158160af630f064"
+    },
+    {
+      "file": "vivado/design_1/design_1.bd",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/bd/design_1/design_1.bd",
+      "sha256_source": "694a53c469ccdad1e6a1ad20b31c8513ee0dcadf779d6a05205704fe132efc4f"
+    },
+    {
+      "file": "vivado/design_1/ip/design_1_auto_pc_0/design_1_auto_pc_0.xci",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/bd/design_1/ip/design_1_auto_pc_0/design_1_auto_pc_0.xci",
+      "sha256_source": "78ccc34d4e6e7a2e44fb26dccbc055e2c397aaa7b60f8b5037ee540b1f0db15c"
+    },
+    {
+      "file": "vivado/design_1/ip/design_1_axi_gpio_0_0/design_1_axi_gpio_0_0.xci",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/bd/design_1/ip/design_1_axi_gpio_0_0/design_1_axi_gpio_0_0.xci",
+      "sha256_source": "1c041a5c8b24e833b2c908aff8645d1bb89ca1e945226e1943821884c624fe02"
+    },
+    {
+      "file": "vivado/design_1/ip/design_1_axi_gpio_0_1/design_1_axi_gpio_0_1.xci",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/bd/design_1/ip/design_1_axi_gpio_0_1/design_1_axi_gpio_0_1.xci",
+      "sha256_source": "b335a7b5f5ba177a8bd72ad03408859e827143f1bdd09812d2d9bdf213dac429"
+    },
+    {
+      "file": "vivado/design_1/ip/design_1_axi_gpio_1_0/design_1_axi_gpio_1_0.xci",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/bd/design_1/ip/design_1_axi_gpio_1_0/design_1_axi_gpio_1_0.xci",
+      "sha256_source": "1b32de6a94c5dfb8be25d785ca4852fa9e015231137451100bb7a3d1a781358e"
+    },
+    {
+      "file": "vivado/design_1/ip/design_1_clk_wiz_0_0/design_1_clk_wiz_0_0.xci",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/bd/design_1/ip/design_1_clk_wiz_0_0/design_1_clk_wiz_0_0.xci",
+      "sha256_source": "8de441cb8b42cd8defe07c64172130caad5080d1bb43de268966f1b52c1f4532"
+    },
+    {
+      "file": "vivado/design_1/ip/design_1_fft_snapshot_buffer_0_0/design_1_fft_snapshot_buffer_0_0.xci",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/bd/design_1/ip/design_1_fft_snapshot_buffer_0_0/design_1_fft_snapshot_buffer_0_0.xci",
+      "sha256_source": "6b2f3e3723a808ae8ea18c53db6dd8849483cb3f6c6b4bc9f5a62eff8c96306c"
+    },
+    {
+      "file": "vivado/design_1/ip/design_1_fft_top_0_1/design_1_fft_top_0_1.xci",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/bd/design_1/ip/design_1_fft_top_0_1/design_1_fft_top_0_1.xci",
+      "sha256_source": "b0c05185d61d1dcdf52ad3efd270d806835719d1f26de8da90ad7a893c0499f3"
+    },
+    {
+      "file": "vivado/design_1/ip/design_1_processing_system7_0_0/design_1_processing_system7_0_0.xci",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/bd/design_1/ip/design_1_processing_system7_0_0/design_1_processing_system7_0_0.xci",
+      "sha256_source": "a3550bc87827bc6892c3d94ff8bf19fa90ca286fe1331e8ab5f9387b5797b251"
+    },
+    {
+      "file": "vivado/design_1/ip/design_1_ps7_0_axi_periph_0/design_1_ps7_0_axi_periph_0.xci",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/bd/design_1/ip/design_1_ps7_0_axi_periph_0/design_1_ps7_0_axi_periph_0.xci",
+      "sha256_source": "2d846949d6bb782277286497e11f56f3ec10ba9567457748840a11ac6a5b838f"
+    },
+    {
+      "file": "vivado/design_1/ip/design_1_rst_clk_wiz_0_100M_1/design_1_rst_clk_wiz_0_100M_1.xci",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/bd/design_1/ip/design_1_rst_clk_wiz_0_100M_1/design_1_rst_clk_wiz_0_100M_1.xci",
+      "sha256_source": "71db84b96386f5027911d5ee98e45b0db5e49e2a638e06cfb6bbe6f2fb2aab0a"
+    },
+    {
+      "file": "vivado/design_1/ip/design_1_rx_latch_0_0/design_1_rx_latch_0_0.xci",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/bd/design_1/ip/design_1_rx_latch_0_0/design_1_rx_latch_0_0.xci",
+      "sha256_source": "3ca69ce435db31f2aa5b575955df9d15d8e4b77711b90d338bb8f963097c9b6c"
+    },
+    {
+      "file": "vivado/design_1/ip/design_1_rx_top_0_0/design_1_rx_top_0_0.xci",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/bd/design_1/ip/design_1_rx_top_0_0/design_1_rx_top_0_0.xci",
+      "sha256_source": "bfc0188ddf8cb20af9aedc6cb709e5c11d175e0de70cc9607ea01e07eaa0bd15"
+    },
+    {
+      "file": "vivado/design_1/ip/design_1_util_vector_logic_0_0/design_1_util_vector_logic_0_0.xci",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/bd/design_1/ip/design_1_util_vector_logic_0_0/design_1_util_vector_logic_0_0.xci",
+      "sha256_source": "60369e4f6e7e60bd1352a18ceee38ea4a91c38af1b33aa04de13eb80a4e55aff"
+    },
+    {
+      "file": "vivado/design_1/ip/design_1_xbar_0/design_1_xbar_0.xci",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/bd/design_1/ip/design_1_xbar_0/design_1_xbar_0.xci",
+      "sha256_source": "c9a8aa0279073e9480061c2d91d1bd4c296a6b8e5dbb888613d2ca338febdb11"
+    },
+    {
+      "file": "vivado/ip/xadc_wiz_0/xadc_wiz_0.xci",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sources_1/ip/xadc_wiz_0/xadc_wiz_0.xci",
+      "sha256_source": "c109db6562b9461e02c4b93be70efa9a91f6a6aae10499e822c2a30e3100cb94"
+    },
+    {
+      "file": "vitis/src/app/app_csv.c",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/app/app_csv.c",
+      "sha256_source": "8251053f059789533d345c681bb0a8c8cf19958733bc141fccae9c6a9714c0cd"
+    },
+    {
+      "file": "vitis/src/app/app_csv.h",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/app/app_csv.h",
+      "sha256_source": "cc5d8828086c725d2ba8f70512fad482ce7e6acafe93304a1a244cc0ce99827a"
+    },
+    {
+      "file": "vitis/src/app/app_dashboard.c",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/app/app_dashboard.c",
+      "sha256_source": "e03a302463faa2e795ba72f2a60f04e2a0ac157b0037559e4ecb65a6938c8309"
+    },
+    {
+      "file": "vitis/src/app/app_dashboard.h",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/app/app_dashboard.h",
+      "sha256_source": "2e27072203dfaa28894b09f7687ec661a6c81cce106b6f22cf7c038bf70ba80f"
+    },
+    {
+      "file": "vitis/src/drv/drv_bfsk_rx.c",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/drv/drv_bfsk_rx.c",
+      "sha256_source": "58fef558ee632c65b45b807db92b886bce7e94eb7512dac84a7c7c1912c24983"
+    },
+    {
+      "file": "vitis/src/drv/drv_bfsk_rx.h",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/drv/drv_bfsk_rx.h",
+      "sha256_source": "d1e9acc4920ad25615ed4bb6dd6abb086060fa38fc06c3e52835c94081875266"
+    },
+    {
+      "file": "vitis/src/drv/drv_fft_snapshot.c",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/drv/drv_fft_snapshot.c",
+      "sha256_source": "b2808ab470b300bcc93c4c059229cc527f10fda1a4e14ba0c40acf4c06a5b286"
+    },
+    {
+      "file": "vitis/src/drv/drv_fft_snapshot.h",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/drv/drv_fft_snapshot.h",
+      "sha256_source": "051e10ae5e23e35f23f4ed82d6a5f67e5defe7d85069ee477ccbf1ccbc86bb8d"
+    },
+    {
+      "file": "vitis/src/hal/hal_board.c",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/hal/hal_board.c",
+      "sha256_source": "29d309f151d1df0bbca4154036788c1f6e947f56a9552f8b7c2ae7f56e891d59"
+    },
+    {
+      "file": "vitis/src/hal/hal_board.h",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/hal/hal_board.h",
+      "sha256_source": "4a87a9d859e8a41c2076ac51e3589f0aa13f7976e4cd5b749a43ef771f3a2b28"
+    },
+    {
+      "file": "vitis/src/hal/hal_console.c",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/hal/hal_console.c",
+      "sha256_source": "855c751606a309d6863a82c13341200d1e83172cc42cd9bb4c55df362cd8a2c8"
+    },
+    {
+      "file": "vitis/src/hal/hal_console.h",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/hal/hal_console.h",
+      "sha256_source": "c424591548f54d8aa2b2262dd97d8b2cae731882d2bebb8fc07726fd188cc8e8"
+    },
+    {
+      "file": "vitis/src/hal/hal_fft_gpio.c",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/hal/hal_fft_gpio.c",
+      "sha256_source": "867567ce8195c840aea0622f8ec979483c343560116c28e8ffa56a8edc8bcde8"
+    },
+    {
+      "file": "vitis/src/hal/hal_fft_gpio.h",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/hal/hal_fft_gpio.h",
+      "sha256_source": "c908965d290b0c93fc30131a5f8ef2d8a0c37cf66520fede278db08b7a11924c"
+    },
+    {
+      "file": "vitis/src/hal/hal_gpio.c",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/hal/hal_gpio.c",
+      "sha256_source": "5018456737aa6dc5a0418d82414b009073eb8adb65e18ffe2f7ab98f66dcec6c"
+    },
+    {
+      "file": "vitis/src/hal/hal_gpio.h",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/hal/hal_gpio.h",
+      "sha256_source": "ea4deb348b83b534d41a5a5ac44552f659c4c53d38a0b1809ea3ca44fbfb697a"
+    },
+    {
+      "file": "vitis/src/hal/hal_time.c",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/hal/hal_time.c",
+      "sha256_source": "54da63ddc9caa13477fd22db5bebc35682455cbdb7987641f1a4fc52d3dd5b34"
+    },
+    {
+      "file": "vitis/src/hal/hal_time.h",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/hal/hal_time.h",
+      "sha256_source": "dafe7a85c598b16534e48bbbc3a0373a2ba36793b997886567b1007c8e89d7e6"
+    },
+    {
+      "file": "vitis/src/hal/platform.c",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/hal/platform.c",
+      "sha256_source": "d417c35ea4a283aa4a4a5b43362d05b024668b7eb1d2da2fe4c87c0ac8610d6c"
+    },
+    {
+      "file": "vitis/src/hal/platform.h",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/hal/platform.h",
+      "sha256_source": "9253c4a945340271c4479ae34af2a16b5f4aab84bb62722b6691b1ad5a21a93a"
+    },
+    {
+      "file": "vitis/src/hal/platform_config.h",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/hal/platform_config.h",
+      "sha256_source": "29cab03d1c65cfc3bc1b45423ebfab427779daf58f36641570158c0c05b3a48e"
+    },
+    {
+      "file": "vitis/src/lscript.ld",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/lscript.ld",
+      "sha256_source": "f60b0d86e3e31a3f32d0797ec84b34f463c5428e99c316efa63fc99f2003f7cd"
+    },
+    {
+      "file": "vitis/src/main.c",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/main.c",
+      "sha256_source": "0aa14fdbf6f9d167f115f94a334a9c411d2ee43a82641cef4306130f030b9d53"
+    },
+    {
+      "file": "vitis/src/Xilinx.spec",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/src/Xilinx.spec",
+      "sha256_source": "d7f2fca3a9e48f9bb07059f5ecc8dd1468ee1ec1b82d361d0592ecdb24d15067"
+    },
+    {
+      "file": "ui/app.js",
+      "source": "TEMP/ui-dashboard/ui/app.js",
+      "sha256_source": "27027778a4d63df693c515804ba550d6e2c111f2396a725f87e864020897ed96"
+    },
+    {
+      "file": "ui/protocol.js",
+      "source": "TEMP/ui-dashboard/ui/protocol.js",
+      "sha256_source": "ae85221e29885e66df50591f6d81c402f0a3beadea50fda1e77caec7855bfb0b"
+    },
+    {
+      "file": "ui/index.html",
+      "source": "TEMP/ui-dashboard/ui/index.html",
+      "sha256_source": "31f0d57ad1a93df3283722d8839b67cde47a6c0608a8549a67e506ac8f1b30a5"
+    },
+    {
+      "file": "ui/style.css",
+      "source": "TEMP/ui-dashboard/ui/style.css",
+      "sha256_source": "e867cc76cef31e5a12a33bbe2e1acba79b32ba9d457445e0f3c460ac760a3727"
+    },
+    {
+      "file": "ui/server.py",
+      "source": "TEMP/ui-dashboard/ui/server.py",
+      "sha256_source": "d19731630e7fb7c8b06715d34123698d4860c4210c59a4397d9ff09d3e58cb02"
+    },
+    {
+      "file": "ui/README.md",
+      "source": "TEMP/ui-dashboard/ui/README.md",
+      "sha256_source": "49559cfbe2171d999dc9eee8efded459aba743db4bca7be1b581394e83f18550"
+    },
+    {
+      "file": "vivado/export/FFT_RX_FINAL.xsa",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/FFT_RX_PLATFORM/hw/FFT_RX_FINAL.xsa",
+      "sha256_source": "9cf2a40afea02d3b4d3296aa18d4b396ed5ff6a46f7d2ede1281e40c831a9a79"
+    },
+    {
+      "file": "prebuilt/design_1_wrapper.bit",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.runs/impl_1/design_1_wrapper.bit",
+      "sha256_source": "e22f4860e91c750f47e72501f2ad4118913cdfd451873021d346933163297e55"
+    },
+    {
+      "file": "prebuilt/BFSK_RX_UART.elf",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/BFSK_RX_UART/Debug/BFSK_RX_UART.elf",
+      "sha256_source": "c12eeaf4a331ca58d99a160958b981df085326e1f5764531454cdac6f35e417f"
+    },
+    {
+      "file": "prebuilt/fsbl.elf",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/FFT_RX_PLATFORM/zynq_fsbl/fsbl.elf",
+      "sha256_source": "db1d611a933c0e1878c5ba3fe0b930354ffa017a65132e504e66b6a7c2239d2f"
+    },
+    {
+      "file": "prebuilt/ps7_init.tcl",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/FFT_RX_PLATFORM/hw/ps7_init.tcl",
+      "sha256_source": "a2948a950d1e1920e4bdd3f5d16a2f4a0e9083ebe0698df2a8053af7de994964"
+    },
+    {
+      "file": "docs/xparameters_reference.h.txt",
+      "source": "TEMP/BFSK_RX_UART/vitis_workspace/FFT_RX_PLATFORM/export/FFT_RX_PLATFORM/sw/FFT_RX_PLATFORM/standalone_domain/bspinclude/include/xparameters.h",
+      "sha256_source": "99c4e3974d3c7b716327174c5756a80dd67ec15744073c0823f0b70b914486b5"
+    },
+    {
+      "file": "docs/reports/design_1_wrapper_timing_summary_routed.rpt",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.runs/impl_1/design_1_wrapper_timing_summary_routed.rpt",
+      "sha256_source": "fb805bc1a078b0ae76007eda802e1bc3cb57f7dbbc9145e39ef6777366a393cb"
+    },
+    {
+      "file": "docs/reports/design_1_wrapper_utilization_placed.rpt",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.runs/impl_1/design_1_wrapper_utilization_placed.rpt",
+      "sha256_source": "68562c5a1e222d93862c93e9b43250c7b26bcc6ec87c6b4b49185d9327ea5331"
+    },
+    {
+      "file": "docs/reports/design_1_wrapper_drc_routed.rpt",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.runs/impl_1/design_1_wrapper_drc_routed.rpt",
+      "sha256_source": "aba1b959a6d73446e194cc841d563201e39d8ed632a2eb53db01adf9eb638272"
+    },
+    {
+      "file": "snapshot/tb/tb_fft_snapshot_gpio.sv",
+      "source": "TEMP/snapshot_gpio/tb_fft_snapshot_gpio.sv",
+      "sha256_source": "6177b7487f0a1f648d98f44e9489dab6775d808b4455fa2030e729defb8251a4"
+    },
+    {
+      "file": "docs/reports/snapshot_test.log",
+      "source": "TEMP/snapshot_gpio/snapshot_test.log",
+      "sha256_source": "d116a5430bd62ab5c065cb6486608e411be37210fcc08f1808b10f90fe3a0b30"
+    },
+    {
+      "file": "vitis/tests/firmware/test_dashboard.c",
+      "source": "TEMP/BFSK_RX_UART/dashboard_integration/tests/test_dashboard.c",
+      "sha256_source": "fa7d274d9dd2ef823e413f6abc0d8716b54efd85677db6b4a5ee4c282acbcce1"
+    },
+    {
+      "file": "vitis/tests/firmware/test_protocol.cjs",
+      "source": "TEMP/BFSK_RX_UART/dashboard_integration/tests/test_protocol.cjs",
+      "sha256_source": "99504d9407e221220fd4b7be9aa3e96958bef7fda7f7d9c190f5a87ad4230f9a"
+    },
+    {
+      "file": "vitis/tests/fixtures/firmware_output.jsonl",
+      "source": "TEMP/BFSK_RX_UART/dashboard_integration/build/firmware_output.jsonl",
+      "sha256_source": "ab9352cfff46f2c7998377e4fdf8e0acbc6a1dc7688ed9bac3956b41db2effa8"
+    },
+    {
+      "file": "bfsk_rx/tb/tb_rx_bin_detector.sv",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sim_1/tb_rx_bin_detector.sv",
+      "sha256_source": "c48c68666425d932d124d5f0c014067e62774c6cbaa7f12c43d144ea4b1f540d"
+    },
+    {
+      "file": "bfsk_rx/tb/tb_rx_crc8_check.sv",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sim_1/tb_rx_crc8_check.sv",
+      "sha256_source": "b37a465223a1805237c649e407d30bf729c57e14831b6bb3dd254b7b7c80f5f4"
+    },
+    {
+      "file": "bfsk_rx/tb/tb_rx_frame_decoder.sv",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sim_1/tb_rx_frame_decoder.sv",
+      "sha256_source": "cd7c9b76b3966de97b85a8e74c5acd449119b360d789b8e294210741e0994f7c"
+    },
+    {
+      "file": "bfsk_rx/tb/tb_rx_latch.sv",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sim_1/tb_rx_latch.sv",
+      "sha256_source": "f9d220458a716705b252a65bad547f5c8d42e465ea481405803a3f261124a0f6"
+    },
+    {
+      "file": "bfsk_rx/tb/tb_rx_symbol_detector.sv",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sim_1/tb_rx_symbol_detector.sv",
+      "sha256_source": "9d9196cf103273b6f4697a5263012c1813d29def1deeeb3d21b61c3dfbdc6859"
+    },
+    {
+      "file": "bfsk_rx/tb/tb_rx_symbol_sync.sv",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sim_1/tb_rx_symbol_sync.sv",
+      "sha256_source": "5ce5255f137172ead37dd84195a9fc5b83bf106c6610132e086d765f8a4c0ff6"
+    },
+    {
+      "file": "bfsk_rx/tb/tb_rx_top.sv",
+      "source": "TEMP/BFSK_Rx_FINAL/tb_xpr/2026_final_project/2026_final_project.srcs/sim_1/tb_rx_top.sv",
+      "sha256_source": "8ce074b8371a125596746f15c807b3471c897ea3c110f468e1a1c217df85e1ea"
+    }
+  ],
+  "note": "Original source hashes and TEMP-relative provenance. Git README/docs/ignore rules and SHA256SUMS are adapted for this repository; functional sources and final binaries are unchanged. The saved BD is the original reference; recreate_bd.tcl creates the working design."
+}
