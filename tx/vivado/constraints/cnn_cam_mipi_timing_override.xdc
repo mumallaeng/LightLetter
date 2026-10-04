@@ -4,10 +4,9 @@
 
 set hs_data_ports [get_ports {dphy_data_hs_n[*] dphy_data_hs_p[*]}]
 
-# Remove the receiver IP's default constraints, which assume UI = 5 ns.
-reset_input_delay $hs_data_ports
-
-# Apply the 280 MHz DDR input window to both clock edges.
+# The receiver IP's defaults assume UI = 5 ns. A set_input_delay without -add_delay
+# replaces every earlier input delay on these ports; the falling edge is then added.
+# The IP applies its defaults with PROCESSING_ORDER LATE, so this file must be LATE too.
 set_input_delay -clock [get_clocks dphy_hs_clock_clk_p] \
     -min 0.268 $hs_data_ports
 set_input_delay -clock [get_clocks dphy_hs_clock_clk_p] \

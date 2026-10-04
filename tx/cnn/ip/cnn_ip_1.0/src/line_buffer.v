@@ -127,7 +127,7 @@ end
 //   → win_out은 이전 값 유지
 // ---------------------------------------------------------------
 
-always @(posedge clk or negedge rst_n) begin
+always @(posedge clk) begin
 
     if (!rst_n || phase_clear) begin
         cur_row      <= 2'd0;

@@ -32,7 +32,7 @@ module ce_ctrl_l2 (
     reg [1:0] ch_count, ch_count_next;
 
     // ----- State Update logic -----
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (~rst_n) begin
             c_state     <= IDLE;
             phase_clear <= 0;

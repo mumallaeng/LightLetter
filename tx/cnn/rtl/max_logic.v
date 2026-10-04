@@ -19,7 +19,7 @@ module max_logic #(
     assign pair = (pool_in >= prev_reg) ? pool_in : prev_reg;
 
     // Previous data logic
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (~rst_n) begin
             prev_reg <= 0;
         end else begin

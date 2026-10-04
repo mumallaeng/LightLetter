@@ -156,8 +156,8 @@ set_property -dict { PACKAGE_PIN W15   IOSTANDARD LVCMOS33     } [get_ports { tx
 
 
 ##Pcam MIPI CSI-2 Connector
-## This configuration expects the sensor to use 672Mbps/lane = 336 MHz HS_Clk
-create_clock -period 4.761 -name dphy_hs_clock_clk_p -waveform {0.000 2.380} [get_ports dphy_hs_clock_clk_p]
+## OV5640 1280x720@60 RAW10 on 2 lanes: 1896 x 984 x 60 x 10 / 2 = 560 Mbps/lane = 280 MHz HS_Clk
+create_clock -period 3.571 -name dphy_hs_clock_clk_p -waveform {0.000 1.786} [get_ports dphy_hs_clock_clk_p]
 set_property INTERNAL_VREF 0.6 [get_iobanks 35]
 set_property -dict { PACKAGE_PIN J19   IOSTANDARD HSUL_12     } [get_ports { dphy_clk_lp_n }]; #IO_L10N_T1_AD11N_35 Sch=lp_clk_n
 set_property -dict { PACKAGE_PIN H20   IOSTANDARD HSUL_12     } [get_ports { dphy_clk_lp_p }]; #IO_L17N_T2_AD5N_35 Sch=lp_clk_p

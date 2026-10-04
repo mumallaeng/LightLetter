@@ -58,7 +58,7 @@ module pool_l2 #(
     );
 
     // ========== Output stage register - to avoid setup violation ==========
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (~rst_n) begin
             pool_data    <= 0;
             pool_valid   <= 1'b0;

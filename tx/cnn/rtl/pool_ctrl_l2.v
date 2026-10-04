@@ -40,7 +40,7 @@ module pool_ctrl_l2 #(
     assign win_last = (row_cnt == WIN_ROW_LAST) & (col_cnt == WIN_COL_LAST);
 
     // ----- State Update Logic -----
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (~rst_n) begin
             row_cnt <= 0;
             col_cnt <= 0;

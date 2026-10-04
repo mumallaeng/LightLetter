@@ -23,7 +23,7 @@ module argmax #(
     // -------------------------------------
     reg [$clog2(NUM_CLASS)-1:0] idx_cnt, idx_cnt_next;
 
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (~rst_n) begin
             idx_cnt <= 0;
         end else begin
@@ -47,7 +47,7 @@ module argmax #(
     reg [$clog2(NUM_CLASS)-1:0] max_idx, max_idx_next;
     wire diff_logic = (logit_data > max_data_reg) ? 1'b1 : 1'b0;
 
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (~rst_n) begin
             max_data_reg <= 0;
             max_idx      <= 0;
@@ -76,7 +76,7 @@ module argmax #(
     // -------------------------------------
     reg cnn_done_next;
 
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (~rst_n) begin
             cnn_done <= 1'b0;
         end else begin

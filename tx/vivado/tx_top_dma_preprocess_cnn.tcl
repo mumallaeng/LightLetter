@@ -274,6 +274,8 @@ proc create_root_design { parentCell } {
   # Create instance: MIPI_D_PHY_RX_0, and set properties
   set MIPI_D_PHY_RX_0 [ create_bd_cell -type ip -vlnv digilentinc.com:ip:MIPI_D_PHY_RX:1.3 MIPI_D_PHY_RX_0 ]
   set_property -dict [ list \
+   CONFIG.kAddDelayData0_ps {625} \
+   CONFIG.kAddDelayData1_ps {625} \
    CONFIG.kDebug {false} \
    CONFIG.kGenerateAXIL {true} \
    CONFIG.kLPFromLane0 {false} \
@@ -857,6 +859,12 @@ proc create_root_design { parentCell } {
   # Create instance: rst_ps7_0_100M, and set properties
   set rst_ps7_0_100M [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 rst_ps7_0_100M ]
 
+  # Create instance: rst_ps7_0_200M, and set properties
+  set rst_ps7_0_200M [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 rst_ps7_0_200M ]
+
+  # Create instance: rst_vid_clk, and set properties
+  set rst_vid_clk [ create_bd_cell -type ip -vlnv xilinx.com:ip:proc_sys_reset:5.0 rst_vid_clk ]
+
   # Create instance: v_axi4s_vid_out_0, and set properties
   set v_axi4s_vid_out_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:v_axi4s_vid_out:4.0 v_axi4s_vid_out_0 ]
   set_property -dict [ list \
@@ -905,9 +913,9 @@ proc create_root_design { parentCell } {
 
   # Create port connections
   connect_bd_net -net MIPI_D_PHY_RX_0_RxByteClkHS [get_bd_pins MIPI_CSI_2_RX_0/RxByteClkHS] [get_bd_pins MIPI_D_PHY_RX_0/RxByteClkHS]
-  connect_bd_net -net axi_dynclk_0_LOCKED_O [get_bd_pins axi_dynclk_0/LOCKED_O] [get_bd_pins rgb2dvi_0/aRst_n]
+  connect_bd_net -net axi_dynclk_0_LOCKED_O [get_bd_pins axi_dynclk_0/LOCKED_O] [get_bd_pins rgb2dvi_0/aRst_n] [get_bd_pins rst_vid_clk/dcm_locked]
   connect_bd_net -net axi_dynclk_0_PXL_CLK_5X_O [get_bd_pins axi_dynclk_0/PXL_CLK_5X_O] [get_bd_pins rgb2dvi_0/SerialClk]
-  connect_bd_net -net axi_dynclk_0_PXL_CLK_O [get_bd_pins axi_dynclk_0/PXL_CLK_O] [get_bd_pins rgb2dvi_0/PixelClk] [get_bd_pins v_axi4s_vid_out_0/vid_io_out_clk] [get_bd_pins v_tc_0/clk]
+  connect_bd_net -net axi_dynclk_0_PXL_CLK_O [get_bd_pins axi_dynclk_0/PXL_CLK_O] [get_bd_pins rgb2dvi_0/PixelClk] [get_bd_pins v_axi4s_vid_out_0/vid_io_out_clk] [get_bd_pins v_tc_0/clk] [get_bd_pins rst_vid_clk/slowest_sync_clk]
   connect_bd_net -net axi_gpio_0_gpio_io_o [get_bd_pins axi_gpio_0/gpio_io_o] [get_bd_pins img_preprocess_0/capture_req]
   connect_bd_net -net cnn_ip_0_intr [get_bd_pins cnn_ip_0/intr] [get_bd_pins processing_system7_0/IRQ_F2P]
   connect_bd_net -net dphy_clk_lp_n_0_1 [get_bd_ports dphy_clk_lp_n] [get_bd_pins MIPI_D_PHY_RX_0/dphy_clk_lp_n]
@@ -920,10 +928,11 @@ proc create_root_design { parentCell } {
   connect_bd_net -net optical_tx_axi_top_0_optical_tx [get_bd_ports optical_tx] [get_bd_pins optical_tx_axi_top_0/optical_tx]
   connect_bd_net -net optical_tx_axi_top_0_tx_enable [get_bd_ports tx_enable] [get_bd_pins optical_tx_axi_top_0/tx_enable]
   connect_bd_net -net processing_system7_0_FCLK_CLK0 [get_bd_pins AXI_BayerToRGB_0/StreamClk] [get_bd_pins AXI_GammaCorrection_0/AxiLiteClk] [get_bd_pins AXI_GammaCorrection_0/StreamClk] [get_bd_pins MIPI_CSI_2_RX_0/s_axi_lite_aclk] [get_bd_pins MIPI_CSI_2_RX_0/video_aclk] [get_bd_pins MIPI_D_PHY_RX_0/s_axi_lite_aclk] [get_bd_pins axi_dma_roi_0/m_axi_mm2s_aclk] [get_bd_pins axi_dma_roi_0/s_axi_lite_aclk] [get_bd_pins axi_dynclk_0/REF_CLK_I] [get_bd_pins axi_dynclk_0/s_axi_lite_aclk] [get_bd_pins axi_gpio_0/s_axi_aclk] [get_bd_pins axi_mem_intercon/ACLK] [get_bd_pins axi_mem_intercon/M00_ACLK] [get_bd_pins axi_mem_intercon/S00_ACLK] [get_bd_pins axi_mem_intercon/S01_ACLK] [get_bd_pins axi_mem_intercon/S02_ACLK] [get_bd_pins axi_vdma_0/m_axi_mm2s_aclk] [get_bd_pins axi_vdma_0/m_axi_s2mm_aclk] [get_bd_pins axi_vdma_0/m_axis_mm2s_aclk] [get_bd_pins axi_vdma_0/s_axi_lite_aclk] [get_bd_pins axi_vdma_0/s_axis_s2mm_aclk] [get_bd_pins axis_dma_width_0/aclk] [get_bd_pins cnn_ip_0/s00_axi_aclk] [get_bd_pins img_preprocess_0/axis_aclk] [get_bd_pins optical_tx_axi_top_0/s_axi_aclk] [get_bd_pins processing_system7_0/FCLK_CLK0] [get_bd_pins processing_system7_0/M_AXI_GP0_ACLK] [get_bd_pins processing_system7_0/S_AXI_HP0_ACLK] [get_bd_pins ps7_0_axi_periph/ACLK] [get_bd_pins ps7_0_axi_periph/M00_ACLK] [get_bd_pins ps7_0_axi_periph/M01_ACLK] [get_bd_pins ps7_0_axi_periph/M02_ACLK] [get_bd_pins ps7_0_axi_periph/M03_ACLK] [get_bd_pins ps7_0_axi_periph/M04_ACLK] [get_bd_pins ps7_0_axi_periph/M05_ACLK] [get_bd_pins ps7_0_axi_periph/M06_ACLK] [get_bd_pins ps7_0_axi_periph/M07_ACLK] [get_bd_pins ps7_0_axi_periph/M08_ACLK] [get_bd_pins ps7_0_axi_periph/M09_ACLK] [get_bd_pins ps7_0_axi_periph/S00_ACLK] [get_bd_pins rst_ps7_0_100M/slowest_sync_clk] [get_bd_pins v_axi4s_vid_out_0/aclk] [get_bd_pins v_tc_0/s_axi_aclk]
-  connect_bd_net -net processing_system7_0_FCLK_CLK1 [get_bd_pins MIPI_D_PHY_RX_0/RefClk] [get_bd_pins processing_system7_0/FCLK_CLK1]
-  connect_bd_net -net processing_system7_0_FCLK_RESET0_N [get_bd_pins processing_system7_0/FCLK_RESET0_N] [get_bd_pins rst_ps7_0_100M/ext_reset_in]
-  connect_bd_net -net rst_ps7_0_100M_peripheral_aresetn [get_bd_pins AXI_BayerToRGB_0/sStreamReset_n] [get_bd_pins AXI_GammaCorrection_0/aAxiLiteReset_n] [get_bd_pins AXI_GammaCorrection_0/sStreamReset_n] [get_bd_pins MIPI_CSI_2_RX_0/s_axi_lite_aresetn] [get_bd_pins MIPI_D_PHY_RX_0/s_axi_lite_aresetn] [get_bd_pins axi_dma_roi_0/axi_resetn] [get_bd_pins axi_dynclk_0/s_axi_lite_aresetn] [get_bd_pins axi_gpio_0/s_axi_aresetn] [get_bd_pins axi_mem_intercon/ARESETN] [get_bd_pins axi_mem_intercon/M00_ARESETN] [get_bd_pins axi_mem_intercon/S00_ARESETN] [get_bd_pins axi_mem_intercon/S01_ARESETN] [get_bd_pins axi_mem_intercon/S02_ARESETN] [get_bd_pins axi_vdma_0/axi_resetn] [get_bd_pins axis_dma_width_0/aresetn] [get_bd_pins cnn_ip_0/s00_axi_aresetn] [get_bd_pins img_preprocess_0/axis_aresetn] [get_bd_pins optical_tx_axi_top_0/s_axi_aresetn] [get_bd_pins ps7_0_axi_periph/ARESETN] [get_bd_pins ps7_0_axi_periph/M00_ARESETN] [get_bd_pins ps7_0_axi_periph/M01_ARESETN] [get_bd_pins ps7_0_axi_periph/M02_ARESETN] [get_bd_pins ps7_0_axi_periph/M03_ARESETN] [get_bd_pins ps7_0_axi_periph/M04_ARESETN] [get_bd_pins ps7_0_axi_periph/M05_ARESETN] [get_bd_pins ps7_0_axi_periph/M06_ARESETN] [get_bd_pins ps7_0_axi_periph/M07_ARESETN] [get_bd_pins ps7_0_axi_periph/M08_ARESETN] [get_bd_pins ps7_0_axi_periph/M09_ARESETN] [get_bd_pins ps7_0_axi_periph/S00_ARESETN] [get_bd_pins rst_ps7_0_100M/peripheral_aresetn] [get_bd_pins v_axi4s_vid_out_0/aresetn] [get_bd_pins v_tc_0/resetn] [get_bd_pins v_tc_0/s_axi_aresetn]
-  connect_bd_net -net rst_ps7_0_100M_peripheral_reset [get_bd_pins MIPI_D_PHY_RX_0/aRst] [get_bd_pins rst_ps7_0_100M/peripheral_reset]
+  connect_bd_net -net processing_system7_0_FCLK_CLK1 [get_bd_pins MIPI_D_PHY_RX_0/RefClk] [get_bd_pins processing_system7_0/FCLK_CLK1] [get_bd_pins rst_ps7_0_200M/slowest_sync_clk]
+  connect_bd_net -net processing_system7_0_FCLK_RESET0_N [get_bd_pins processing_system7_0/FCLK_RESET0_N] [get_bd_pins rst_ps7_0_100M/ext_reset_in] [get_bd_pins rst_ps7_0_200M/ext_reset_in] [get_bd_pins rst_vid_clk/ext_reset_in]
+  connect_bd_net -net rst_ps7_0_100M_peripheral_aresetn [get_bd_pins AXI_BayerToRGB_0/sStreamReset_n] [get_bd_pins AXI_GammaCorrection_0/aAxiLiteReset_n] [get_bd_pins AXI_GammaCorrection_0/sStreamReset_n] [get_bd_pins MIPI_CSI_2_RX_0/s_axi_lite_aresetn] [get_bd_pins MIPI_D_PHY_RX_0/s_axi_lite_aresetn] [get_bd_pins axi_dma_roi_0/axi_resetn] [get_bd_pins axi_dynclk_0/s_axi_lite_aresetn] [get_bd_pins axi_gpio_0/s_axi_aresetn] [get_bd_pins axi_mem_intercon/ARESETN] [get_bd_pins axi_mem_intercon/M00_ARESETN] [get_bd_pins axi_mem_intercon/S00_ARESETN] [get_bd_pins axi_mem_intercon/S01_ARESETN] [get_bd_pins axi_mem_intercon/S02_ARESETN] [get_bd_pins axi_vdma_0/axi_resetn] [get_bd_pins axis_dma_width_0/aresetn] [get_bd_pins cnn_ip_0/s00_axi_aresetn] [get_bd_pins img_preprocess_0/axis_aresetn] [get_bd_pins optical_tx_axi_top_0/s_axi_aresetn] [get_bd_pins ps7_0_axi_periph/ARESETN] [get_bd_pins ps7_0_axi_periph/M00_ARESETN] [get_bd_pins ps7_0_axi_periph/M01_ARESETN] [get_bd_pins ps7_0_axi_periph/M02_ARESETN] [get_bd_pins ps7_0_axi_periph/M03_ARESETN] [get_bd_pins ps7_0_axi_periph/M04_ARESETN] [get_bd_pins ps7_0_axi_periph/M05_ARESETN] [get_bd_pins ps7_0_axi_periph/M06_ARESETN] [get_bd_pins ps7_0_axi_periph/M07_ARESETN] [get_bd_pins ps7_0_axi_periph/M08_ARESETN] [get_bd_pins ps7_0_axi_periph/M09_ARESETN] [get_bd_pins ps7_0_axi_periph/S00_ARESETN] [get_bd_pins rst_ps7_0_100M/peripheral_aresetn] [get_bd_pins v_axi4s_vid_out_0/aresetn] [get_bd_pins v_tc_0/s_axi_aresetn]
+  connect_bd_net -net rst_ps7_0_200M_peripheral_reset [get_bd_pins MIPI_D_PHY_RX_0/aRst] [get_bd_pins rst_ps7_0_200M/peripheral_reset]
+  connect_bd_net -net rst_vid_clk_peripheral_aresetn [get_bd_pins rst_vid_clk/peripheral_aresetn] [get_bd_pins v_tc_0/resetn]
   connect_bd_net -net v_axi4s_vid_out_0_vtg_ce [get_bd_pins v_axi4s_vid_out_0/vtg_ce] [get_bd_pins v_tc_0/gen_clken]
 
   # Create address segments

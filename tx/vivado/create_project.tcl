@@ -4,7 +4,11 @@ set dest [file join $here project]
 if {[file exists [file join $dest tx_top.xpr]]} {
     error "Project already exists. Open vivado/project/tx_top.xpr; do not recreate it."
 }
+# Board files ship with the repo so every PC resolves the same board part.
+set board_repo [file join $here board_files]
+set_param board.repoPaths [list $board_repo]
 create_project tx_top $dest -part xc7z020clg400-1
+set_property board_part_repo_paths [list $board_repo] [current_project]
 set boards [get_board_parts -quiet digilentinc.com:zybo-z7-20:part0:*]
 if {[llength $boards]} { set_property board_part [lindex $boards end] [current_project] }
 set_property target_language Verilog [current_project]
@@ -19,6 +23,10 @@ foreach block {preprocess bfsk_tx} {
     add_files -norecurse [glob [file join $root $block rtl *.v]]
 }
 add_files -fileset constrs_1 -norecurse [file join $here constraints Zybo-Z7-Master.xdc]
+set mipi_xdc [add_files -fileset constrs_1 -norecurse [file join $here constraints cnn_cam_mipi_timing_override.xdc]]
+set_property PROCESSING_ORDER LATE $mipi_xdc
+# Its targets live inside the out-of-context D-PHY IP, so read it for implementation only.
+set_property USED_IN_SYNTHESIS false $mipi_xdc
 update_compile_order -fileset sources_1
 source [file join $here tx_top_dma_preprocess_cnn.tcl]
 validate_bd_design

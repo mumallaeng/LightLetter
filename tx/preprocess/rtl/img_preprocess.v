@@ -33,9 +33,6 @@ module img_preprocess #(
     localparam integer IN_PIXELS   = IN_WIDTH * IN_HEIGHT;
     localparam integer OUT_PIXELS  = OUT_WIDTH * OUT_HEIGHT;
     localparam integer GLYPH_LIMIT = OUT_WIDTH - (2 * MARGIN);
-    localparam integer IN_ADDR_W   = $clog2(IN_PIXELS);
-    localparam integer OUT_X_W     = $clog2(OUT_WIDTH);
-    localparam integer OUT_Y_W     = $clog2(OUT_HEIGHT);
 
     localparam [3:0] ST_RECV      = 4'd0;
     localparam [3:0] ST_PREP      = 4'd1;
@@ -54,9 +51,9 @@ module img_preprocess #(
 
     // The input is converted immediately; only the processed Gray8 frame is
     // buffered. This maps to about 12.25 KiB for a 112x112 input.
-    reg [7:0] pixel_mem [0:IN_PIXELS-1];
+    reg [7:0] pixel_mem [0:IN_WIDTH*IN_HEIGHT-1];
 
-    reg [IN_ADDR_W-1:0] input_count;
+    reg [$clog2(IN_WIDTH * IN_HEIGHT)-1:0] input_count;
     reg [6:0] input_x;
     reg [6:0] input_y;
     reg       input_frame_full;
@@ -68,14 +65,14 @@ module img_preprocess #(
     reg [7:0]              in_pipe0_r;
     reg [7:0]              in_pipe0_g;
     reg [7:0]              in_pipe0_b;
-    reg [IN_ADDR_W-1:0]    in_pipe0_count;
+    reg [$clog2(IN_WIDTH * IN_HEIGHT)-1:0]    in_pipe0_count;
     reg [6:0]              in_pipe0_x;
     reg [6:0]              in_pipe0_y;
     reg                    in_pipe0_last;
 
     reg                    in_pipe1_valid;
     reg [15:0]             in_pipe1_luma_sum;
-    reg [IN_ADDR_W-1:0]    in_pipe1_count;
+    reg [$clog2(IN_WIDTH * IN_HEIGHT)-1:0]    in_pipe1_count;
     reg [6:0]              in_pipe1_x;
     reg [6:0]              in_pipe1_y;
     reg                    in_pipe1_last;
@@ -103,15 +100,15 @@ module img_preprocess #(
     reg       fit_is_wide;
 
     // Destination-to-source maps avoid a variable hardware divider.
-    reg [6:0] x_map [0:GLYPH_LIMIT-1];
-    reg [6:0] y_map [0:GLYPH_LIMIT-1];
+    reg [6:0] x_map [0:OUT_WIDTH-2*MARGIN-1];
+    reg [6:0] y_map [0:OUT_WIDTH-2*MARGIN-1];
     reg [5:0] map_index;
     reg [7:0] map_source;
     reg [15:0] map_accum;
 
-    reg [OUT_X_W-1:0] out_x;
-    reg [OUT_Y_W-1:0] out_y;
-    reg [IN_ADDR_W-1:0] read_addr;
+    reg [$clog2(OUT_WIDTH)-1:0] out_x;
+    reg [$clog2(OUT_HEIGHT)-1:0] out_y;
+    reg [$clog2(IN_WIDTH * IN_HEIGHT)-1:0] read_addr;
     reg [7:0] read_data;
 
     // Internal diagnostic flag: asserted if TLAST does not coincide with the
@@ -135,7 +132,8 @@ module img_preprocess #(
     wire [5:0] fit_pad_x = OUT_WIDTH  - fit_final_size;
     wire [5:0] fit_pad_y = OUT_HEIGHT - fit_final_size;
 
-    wire fit_candidate_ok =
+    wire fit_candidate_ok;
+    assign fit_candidate_ok =
         ((fit_candidate * fit_long_side_reg) <=
          (fit_short_side_reg * GLYPH_LIMIT));
     wire [5:0] fit_result = fit_candidate_ok ? fit_candidate : fit_best;
@@ -144,7 +142,7 @@ module img_preprocess #(
 
     // Streaming input pipeline.  Metadata follows each pixel so memory and
     // bounding-box updates still refer to the exact accepted input sample.
-    always @(posedge axis_aclk or negedge axis_aresetn) begin
+    always @(posedge axis_aclk) begin
         if (!axis_aresetn) begin
             in_pipe0_valid    <= 1'b0;
             in_pipe0_r        <= 0;
@@ -199,7 +197,7 @@ module img_preprocess #(
             read_data <= pixel_mem[read_addr];
     end
 
-    always @(posedge axis_aclk or negedge axis_aresetn) begin
+    always @(posedge axis_aclk) begin
         if (!axis_aresetn) begin
             state                <= ST_RECV;
             input_count          <= 0;

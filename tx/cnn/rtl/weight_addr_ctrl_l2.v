@@ -26,7 +26,7 @@ module weight_addr_ctrl_l2 #(
     reg mac_done_next;
 
     // ----- State Update Logic -----
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         if (~rst_n) begin
             c_state <= IDLE;
             mac_done <= 0;

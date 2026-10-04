@@ -154,17 +154,17 @@ MAC_unit U_MAC_C2_R2 (
 //
 // ===============================================================
 
-reg signed [35:0] c0_row0_reg;
-reg signed [35:0] c0_row1_reg;
-reg signed [35:0] c0_row2_reg;
+(* use_dsp = "no" *) reg signed [35:0] c0_row0_reg;
+(* use_dsp = "no" *) reg signed [35:0] c0_row1_reg;
+(* use_dsp = "no" *) reg signed [35:0] c0_row2_reg;
 
-reg signed [35:0] c1_row0_reg;
-reg signed [35:0] c1_row1_reg;
-reg signed [35:0] c1_row2_reg;
+(* use_dsp = "no" *) reg signed [35:0] c1_row0_reg;
+(* use_dsp = "no" *) reg signed [35:0] c1_row1_reg;
+(* use_dsp = "no" *) reg signed [35:0] c1_row2_reg;
 
-reg signed [35:0] c2_row0_reg;
-reg signed [35:0] c2_row1_reg;
-reg signed [35:0] c2_row2_reg;
+(* use_dsp = "no" *) reg signed [35:0] c2_row0_reg;
+(* use_dsp = "no" *) reg signed [35:0] c2_row1_reg;
+(* use_dsp = "no" *) reg signed [35:0] c2_row2_reg;
 
 
 // ===============================================================
@@ -178,7 +178,7 @@ reg c1_valid_reg;
 reg c2_valid_reg;
 
 
-always @(posedge clk or negedge rst_n) begin
+always @(posedge clk) begin
     if (!rst_n) begin
 
         c0_row0_reg <= 36'd0;
@@ -223,9 +223,9 @@ end
 // FF를 통과한 3개 row 결과를 조합적으로 합산
 // ===============================================================
 
-wire signed [35:0] c0_final_sum;
-wire signed [35:0] c1_final_sum;
-wire signed [35:0] c2_final_sum;
+(* use_dsp = "no" *) wire signed [35:0] c0_final_sum;
+(* use_dsp = "no" *) wire signed [35:0] c1_final_sum;
+(* use_dsp = "no" *) wire signed [35:0] c2_final_sum;
 
 assign c0_final_sum = c0_row0_reg + c0_row1_reg + c0_row2_reg;
 assign c1_final_sum = c1_row0_reg + c1_row1_reg + c1_row2_reg;
@@ -248,14 +248,14 @@ assign c2_final_sum = c2_row0_reg + c2_row1_reg + c2_row2_reg;
 // 최종 결과와 mac_valid를 같은 클록에 맞춤
 // ===============================================================
 
-reg signed [35:0] ch_result0_reg;
-reg signed [35:0] ch_result1_reg;
-reg signed [35:0] ch_result2_reg;
+(* use_dsp = "no" *) reg signed [35:0] ch_result0_reg;
+(* use_dsp = "no" *) reg signed [35:0] ch_result1_reg;
+(* use_dsp = "no" *) reg signed [35:0] ch_result2_reg;
 
 reg mac_valid_reg;
 
 
-always @(posedge clk or negedge rst_n) begin
+always @(posedge clk) begin
     if (!rst_n) begin
 
         ch_result0_reg <= 36'd0;
