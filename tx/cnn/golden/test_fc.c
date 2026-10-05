@@ -199,11 +199,14 @@ static int test_mac_acc(void)
         fc_mac_seq(&mac);
     }
     in.mac_en = 0; in.last = 0;
-    fc_mac_comb(&mac, &in, &out);                                  /* cycle 6: last input in stage 2? */
-    CHECK(!out.sum_valid && out.busy, "one cycle after the last issue the product is still in flight");
+    fc_mac_comb(&mac, &in, &out);                                  /* cycle 5: last input in stage 1 */
+    CHECK(!out.sum_valid && out.busy, "one cycle after the last issue the operands are registered");
     fc_mac_seq(&mac);
-    fc_mac_comb(&mac, &in, &out);                                  /* cycle 7: accumulate stage sees it */
-    CHECK(out.sum_valid, "sum_valid two cycles after the last issue");
+    fc_mac_comb(&mac, &in, &out);                                  /* cycle 6: last input in stage 2 */
+    CHECK(!out.sum_valid && out.busy, "two cycles after the last issue the product is in flight");
+    fc_mac_seq(&mac);
+    fc_mac_comb(&mac, &in, &out);                                  /* cycle 7: accumulators hold the sums */
+    CHECK(out.sum_valid && out.busy, "sum_valid three cycles after the last issue, still busy");
     CHECK(out.layer == 2 && out.group == 3, "layer/group tags travel with the data");
     for (int l = 0; l < FC_P; l++)
         CHECK(out.sum[l] == want[l], "lane %d sum %lld, expected %lld", l, (long long)out.sum[l], (long long)want[l]);
@@ -211,7 +214,7 @@ static int test_mac_acc(void)
     fc_mac_comb(&mac, &in, &out);
     CHECK(!out.sum_valid && !out.busy, "pipeline drains");
     CHECK(mac.dbg_acc_ovf_cnt == 0, "ACC_W overflow counter is %u", mac.dbg_acc_ovf_cnt);
-    return end_test("fc_mac: bias on the first input, accumulate, two-cycle latency, tags", before);
+    return end_test("fc_mac: bias on the first input, accumulate, three-cycle latency, tags", before);
 }
 
 /* --------------------------------------------------------------- fc_quant_out */

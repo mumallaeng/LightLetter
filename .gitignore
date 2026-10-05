@@ -182,6 +182,7 @@ legacy/vitis/BFSK_TX_Test_system/_ide/scripts/systemdebugger_*.tcl
 
 # Recreated project/workspace and tool caches (from BFSK_Rx_UI)
 **/vivado/project/
+**/vivado/fc_synth/
 **/vitis/workspace/
 *.pb
 *.o

@@ -28,7 +28,6 @@ typedef struct
 {
     uint16_t feature;
     int16_t  weight[FC_P];
-    int32_t  bias[FC_P];
     uint8_t  first, mac, last, layer, group, valid;
 } fc_mac_s1_t;
 
@@ -41,8 +40,14 @@ typedef struct
 
 typedef struct
 {
+    uint8_t  valid, layer, group;
+} fc_mac_s3_t;
+
+typedef struct
+{
     fc_mac_s1_t s1, s1_next;
     fc_mac_s2_t s2, s2_next;
+    fc_mac_s3_t s3, s3_next;
     fc_acc_t    acc[FC_P], acc_next[FC_P];
 
     /* debug: sums that do not fit FC_ACC_W */
