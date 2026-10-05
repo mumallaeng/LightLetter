@@ -1,0 +1,20 @@
+#-----------------------------------------------------------
+# xsim v2020.2 (64-bit)
+# SW Build 3064766 on Wed Nov 18 09:12:45 MST 2020
+# IP Build 3064653 on Wed Nov 18 14:17:31 MST 2020
+# Start of session at: Tue Sep 29 13:44:40 2026
+# Process ID: 15604
+# Current directory: C:/Users/kccistc/AppData/Local/Temp/codex_fft_snapshot_gpio_20260929
+# Command line: xsim.exe -mode tcl -source {xsim.dir/snapshot_gpio_tb/xsim_script.tcl}
+# Log file: C:/Users/kccistc/AppData/Local/Temp/codex_fft_snapshot_gpio_20260929/xsim.log
+# Journal file: C:/Users/kccistc/AppData/Local/Temp/codex_fft_snapshot_gpio_20260929\xsim.jou
+#-----------------------------------------------------------
+source xsim.dir/snapshot_gpio_tb/xsim_script.tcl
+# xsim {snapshot_gpio_tb} -autoloadwcfg -runall
+Vivado Simulator 2020.2
+Time resolution is 1 ps
+run -all
+PASS: 261 reads; alignment, gaps, hold, command edges, release, recapture, reset
+$finish called at time : 47516 ns : File "C:/Users/kccistc/AppData/Local/Temp/codex_fft_snapshot_gpio_20260929/tb_fft_snapshot_gpio.sv" Line 129
+exit
+INFO: [Common 17-206] Exiting xsim at Tue Sep 29 13:44:43 2026...

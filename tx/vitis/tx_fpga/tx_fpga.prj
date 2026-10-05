@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="ASCII"?>
+<sdkproject:SdkProject xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:sdkproject="http://www.xilinx.com/sdkproject" name="tx_fpga" location="D:/Working/OndeviceAI2/01_project/LightLetter/vitis/tx_fpga/tx_fpga" platform="D:/Working/OndeviceAI2/01_project/LightLetter/vitis/tx_fpga/tx_top_wrapper/export/tx_top_wrapper/tx_top_wrapper.xpfm" platformUID="xilinx:zybo-z7-20::0.0(custom)" systemProject="tx_fpga_system" sysConfig="tx_top_wrapper" runtime="cpp" cpu="standalone_ps7_cortexa9_0" cpuInstance="ps7_cortexa9_0" os="standalone" mssSignature="42c168dfe712811076778c1de454e566">
+  <configuration name="Debug" id="xilinx.gnu.armv7.exe.debug.1848085241" dirty="true">
+    <configBuildOptions xsi:type="sdkproject:SdkOptions"/>
+    <lastBuildOptions xsi:type="sdkproject:SdkOptions"/>
+  </configuration>
+  <configuration name="Release" id="xilinx.gnu.armv7.exe.release.830266131">
+    <configBuildOptions xsi:type="sdkproject:SdkOptions"/>
+    <lastBuildOptions xsi:type="sdkproject:SdkOptions"/>
+  </configuration>
+  <template appTemplateName="empty_application"/>
+</sdkproject:SdkProject>
