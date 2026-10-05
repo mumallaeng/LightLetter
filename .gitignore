@@ -169,6 +169,8 @@ Thumbs.db
 vitis/**/bsp/
 vitis/**/Release/
 vitis/temp_xsdb_launch_script.tcl
+# Workspace made by vitis/create_tx_fpga_ws.tcl (its src is a link to vitis/tx_fpga/tx_fpga/src)
+vitis/tx_fpga_ws/
 vitis/BFSK_TX_Test_system/_ide/scripts/systemdebugger_*.tcl
 # Retain authored BFSK Vivado project and Vitis recreation files
 !tb_xpr/**/*.xpr

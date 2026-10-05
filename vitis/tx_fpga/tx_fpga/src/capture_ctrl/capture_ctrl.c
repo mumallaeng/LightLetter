@@ -5,6 +5,7 @@
 #include "xparameters.h"
 #include "xstatus.h"
 #include "xil_cache.h"
+#include "xil_exception.h"
 #include "xtime_l.h"
 
 #include "../roi_dma/roi_dma.h"
@@ -28,11 +29,19 @@ static int       ready;
 static int       candidate_state;
 static int       stable_state;
 static XTime     candidate_since;
-static aruco_cells_t  aruco_cells;
+/* The DMA reads each cell in place: 64-byte aligned base, and 37632 is a multiple of 64. */
+static aruco_cells_t  aruco_cells __attribute__((aligned(64)));
 static aruco_result_t aruco_res;
-static int       seq_active;     /* a 5-cell sequence is in flight */
-static int       cell_next;      /* next cell to send */
-static XTime     cell_sent_at;
+
+/* Shared with capture_on_cnn_done (cnn_isr context). */
+static volatile int   seq_active;    /* a 5-cell sequence is in flight          */
+static volatile int   seq_done;      /* every cell answered, or a DMA start failed */
+static volatile int   seq_failed;    /* stopped early: next cell DMA start failed */
+static volatile u32   cell_done;     /* results received so far                 */
+static volatile u8    cell_cls[ARUCO_CELL_COUNT];
+static volatile XTime cell_sent_at;
+static volatile XTime seq_end;
+static XTime          seq_start;
 
 /*
  * Pick the most recently completed S2MM frame store.
@@ -54,28 +63,65 @@ static const u8 *capture_last_frame(void)
     return (const u8 *)(fb_base + (done * fb_frame_bytes));
 }
 
-/* Send cell_next to the PL. cnn_ip has one result register, so the next cell
- * is only sent after cnn_ctrl_poll has read this one (see capture_ctrl_on_result). */
-static void capture_send_cell(void)
+/*
+ * cnn_isr hook (interrupt context). Store the result and hand the next cell
+ * to the PL straight away. cnn_done means img_preprocess has already taken the
+ * whole previous frame, so MM2S is idle, and cnn_isr has just read the single
+ * result register, so nothing can be overwritten. The five cells therefore run
+ * back to back without the main loop, and BFSK TX starts only after all five.
+ */
+static int capture_on_cnn_done(u8 cls)
 {
-    if (roi_dma_send_image((const u8 *)aruco_cells.pix[cell_next]) != XST_SUCCESS) {
-        seq_active = 0;
-        return;
+    XTime now;
+
+    if (!seq_active || seq_done) {
+        return 0;
     }
-    XTime_GetTime(&cell_sent_at);
-    cell_next++;
+
+    cell_cls[cell_done] = cls;
+    cell_done++;
+    XTime_GetTime(&now);
+
+    if (cell_done < ARUCO_CELL_COUNT) {
+        cell_sent_at = now;
+        if (roi_dma_start_image(&aruco_cells.pix[cell_done][0][0][0]) != XST_SUCCESS) {
+            seq_failed = 1;
+            seq_end    = now;
+            seq_done   = 1;
+        }
+    } else {
+        seq_end  = now;
+        seq_done = 1;
+    }
+    return 1;
 }
 
-/* cnn_ctrl hook: runs in the main loop right after a result was read */
-static void capture_ctrl_on_result(void)
+/* Main loop: all cells are in, so print them and send them over BFSK TX. */
+static void capture_finish_seq(void)
 {
-    if (!seq_active) {
-        return;
+    u8  cls[ARUCO_CELL_COUNT];
+    u32 n;
+    u32 i;
+    int failed;
+
+    Xil_ExceptionDisable();
+    n      = cell_done;
+    failed = seq_failed;
+    for (i = 0; i < n; i++) {
+        cls[i] = cell_cls[i];
     }
-    if (cell_next < ARUCO_CELL_COUNT) {
-        capture_send_cell();
-    } else {
-        seq_active = 0;
+    seq_active = 0;
+    Xil_ExceptionEnable();
+
+    xil_printf("capture: %d cell(s) inferred in %d us\r\n", (int)n,
+               (int)((seq_end - seq_start) / (COUNTS_PER_SECOND / 1000000u)));
+    if (failed) {
+        xil_printf("capture: cell %d: ROI DMA start failed\r\n", (int)n);
+    }
+
+    for (i = 0; i < n; i++) {
+        xil_printf("capture: cell %d\r\n", (int)i);
+        cnn_ctrl_report(cls[i]);
     }
 }
 
@@ -107,9 +153,20 @@ void capture_ctrl_trigger(void)
         return;
     }
 
-    cell_next  = 0;
-    seq_active = 1;
-    capture_send_cell();
+    /* The PL reads the cells straight out of aruco_cells: write all five back once. */
+    Xil_DCacheFlushRange((INTPTR)&aruco_cells, sizeof(aruco_cells));
+
+    cell_done  = 0;
+    seq_done   = 0;
+    seq_failed = 0;
+    XTime_GetTime(&seq_start);
+    cell_sent_at = seq_start;
+    seq_active = 1;     /* before the kick: the first cnn_done may come right after */
+
+    if (roi_dma_start_image(&aruco_cells.pix[0][0][0][0]) != XST_SUCCESS) {
+        xil_printf("capture: ROI DMA start failed\r\n");
+        seq_active = 0;
+    }
 }
 
 int capture_ctrl_init(XAxiVdma *vdma, UINTPTR base, u32 width, u32 height)
@@ -135,7 +192,7 @@ int capture_ctrl_init(XAxiVdma *vdma, UINTPTR base, u32 width, u32 height)
     /* Channel 2 reads the physical start_btn input. */
     XGpio_SetDataDirection(&capture_gpio, START_BTN_CHANNEL, GPIO_BIT_0);
 
-    cnn_ctrl_set_done_hook(capture_ctrl_on_result);
+    cnn_ctrl_set_isr_hook(capture_on_cnn_done);
 
     capture_vdma   = vdma;
     fb_base        = base;
@@ -164,12 +221,23 @@ void capture_ctrl_poll(void)
         return;
     }
 
-    /* The PL never answered, give up on this sequence. */
     if (seq_active) {
+        int timed_out = 0;
+
+        /* The PL never answered, give up on this sequence. IRQs are off so
+         * cnn_isr cannot finish the cell between the check and the give-up. */
+        Xil_ExceptionDisable();
         XTime_GetTime(&now);
-        if ((now - cell_sent_at) >= CNN_WAIT_TICKS) {
-            xil_printf("capture: cell %d: no cnn_done\r\n", cell_next - 1);
+        if (!seq_done && (now - cell_sent_at) >= CNN_WAIT_TICKS) {
             seq_active = 0;
+            timed_out  = 1;
+        }
+        Xil_ExceptionEnable();
+
+        if (timed_out) {
+            xil_printf("capture: cell %d: no cnn_done\r\n", (int)cell_done);
+        } else if (seq_done) {
+            capture_finish_seq();
         }
     }
 

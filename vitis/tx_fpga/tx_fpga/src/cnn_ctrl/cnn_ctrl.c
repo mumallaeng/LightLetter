@@ -13,11 +13,13 @@
 #define CNN_IRQ_ID          XPAR_FABRIC_CNN_IP_0_INTR_INTR
 #define GIC_DEVICE_ID       XPAR_PS7_SCUGIC_0_DEVICE_ID
 
-#define CNN_RDR_OFFSET      0x04u
+#define CNN_SR_OFFSET       0x00u   /* bit 0 = done_flag (intr), read clears it */
+#define CNN_RDR_OFFSET      0x04u   /* result latched at cnn_done */
+#define CNN_SR_DONE         0x01u
 #define CNN_RESULT_MASK     0x1Fu
 
 #define GIC_PRIORITY        0xA0u
-#define GIC_TRIGGER_RISING  0x3u
+#define GIC_TRIGGER_LEVEL   0x1u    // set to level trigger
 
 static XScuGic gic;
 static int ready;
@@ -25,19 +27,37 @@ static volatile u8 latest_result;
 static volatile int result_pending;
 static volatile u32 done_count;
 static volatile u32 overrun_count;
-static void (*done_hook)(void);
+static int (*isr_hook)(u8 cls);
 
 static void cnn_isr(void *ref)
 {
+    u8 cls;
+
     (void)ref;
+
+    /*
+     * cnn_ip holds intr high (done_flag) until SR is read. Read SR first:
+     * RDR keeps the result latched at cnn_done, so reading it after the
+     * clear is still correct, while the other order could clear a newer
+     * result that arrived between the two reads.
+     */
+    if ((Xil_In32(CNN_BASEADDR + CNN_SR_OFFSET) & CNN_SR_DONE) == 0u) {
+        return;
+    }
+    cls = (u8)(Xil_In32(CNN_BASEADDR + CNN_RDR_OFFSET) & CNN_RESULT_MASK);
+    done_count++;
+
+    /* A running sequence (capture_ctrl) takes its results here and starts the
+     * next cell at once, so they never reach the single-result slot below. */
+    if (isr_hook && isr_hook(cls)) {
+        return;
+    }
 
     if (result_pending) {
         overrun_count++;
     }
-    latest_result = (u8)(Xil_In32(CNN_BASEADDR + CNN_RDR_OFFSET)
-                         & CNN_RESULT_MASK);
+    latest_result = cls;
     result_pending = 1;
-    done_count++;
 }
 
 int cnn_ctrl_init(void)
@@ -62,7 +82,7 @@ int cnn_ctrl_init(void)
                                  (Xil_ExceptionHandler)XScuGic_InterruptHandler,
                                  &gic);
     XScuGic_SetPriorityTriggerType(&gic, CNN_IRQ_ID,
-                                   GIC_PRIORITY, GIC_TRIGGER_RISING);
+                                   GIC_PRIORITY, GIC_TRIGGER_LEVEL);
 
     status = XScuGic_Connect(&gic, CNN_IRQ_ID,
                              (Xil_InterruptHandler)cnn_isr, NULL);
@@ -101,11 +121,29 @@ int cnn_ctrl_get_result(u8 *cls)
     return has_result;
 }
 
-void cnn_ctrl_set_done_hook(void (*hook)(void))
+void cnn_ctrl_set_isr_hook(int (*hook)(u8 cls))
 {
-    done_hook = hook;
+    isr_hook = hook;
 }
 
+void cnn_ctrl_report(u8 cls)
+{
+    if (cls < CNN_NUM_CLASS) {
+        xil_printf("cnn: result = %d ('%c') [done #%d]\r\n",
+                   (int)cls, 'A' + cls, (int)done_count);
+        xil_printf("{\"type\":\"recognition\",\"char\":\"%c\","
+                   "\"class_id\":%d,\"crc_ok\":true}\r\n",
+                   'A' + cls, (int)cls);
+
+        /* Blocks until the BFSK frame is out. */
+        tx_ctrl_send_class(cls);
+    } else {
+        xil_printf("cnn: result = %d (out of range) [done #%d]\r\n",
+                   (int)cls, (int)done_count);
+    }
+}
+
+/* Single results that no sequence took (the 'd' test frame, a late cell). */
 void cnn_ctrl_poll(void)
 {
     u8 cls;
@@ -114,28 +152,11 @@ void cnn_ctrl_poll(void)
         return;
     }
 
-    if (cls < CNN_NUM_CLASS) {
-        xil_printf("cnn: result = %d ('%c') [done #%d]\r\n",
-                   (int)cls, 'A' + cls, (int)done_count);
-        xil_printf("{\"type\":\"recognition\",\"char\":\"%c\","
-                   "\"class_id\":%d,\"crc_ok\":true}\r\n",
-                   'A' + cls, (int)cls);
-
-        /* Blocks until the BFSK frame is out, so the next cell (done_hook)
-         * is only handed to the PL after this letter has been sent. */
-        tx_ctrl_send_class(cls);
-    } else {
-        xil_printf("cnn: result = %d (out of range) [done #%d]\r\n",
-                   (int)cls, (int)done_count);
-    }
+    cnn_ctrl_report(cls);
 
     if (overrun_count) {
         xil_printf("cnn: WARNING %d result(s) overwritten before read\r\n",
                    (int)overrun_count);
         overrun_count = 0;
-    }
-
-    if (done_hook) {
-        done_hook();
     }
 }

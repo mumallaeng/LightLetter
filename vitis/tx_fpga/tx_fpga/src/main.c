@@ -64,6 +64,7 @@
 #include "cnn_ctrl/cnn_ctrl.h"
 #include "tx_ctrl/tx_ctrl.h"
 #include "cpu_cnn/cpu_bench.h"
+#include "power_meas/power_meas.h"
 /*===========================================================================
  *  Platform glue
  *===========================================================================*/
@@ -97,6 +98,7 @@ static void menu_help()
 	xil_printf(" c    : same as the button, from UART \r\n");
 	xil_printf(" d    : send synthetic 112x112 RGB frame through ROI DMA \r\n");
 	xil_printf(" b    : CPU CNN bench, 70 built-in images (bit-exact + latency) \r\n");
+	xil_printf(" p    : board power measurement (stops camera/HDMI, reset to restore) \r\n");
 	xil_printf(" ? : help \r\n");
 }
 
@@ -115,6 +117,7 @@ static void menu_run()
 	case 'c' : capture_ctrl_trigger(); break;
 	case 'd' : roi_dma_send_test_frame(); break;
 	case 'b' : cpu_bench_testset(); break;
+	case 'p' : power_meas_run(); break;
 	case '?' : menu_help();
 	default:	break;
 	}

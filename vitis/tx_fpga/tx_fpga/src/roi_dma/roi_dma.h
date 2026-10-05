@@ -32,10 +32,18 @@ int roi_dma_send_test_frame(void);
 int roi_dma_send_camera_frame(const u8 *frame, u32 stride);
 /* One already-cropped 112x112 image, bytes G,B,R per pixel, copied into roi_frame and sent. */
 int roi_dma_send_image(const u8 *img112);
+/*
+ * Starts img112 straight from where it is and returns without waiting.
+ * No copy, no cache flush, no busy-wait, so it is safe to call from an ISR.
+ * img112 must be 4-byte aligned (MM2S DRE is off) and the caller must have
+ * flushed its cache lines. Completion is seen as the next cnn_done.
+ */
+int roi_dma_start_image(const u8 *img112);
 const Roi_dma_times *roi_dma_last_times(void);
 /* Stamp Roi_dma_times.request; call first thing when a capture is requested. */
 void roi_dma_mark_request(void);
-/* The 112x112 G,B,R frame last sent to PL (same bytes the CPU model uses). */
+/* The 112x112 G,B,R frame last sent to PL (same bytes the CPU model uses).
+ * After roi_dma_start_image() this points at the caller's buffer, not roi_frame. */
 const u8 *roi_dma_frame(void);
 
 #endif
