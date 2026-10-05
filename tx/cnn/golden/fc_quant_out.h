@@ -1,4 +1,4 @@
-/* fc_quant_out: holds one group's P sums and quantizes them one per clock: FC1 / FC2 to the next feature buffer, FC3 to the logit stream. */
+/* fc_quant_out: holds one group's P sums and quantizes them one per clock through two output stages: FC1 / FC2 to the next feature buffer, FC3 to the logit stream. */
 #ifndef FC_QUANT_OUT_H
 #define FC_QUANT_OUT_H
 
@@ -25,12 +25,26 @@ typedef struct
 
 typedef struct
 {
+    fc_acc_t cur;
+    uint8_t  valid, layer, waddr;
+} fc_quant_out_s1_t;
+
+typedef struct
+{
+    int16_t  y;
+    uint8_t  valid, layer, waddr;
+} fc_quant_out_s2_t;
+
+typedef struct
+{
     fc_acc_t hold[FC_P], hold_next[FC_P];
     uint8_t  valid, valid_next;
     uint8_t  idx, idx_next;
     uint8_t  len, len_next;
     uint8_t  layer, layer_next;
     uint8_t  group, group_next;
+    fc_quant_out_s1_t s1, s1_next;
+    fc_quant_out_s2_t s2, s2_next;
 
     /* debug: clamped values, and sums that arrived while the register was still full */
     uint32_t dbg_sat_cnt;
@@ -43,6 +57,7 @@ int16_t fc_quant_value(fc_acc_t x, uint8_t scale_exp, uint8_t relu, uint8_t *dbg
 
 void fc_quant_out_init(fc_quant_out_t *m);
 void fc_quant_out_reset(fc_quant_out_t *m);
+int  fc_quant_out_empty(const fc_quant_out_t *m);
 void fc_quant_out_comb(fc_quant_out_t *m, const fc_quant_out_in_t *in, fc_quant_out_out_t *out);
 void fc_quant_out_seq(fc_quant_out_t *m);
 

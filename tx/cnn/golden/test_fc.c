@@ -234,7 +234,7 @@ static int test_quant_out(void)
     fc_quant_out_seq(&d);
     in.sum_valid = 0;
     int got = 0, cycles = 0;
-    while (cycles++ < 100 && !(got == 6 && !d.valid))
+    while (cycles++ < 100 && !(got == 6 && fc_quant_out_empty(&d)))
     {
         in.logit_ready = (cycles % 3) != 0;
         fc_quant_out_comb(&d, &in, &out);
@@ -247,18 +247,25 @@ static int test_quant_out(void)
         fc_quant_out_seq(&d);
     }
     CHECK(got == 6, "drained %d logits, expected 6", got);
-    CHECK(!d.valid, "register empties after the short last group");
+    CHECK(fc_quant_out_empty(&d), "register and both stages empty after the short last group");
 
     /* FC1 group 2: 20 writes to fc2_in at neurons 40..59, one per clock, ReLU applied */
     in.sum_valid = 1; in.layer = 1; in.group = 2; in.logit_ready = 0;
     for (int l = 0; l < FC_P; l++) in.sum[l] = (fc_acc_t)((l & 1) ? -5 : 5) << FC_CFG[0].scale_exp;
     fc_quant_out_comb(&d, &in, &out); fc_quant_out_seq(&d);
     in.sum_valid = 0;
+    for (int k = 0; k < 2; k++)                                        /* the two output stages fill first */
+    {
+        fc_quant_out_comb(&d, &in, &out);
+        CHECK(!out.feature_we && !out.hold_free, "no write while the pipeline fills (cycle %d)", k);
+        fc_quant_out_seq(&d);
+    }
     for (int k = 0; k < FC_P; k++)
     {
         fc_quant_out_comb(&d, &in, &out);
         CHECK(out.feature_we && out.feature_layer == 1 && out.feature_waddr == 40 + k, "write %d goes to fc2_in[%d]", k, 40 + k);
         CHECK(out.feature_wdata == ((k & 1) ? 0 : 5), "write %d value %u", k, out.feature_wdata);
+        CHECK(!out.hold_free, "not free until the last write is out (write %d)", k);
         fc_quant_out_seq(&d);
     }
     fc_quant_out_comb(&d, &in, &out);

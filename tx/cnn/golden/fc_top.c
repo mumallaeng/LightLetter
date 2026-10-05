@@ -31,7 +31,7 @@ void fc_top_comb(fc_top_t *m, const fc_top_in_t *in, fc_top_out_t *out)
 {
     /* busy / hold_free come from registers only, so the controller can go first */
     fc_ctrl_in_t  ci = {in->fc_in_valid, (uint8_t)(m->u_mac.s1.valid || m->u_mac.s2.valid || m->u_mac.s3.valid),
-                        (uint8_t)!m->u_quant_out.valid};
+                        (uint8_t)fc_quant_out_empty(&m->u_quant_out)};
     fc_ctrl_out_t co;
     fc_ctrl_comb(&m->u_ctrl, &ci, &co);
 

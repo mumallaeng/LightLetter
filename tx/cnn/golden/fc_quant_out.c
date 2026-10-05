@@ -32,48 +32,75 @@ void fc_quant_out_reset(fc_quant_out_t *m)
     m->len = 0;   m->len_next = 0;
     m->layer = 0; m->layer_next = 0;
     m->group = 0; m->group_next = 0;
+    memset(&m->s1, 0, sizeof m->s1); memset(&m->s1_next, 0, sizeof m->s1_next);
+    memset(&m->s2, 0, sizeof m->s2); memset(&m->s2_next, 0, sizeof m->s2_next);
     m->w_dbg_sat = 0; m->w_dbg_overrun = 0;
+}
+
+int fc_quant_out_empty(const fc_quant_out_t *m)
+{
+    return !(m->valid || m->s1.valid || m->s2.valid);
 }
 
 /* always @(*) */
 void fc_quant_out_comb(fc_quant_out_t *m, const fc_quant_out_in_t *in, fc_quant_out_out_t *out)
 {
-    const fc_layer_cfg_t *c = (m->layer >= 1 && m->layer <= FC_LAYERS) ? &FC_CFG[m->layer - 1] : &FC_CFG[0];
-
     memcpy(m->hold_next, m->hold, sizeof m->hold);
     m->valid_next = m->valid;
     m->idx_next   = m->idx;
     m->len_next   = m->len;
     m->layer_next = m->layer;
     m->group_next = m->group;
+    m->s1_next    = m->s1;
+    m->s2_next    = m->s2;
     m->w_dbg_sat = 0;
     m->w_dbg_overrun = 0;
 
     // ========== Output Logic ==========
     memset(out, 0, sizeof *out);
-    out->hold_free = !m->valid;
+    out->hold_free = fc_quant_out_empty(m);
 
-    uint8_t pop = 0;
-    if (m->valid)
+    uint8_t s2_logit = m->s2.valid && m->s2.layer == FC_LAYERS;
+    uint8_t adv      = !s2_logit || in->logit_ready;
+    uint8_t pop      = m->valid && adv;
+
+    if (m->s2.valid)
     {
-        int16_t y = fc_quant_value(m->hold[m->idx], c->scale_exp, c->relu, &m->w_dbg_sat);
-        if (m->layer == FC_LAYERS)
+        if (s2_logit)
         {
             out->logit_valid = 1;
-            out->logit_data  = y;
-            pop = in->logit_ready;
+            out->logit_data  = m->s2.y;
         }
         else
         {
             out->feature_we    = 1;
-            out->feature_layer = m->layer;
-            out->feature_waddr = (uint8_t)(m->group * FC_P + m->idx);
-            out->feature_wdata = (uint16_t)y;
-            pop = 1;
+            out->feature_layer = m->s2.layer;
+            out->feature_waddr = m->s2.waddr;
+            out->feature_wdata = (uint16_t)m->s2.y;
         }
     }
 
     // ========== Next State ==========
+    if (adv)
+    {
+        if (m->s1.valid)
+        {
+            const fc_layer_cfg_t *c = &FC_CFG[m->s1.layer - 1];
+            m->s2_next.y = fc_quant_value(m->s1.cur, c->scale_exp, c->relu, &m->w_dbg_sat);
+        }
+        m->s2_next.valid = m->s1.valid;
+        m->s2_next.layer = m->s1.layer;
+        m->s2_next.waddr = m->s1.waddr;
+
+        m->s1_next.valid = pop;
+        if (pop)
+        {
+            m->s1_next.cur   = m->hold[m->idx];
+            m->s1_next.layer = m->layer;
+            m->s1_next.waddr = (uint8_t)(m->group * FC_P + m->idx);
+        }
+    }
+
     if (pop)
     {
         if (m->idx + 1 >= m->len)
@@ -109,6 +136,8 @@ void fc_quant_out_seq(fc_quant_out_t *m)
     m->len   = m->len_next;
     m->layer = m->layer_next;
     m->group = m->group_next;
+    m->s1    = m->s1_next;
+    m->s2    = m->s2_next;
     if (m->w_dbg_sat)     m->dbg_sat_cnt++;
     if (m->w_dbg_overrun) m->dbg_overrun_cnt++;
 }
