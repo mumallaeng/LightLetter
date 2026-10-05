@@ -9,7 +9,7 @@ module output_buffer #(
     parameter NUM_GROUPS = 2,
     parameter CH_W       = 36,
     parameter ACC_W      = 40,
-    parameter BIAS_FILE  = "conv2_bias.mem"   // rtl/cnn/mem, conv1: "conv1_bias.mem"
+    parameter BIAS_FILE  = "conv2_bias.mem"   // tx/cnn/rtl/mem, conv1: "conv1_bias.mem"
 ) (
     input  wire                    clk,
     input  wire                    rst_n,

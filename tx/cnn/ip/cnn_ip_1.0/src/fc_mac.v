@@ -1,133 +1,101 @@
 `timescale 1ns / 1ps
-// FC MAC: L multiplies per clock, summed into one CH_W partial sum for the Output Buffer.
-// Five pipeline stages: the operands, the products, the products again, then each half of the
-// adder tree, so ch_result follows its mac_en by five clocks. The operand and the two product
-// registers are what Vivado folds into the DSP's own AREG/BREG, MREG and PREG; back-to-back
-// product registers with no logic between them are what let it use MREG as well as PREG.
-// x is an unsigned activation code, w is a signed weight; lane i sits in bits [16*i +: 16].
-// The adder tree is balanced (log2(L) levels) and split in half by a register, so no clock
-// carries more than half of it - a chain would have put L-1 adders in one.
-
+// P multipliers and P accumulators, 3-cycle latency; the group's first input starts from the bias (DSP opmode C + M, then P + M).
 module fc_mac #(
-    parameter L    = 25,  // FC1=25; FC2=10; FC3=5
-    parameter CH_W = 36   // FC1=36; FC2=36; FC3=36
+    parameter P     = 20,
+    parameter ACC_W = 40
 ) (
-    input  wire                   clk,
-    input  wire                   rst_n,
-    input  wire                   mac_en,
-    input  wire        [16*L-1:0] w_in,
-    input  wire        [16*L-1:0] x_in,
-    output wire signed [CH_W-1:0] ch_result,
-    output wire                   mac_valid
+    input  wire                clk,
+    input  wire                rst_n,
+    input  wire [        15:0] feature,
+    input  wire [    16*P-1:0] weight,
+    input  wire [    32*P-1:0] bias,
+    input  wire                first,
+    input  wire                mac_en,
+    input  wire                last,
+    input  wire [         1:0] layer,
+    input  wire [         2:0] group,
+    output wire                sum_valid,
+    output wire [ACC_W*P-1:0]  sum,      // lane l = sum[ACC_W*l +: ACC_W], signed
+    output wire [         1:0] sum_layer,
+    output wire [         2:0] sum_group,
+    output wire                busy
 );
-    integer i;
 
-    reg in_valid;
-    reg prod_valid;
-    reg prod2_valid;
-    reg mid_valid;
-    reg sum_valid;
+    // ========== stage 1: operand registers ==========
+    reg [    15:0] s1_feature;
+    reg [16*P-1:0] s1_weight;
+    reg            s1_first, s1_mac, s1_last, s1_valid;
+    reg [     1:0] s1_layer;
+    reg [     2:0] s1_group;
 
-    reg [16*L-1:0] x_r, w_r;  // operand registers: absorbed into the DSP inputs
+    // ========== stage 2: products, and the bias for the group's first input ==========
+    reg signed [31:0] s2_prod[0:P-1];
+    reg [32*P-1:0]    s2_bias;
+    reg               s2_first, s2_mac, s2_last, s2_valid;
+    reg [     1:0]    s2_layer;
+    reg [     2:0]    s2_group;
 
-    reg signed [31:0] prod[0:L-1];  // products of the L multiplies, 32 bits to hold the signed result
-    reg signed [31:0] prod2[0:L-1];  // second product register, so the DSP uses MREG and PREG
-    reg signed [CH_W-1:0] sum;  // adder tree result, CH_W bits like the conv mac_array
+    // ========== stage 3: accumulators ==========
+    reg signed [ACC_W-1:0] acc[0:P-1];
+    reg               sum_valid_r;
+    reg [     1:0]    sum_layer_r;
+    reg [     2:0]    sum_group_r;
 
-    // Balanced adder tree, cut in half by a register. Level 0 holds the sign-extended products
-    // and each level pairs them up, an odd node moving up untouched. SPLIT is where the pipeline
-    // register sits, so neither half is deeper than ceil(LEVELS/2) adders.
-    localparam LEVELS = (L > 1) ? $clog2(L) : 1;
-    localparam SPLIT = LEVELS / 2;
-    localparam MIDN = (L + (1 << SPLIT) - 1) >> SPLIT;  // nodes at the split
+    always @(posedge clk) begin
+        s1_feature <= feature;
+        s1_weight  <= weight;
+        s2_bias    <= bias;
+    end
 
-    /* verilator lint_off UNOPTFLAT */
-    // each level reads the one below it, which Verilator reads as the array depending on itself
-    wire signed [CH_W-1:0] lo[0:SPLIT][0:L-1];  // products up to the split
-    wire signed [CH_W-1:0] hi[SPLIT:LEVELS][0:L-1];  // the split down to one value
-    /* verilator lint_on UNOPTFLAT */
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            s1_first <= 1'b0; s1_mac <= 1'b0; s1_last <= 1'b0; s1_valid <= 1'b0;
+            s1_layer <= 2'd0; s1_group <= 3'd0;
+            s2_first <= 1'b0; s2_mac <= 1'b0; s2_last <= 1'b0; s2_valid <= 1'b0;
+            s2_layer <= 2'd0; s2_group <= 3'd0;
+            sum_valid_r <= 1'b0; sum_layer_r <= 2'd0; sum_group_r <= 3'd0;
+        end else begin
+            s1_first <= first & mac_en;
+            s1_mac   <= mac_en;
+            s1_last  <= last & mac_en;
+            s1_valid <= mac_en;
+            s1_layer <= layer;
+            s1_group <= group;
 
-    reg signed [CH_W-1:0] mid[0:MIDN-1];  // pipeline register at the split
+            s2_first <= s1_first;
+            s2_mac   <= s1_mac;
+            s2_last  <= s1_last;
+            s2_valid <= s1_valid;
+            s2_layer <= s1_layer;
+            s2_group <= s1_group;
 
-    genvar lv, g;
+            sum_valid_r <= s2_valid & s2_mac & s2_last;
+            sum_layer_r <= s2_layer;
+            sum_group_r <= s2_group;
+        end
+    end
+
+    genvar l;
     generate
-        for (g = 0; g < L; g = g + 1) begin : GEN_LEAF
-            assign lo[0][g] = $signed({{(CH_W - 32) {prod2[g][31]}}, prod2[g]});
-        end
+        for (l = 0; l < P; l = l + 1) begin : GEN_LANE
+            always @(posedge clk) s2_prod[l] <= $signed({1'b0, s1_feature}) * $signed(s1_weight[16*l+:16]);
 
-        for (lv = 1; lv <= SPLIT; lv = lv + 1) begin : GEN_LO_LEVEL
-            localparam integer PREV = (L + (1 << (lv - 1)) - 1) >> (lv - 1);  // nodes one level down
-            localparam integer CUR = (PREV + 1) >> 1;
+            wire signed [ACC_W-1:0] bias_ext = $signed({{(ACC_W - 32) {s2_bias[32*l+31]}}, s2_bias[32*l+:32]});
+            wire signed [ACC_W-1:0] prod_ext = $signed({{(ACC_W - 32) {s2_prod[l][31]}}, s2_prod[l]});
+            wire signed [ACC_W-1:0] base     = s2_first ? bias_ext : acc[l];
 
-            for (g = 0; g < CUR; g = g + 1) begin : GEN_NODE
-                if (2 * g + 1 < PREV) begin : GEN_PAIR
-                    assign lo[lv][g] = lo[lv-1][2*g] + lo[lv-1][2*g+1];
-                end else begin : GEN_ODD
-                    assign lo[lv][g] = lo[lv-1][2*g];
-                end
+            always @(posedge clk) begin
+                if (s2_valid & s2_mac) acc[l] <= base + prod_ext;
             end
-        end
 
-        for (g = 0; g < MIDN; g = g + 1) begin : GEN_MID
-            assign hi[SPLIT][g] = mid[g];
-        end
-
-        for (lv = SPLIT + 1; lv <= LEVELS; lv = lv + 1) begin : GEN_HI_LEVEL
-            localparam integer PREV = (L + (1 << (lv - 1)) - 1) >> (lv - 1);
-            localparam integer CUR = (PREV + 1) >> 1;
-
-            for (g = 0; g < CUR; g = g + 1) begin : GEN_NODE
-                if (2 * g + 1 < PREV) begin : GEN_PAIR
-                    assign hi[lv][g] = hi[lv-1][2*g] + hi[lv-1][2*g+1];
-                end else begin : GEN_ODD
-                    assign hi[lv][g] = hi[lv-1][2*g];
-                end
-            end
+            assign sum[ACC_W*l+:ACC_W] = acc[l];
         end
     endgenerate
 
     // ========== Output Logic ==========
-    assign ch_result = sum;
-    assign mac_valid = sum_valid;
-
-    // ========== Sequential Logic ==========
-    always @(posedge clk) begin : fc_mac_seq
-        if (!rst_n) begin
-            x_r <= {(16 * L) {1'b0}};
-            w_r <= {(16 * L) {1'b0}};
-            for (i = 0; i < L; i = i + 1) prod[i] <= 32'sd0;
-            for (i = 0; i < L; i = i + 1) prod2[i] <= 32'sd0;
-            for (i = 0; i < MIDN; i = i + 1) mid[i] <= {CH_W{1'sb0}};
-            in_valid    <= 1'b0;
-            prod_valid  <= 1'b0;
-            prod2_valid <= 1'b0;
-            mid_valid  <= 1'b0;
-            sum        <= {CH_W{1'sb0}};
-            sum_valid  <= 1'b0;
-        end else begin
-            // stage 1: hold the operands, so the multiply starts from registers
-            if (mac_en) begin
-                x_r <= x_in;
-                w_r <= w_in;
-            end
-            in_valid <= mac_en;
-
-            // stage 2: one product per lane
-            if (in_valid) for (i = 0; i < L; i = i + 1) prod[i] <= $signed({1'b0, x_r[16*i+:16]}) * $signed(w_r[16*i+:16]);
-            prod_valid <= in_valid;
-
-            // stage 3: hold the products again, with no logic in between
-            for (i = 0; i < L; i = i + 1) prod2[i] <= prod[i];
-            prod2_valid <= prod_valid;
-
-            // stage 4: the first half of the tree over the products latched last clock
-            for (i = 0; i < MIDN; i = i + 1) mid[i] <= lo[SPLIT][i];
-            mid_valid <= prod2_valid;
-
-            // stage 5: the rest of the tree
-            sum       <= hi[LEVELS][0];
-            sum_valid <= mid_valid;
-        end
-    end
+    assign sum_valid = sum_valid_r;
+    assign sum_layer = sum_layer_r;
+    assign sum_group = sum_group_r;
+    assign busy      = s1_valid | s2_valid | sum_valid_r;
 
 endmodule
