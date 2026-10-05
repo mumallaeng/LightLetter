@@ -64,7 +64,7 @@ parameter OUTPUT_FILE = "power_result_bit1.csv";
         .y1_re(y1_re), .y1_im(y1_im)
     );
 
-    power u_power (
+    fft_power u_power (
         .clk(clk),
         .rst(rst),
         .i_fft_core_data(i_fft_core_data),
