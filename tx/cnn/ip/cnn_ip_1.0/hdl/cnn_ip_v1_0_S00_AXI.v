@@ -13,8 +13,9 @@ module cnn_ip_v1_0_S00_AXI #(
     parameter integer C_S_AXI_ADDR_WIDTH = 4
 ) (
     // Users to add ports here
-    input wire [4:0] cnn_result,
-    input wire       cnn_done,
+    input  wire [4:0] cnn_result,
+    input  wire       cnn_done,
+    output wire       intr,
 
     // User ports ends
     // Do not modify the ports beyond this line
@@ -80,6 +81,9 @@ module cnn_ip_v1_0_S00_AXI #(
     // accept the read data and response information.
     input wire S_AXI_RREADY
 );
+    // to fix interrupt missing problem
+    reg done_flag;
+    wire sr_read;
 
     // AXI4LITE signals
     reg [C_S_AXI_ADDR_WIDTH-1 : 0] axi_awaddr;
@@ -197,10 +201,12 @@ module cnn_ip_v1_0_S00_AXI #(
 
     always @(posedge S_AXI_ACLK) begin
         if (S_AXI_ARESETN == 1'b0) begin
-            cnn_sr   <= 0;
-            cnn_rdr  <= 0;
+            cnn_sr <= 0;
+            cnn_rdr <= 0;
             slv_reg2 <= 0;
             slv_reg3 <= 0;
+
+            done_flag <= 1'b0;
         end else begin
             if (slv_reg_wren) begin
                 case (axi_awaddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB])
@@ -255,6 +261,17 @@ module cnn_ip_v1_0_S00_AXI #(
                         slv_reg3 <= slv_reg3;
                     end
                 endcase
+            end
+
+            // read-to-clear -> the CPU reads SR in this clk
+            if (sr_read) begin
+                done_flag <= 1'b0;
+            end
+            // last assignment wins: a cnn_done in the same clock as the clear
+            // (or as a write to RDR) is kept
+            if (cnn_done) begin
+                cnn_rdr[4:0] <= cnn_result;
+                done_flag    <= 1'b1;
             end
         end
     end
@@ -339,11 +356,13 @@ module cnn_ip_v1_0_S00_AXI #(
     // Slave register read enable is asserted when valid address is available
     // and the slave is ready to accept the read address.
     assign slv_reg_rden = axi_arready & S_AXI_ARVALID & ~axi_rvalid;
+    assign sr_read = slv_reg_rden & (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 2'h0);
+
     always @(*) begin
         // Address decoding for reading registers
         case (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB])
-            2'h0   : reg_data_out <= {31'd0, cnn_done};
-            2'h1   : reg_data_out <= {27'd0, cnn_result};
+            2'h0   : reg_data_out <= {31'd0, done_flag};
+            2'h1   : reg_data_out <= {27'd0, cnn_rdr[4:0]};
             2'h2   : reg_data_out <= slv_reg2;
             2'h3   : reg_data_out <= slv_reg3;
             default : reg_data_out <= 0;
@@ -365,6 +384,7 @@ module cnn_ip_v1_0_S00_AXI #(
     end
 
     // Add user logic here
+    assign intr = done_flag;
 
     // User logic ends
 

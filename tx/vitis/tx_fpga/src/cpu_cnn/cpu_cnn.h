@@ -7,11 +7,11 @@
  *   conv1 (1->6, 3x3) -> pool 2x2 -> conv2 (6->16, 3x3) -> pool 2x2
  *   -> fc1 (400->120) -> fc2 (120->84) -> fc3 (84->26) -> argmax
  *
- * tx/cnn/tb/cnn_top/gen_img_vectors.py 의 Model.run() 을 그대로 옮긴 것이고,
+ * tb/cnn/cnn_top/gen_img_vectors.py 의 Model.run() 을 그대로 옮긴 것이고,
  * 가중치는 export_cpu_model.py 가 만든 cpu_cnn_weights.h 에서 읽습니다.
  * 입력 img 는 cnn_ip 가 AXIS 로 받는 것과 같은 pixel_in (round(p / 255 * 2^14)).
  *
- * 보드 (Vitis, ARM) 와 PC (tx/cnn/tb/cnn_top/cpu_bench.c) 가 같은 파일을 씁니다.
+ * 보드 (Vitis, ARM) 와 PC (tb/cnn/cnn_top/cpu_bench.c) 가 같은 파일을 씁니다.
  */
 
 #include <stdint.h>
