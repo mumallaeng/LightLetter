@@ -1,4 +1,4 @@
-/* constants from tx/aruco/aruco_crop.ipynb (section 1) and calib/camera.json */
+/* constants from tb/aruco_crop/aruco_crop.ipynb (section 1) and calib/camera.json */
 #ifndef ARUCO_CONFIG_H
 #define ARUCO_CONFIG_H
 
