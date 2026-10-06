@@ -35,8 +35,8 @@
 //   [BIAS] conv_l1 / conv_l2 bias ROM 내용 (시작할 때 한 번) == conv{1,2}_bias_ce.mem
 //   [C2]  conv_l2 출력  (l2_out_valid & l2_out_ready)          vs ce2_out.mem
 //   [P2]  pool_l2 출력  (l2_pool_valid & l2_pool_ready)        vs pool2_out.mem
-//   [F1]  FC1 출력      (U_FC.l1_out_valid & U_FC.l2_in_ready)  vs fc1_out.mem
-//   [F2]  FC2 출력      (U_FC.l2_out_valid & U_FC.l3_in_ready)  vs fc2_out.mem
+//   [F1]  FC1 출력      (U_FC 의 fc2_in feature buffer write)   vs fc1_out.mem
+//   [F2]  FC2 출력      (U_FC 의 fc3_in feature buffer write)   vs fc2_out.mem
 //   [LG]  FC3 출력      (logit_valid & logit_ready)            vs logit_out.mem
 //   [AM]  argmax        cnn_done 은 26 번째 logit 을 받은 바로 다음 클럭에만 1 클럭,
 //                       그때 cnn_result == class_out.mem (그리고 == RTL 이 실제로 낸 logit 의 argmax)
@@ -193,7 +193,9 @@ module tb_cnn_top;
     always @(*) begin
         s_axis_tdata = (pix < FRAMES * N_PIX) ? stim[pix] : 16'd0;
         s_axis_tuser = (pix % N_PIX == 0);
-        s_axis_tlast = (pix % IMG_W == IMG_W - 1);
+        // ce_ctrl_l1 은 tlast 를 "이미지 한 장의 끝"으로 쓴다 (phase_clear 트리거).
+        // 행 끝마다 올리면 프레임 중간에 line buffer 가 초기화된다.
+        s_axis_tlast = (pix % N_PIX == N_PIX - 1);
     end
 
     always @(posedge clk or negedge rst_n) begin
@@ -310,17 +312,29 @@ module tb_cnn_top;
     end
 
     // ---------------- [ROM] conv_l2 weight ROM ----------------
-    wire [431:0] rom_expect = wref[dut.U_CONV_L2.out_ch_sel*2 + dut.U_CONV_L2.rom_is_ch35];
+    // weight ROM 이 BRAM (동기 읽기) 이라 주소를 받은 다음 clk 에 weight_out 이 나온다.
+    //   -> 한 clk 전의 out_ch_sel / is_ch35 로 기대값을 만든다 (cal_valid 도 RTL 에서 1clk 지연됨)
+    // zero gating 으로 rom_en[k] 가 꺼진 입력채널 bank 는 이전 값을 유지하므로 비교에서 제외한다.
+    reg [3:0] rom_sel_d;
+    reg       rom_ph_d;
+    reg [2:0] rom_en_d;
+    always @(posedge clk) begin
+        rom_sel_d <= dut.U_CONV_L2.out_ch_sel;
+        rom_ph_d  <= dut.U_CONV_L2.rom_is_ch35;
+        rom_en_d  <= dut.U_CONV_L2.rom_en;
+    end
+    wire [431:0] rom_mask   = {{144{rom_en_d[2]}}, {144{rom_en_d[1]}}, {144{rom_en_d[0]}}};
+    wire [431:0] rom_expect = wref[rom_sel_d*2 + rom_ph_d] & rom_mask;
 
     always @(posedge clk) begin
         if (rst_n && dut.U_CONV_L2.cal_valid) begin
             rom_checks = rom_checks + 1;
-            if (dut.U_CONV_L2.weight_out !== rom_expect) begin
+            if ((dut.U_CONV_L2.weight_out & rom_mask) !== rom_expect) begin
                 rom_errs = rom_errs + 1;
                 if (rom_shown < MAX_REPORT) begin
                     rom_shown = rom_shown + 1;
-                    $display("[FAIL][ROM] %t cyc %0d: out_ch_sel=%0d is_ch35=%b, weight_out.tap0=%0d exp %0d",
-                             $realtime, cyc, dut.U_CONV_L2.out_ch_sel, dut.U_CONV_L2.rom_is_ch35,
+                    $display("[FAIL][ROM] %t cyc %0d: out_ch_sel(-1clk)=%0d is_ch35(-1clk)=%b, weight_out.tap0=%0d exp %0d",
+                             $realtime, cyc, rom_sel_d, rom_ph_d,
                              $signed(dut.U_CONV_L2.weight_out[15:0]), $signed(rom_expect[15:0]));
                 end
             end
@@ -394,26 +408,35 @@ module tb_cnn_top;
         if (rst_n && dut.l2_pool_valid && !dut.l2_pool_ready) stall_p2 = stall_p2 + 1;
     end
 
+    // ---------------- FC 중간 출력 probe ----------------
+    // fc_top 이 공유 엔진(P=20)으로 바뀌면서 FC1 / FC2 는 따로 포트를 내보내지 않는다.
+    // 대신 fc_quant_out 이 다음 레이어의 feature buffer 에 뉴런 순서대로 써 넣으므로
+    // 그 write 를 예전 l{1,2}_out handshake 자리에 쓴다 (buffer write 는 항상 수락됨).
+    wire        fc1_out_valid = dut.U_FC.qout_feature_we & (dut.U_FC.qout_feature_layer == 2'd1);
+    wire        fc2_out_valid = dut.U_FC.qout_feature_we & (dut.U_FC.qout_feature_layer == 2'd2);
+    wire [15:0] fc1_out_data  = dut.U_FC.qout_feature_wdata;
+    wire [15:0] fc2_out_data  = dut.U_FC.qout_feature_wdata;
+
     // ---------------- [F1] FC1 -> FC2 ----------------
     always @(posedge clk) begin
-        if (rst_n && dut.U_FC.l1_out_valid && dut.U_FC.l2_in_ready) begin
+        if (rst_n && fc1_out_valid) begin
             if (n_f1 < FRAMES * N_F1) begin
-                got_f1[n_f1] = dut.U_FC.l1_out_data;
+                got_f1[n_f1] = fc1_out_data;
                 $fdisplay(fd_trace, "%10t %7d   F1 %5d  f%0d n%3d            %6d (%04x)  exp %6d  %0s",
                           $realtime, cyc, n_f1, n_f1 / N_F1, n_f1 % N_F1,
-                          $signed(dut.U_FC.l1_out_data), dut.U_FC.l1_out_data, $signed(gold_f1[n_f1]),
-                          !neq16(dut.U_FC.l1_out_data, gold_f1[n_f1]) ? "OK" : "MISMATCH");
-                if (neq16(dut.U_FC.l1_out_data, gold_f1[n_f1])) begin
+                          $signed(fc1_out_data), fc1_out_data, $signed(gold_f1[n_f1]),
+                          !neq16(fc1_out_data, gold_f1[n_f1]) ? "OK" : "MISMATCH");
+                if (neq16(fc1_out_data, gold_f1[n_f1])) begin
                     err_f1 = err_f1 + 1;
                     if (shown_f1 < MAX_REPORT) begin
                         shown_f1 = shown_f1 + 1;
                         $display("[FAIL][F1] frame %0d neuron %0d @ %t: got %0d / exp %0d", n_f1 / N_F1, n_f1 % N_F1,
-                                 $realtime, $signed(dut.U_FC.l1_out_data), $signed(gold_f1[n_f1]));
+                                 $realtime, $signed(fc1_out_data), $signed(gold_f1[n_f1]));
                     end
                 end
             end else begin
                 err_f1 = err_f1 + 1;
-                $fdisplay(fd_trace, "%10t %7d   F1 %5d  EXTRA  %6d", $realtime, cyc, n_f1, $signed(dut.U_FC.l1_out_data));
+                $fdisplay(fd_trace, "%10t %7d   F1 %5d  EXTRA  %6d", $realtime, cyc, n_f1, $signed(fc1_out_data));
             end
             n_f1 = n_f1 + 1;
         end
@@ -421,24 +444,24 @@ module tb_cnn_top;
 
     // ---------------- [F2] FC2 -> FC3 ----------------
     always @(posedge clk) begin
-        if (rst_n && dut.U_FC.l2_out_valid && dut.U_FC.l3_in_ready) begin
+        if (rst_n && fc2_out_valid) begin
             if (n_f2 < FRAMES * N_F2) begin
-                got_f2[n_f2] = dut.U_FC.l2_out_data;
+                got_f2[n_f2] = fc2_out_data;
                 $fdisplay(fd_trace, "%10t %7d   F2 %5d  f%0d n%3d            %6d (%04x)  exp %6d  %0s",
                           $realtime, cyc, n_f2, n_f2 / N_F2, n_f2 % N_F2,
-                          $signed(dut.U_FC.l2_out_data), dut.U_FC.l2_out_data, $signed(gold_f2[n_f2]),
-                          !neq16(dut.U_FC.l2_out_data, gold_f2[n_f2]) ? "OK" : "MISMATCH");
-                if (neq16(dut.U_FC.l2_out_data, gold_f2[n_f2])) begin
+                          $signed(fc2_out_data), fc2_out_data, $signed(gold_f2[n_f2]),
+                          !neq16(fc2_out_data, gold_f2[n_f2]) ? "OK" : "MISMATCH");
+                if (neq16(fc2_out_data, gold_f2[n_f2])) begin
                     err_f2 = err_f2 + 1;
                     if (shown_f2 < MAX_REPORT) begin
                         shown_f2 = shown_f2 + 1;
                         $display("[FAIL][F2] frame %0d neuron %0d @ %t: got %0d / exp %0d", n_f2 / N_F2, n_f2 % N_F2,
-                                 $realtime, $signed(dut.U_FC.l2_out_data), $signed(gold_f2[n_f2]));
+                                 $realtime, $signed(fc2_out_data), $signed(gold_f2[n_f2]));
                     end
                 end
             end else begin
                 err_f2 = err_f2 + 1;
-                $fdisplay(fd_trace, "%10t %7d   F2 %5d  EXTRA  %6d", $realtime, cyc, n_f2, $signed(dut.U_FC.l2_out_data));
+                $fdisplay(fd_trace, "%10t %7d   F2 %5d  EXTRA  %6d", $realtime, cyc, n_f2, $signed(fc2_out_data));
             end
             n_f2 = n_f2 + 1;
         end
@@ -524,10 +547,10 @@ module tb_cnn_top;
     // ---------------- [HS] 내부 handshake ----------------
     hs_mon #(.W(17)) u_hs_p2 (.clk(clk), .rst_n(rst_n), .valid(dut.l2_pool_valid), .ready(dut.l2_pool_ready),
                              .data({dut.l2_pool_ch_done, dut.l2_pool_data}));
-    hs_mon #(.W(16)) u_hs_f1 (.clk(clk), .rst_n(rst_n), .valid(dut.U_FC.l1_out_valid), .ready(dut.U_FC.l2_in_ready),
-                             .data(dut.U_FC.l1_out_data));
-    hs_mon #(.W(16)) u_hs_f2 (.clk(clk), .rst_n(rst_n), .valid(dut.U_FC.l2_out_valid), .ready(dut.U_FC.l3_in_ready),
-                             .data(dut.U_FC.l2_out_data));
+    hs_mon #(.W(16)) u_hs_f1 (.clk(clk), .rst_n(rst_n), .valid(fc1_out_valid), .ready(1'b1),
+                             .data(fc1_out_data));
+    hs_mon #(.W(16)) u_hs_f2 (.clk(clk), .rst_n(rst_n), .valid(fc2_out_valid), .ready(1'b1),
+                             .data(fc2_out_data));
 
     // ---------------- [OVR] reorder overrun ----------------
     wire rb1_push = dut.U_CONV_L1.U_OUTPUT_STAGE_L1.u_relu_quant.u_out_reorder.push;

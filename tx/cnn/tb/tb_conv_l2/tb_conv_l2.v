@@ -19,7 +19,7 @@
 //            지금 weight 와 짝이 맞는 bias 는 rtl_ref/conv2_bias_ce.mem 이다. -> TB 가 bias ROM 을 덮어쓴다.
 //
 // 확인하는 것
-//   [A] weight ROM 타이밍 - cal_valid 인 매 사이클 weight_out == conv2_weight[out_ch_sel*2 + is_ch35]
+//   [A] weight ROM 타이밍 - cal_valid 인 매 사이클 weight_out == conv2_weight[out_ch_sel*2 + is_ch35] (sel / is_ch35 는 1clk 전 값, BRAM 동기 읽기, rom_en 이 꺼진 bank 는 제외)
 //   [B] 최종 출력 - {out_ch_done, out_data} 를 ce2_out.mem 과 transfer 단위로 비교
 //   [C] reorder overrun - out_reorder 가 꽉 찬 상태에서 push 가 들어와 버려진 횟수
 //
@@ -137,17 +137,29 @@ module tb_conv_l2;
     end
 
     // ---------------- [A] weight ROM 타이밍 ----------------
-    wire [431:0] rom_expect = wref[dut.out_ch_sel*2 + dut.rom_is_ch35];
+    // BRAM 은 주소를 받은 다음 clk 에 출력하므로 한 clk 전의 out_ch_sel / is_ch35 로 기대값을 만든다
+    // (cal_valid 도 RTL 에서 1clk 지연되어 이 clk 에 맞춰져 있다)
+    // zero gating: rom_en[k] = 0 인 입력채널 bank 는 읽지 않고 이전 값을 유지하므로 비교에서 제외
+    reg [3:0] rom_sel_d;
+    reg       rom_ph_d;
+    reg [2:0] rom_en_d;
+    always @(posedge clk) begin
+        rom_sel_d <= dut.out_ch_sel;
+        rom_ph_d  <= dut.rom_is_ch35;
+        rom_en_d  <= dut.rom_en;
+    end
+    wire [431:0] rom_expect = wref[rom_sel_d*2 + rom_ph_d];
+    wire [431:0] rom_mask   = {{144{rom_en_d[2]}}, {144{rom_en_d[1]}}, {144{rom_en_d[0]}}};
 
     always @(posedge clk) begin
         if (rst_n && dut.cal_valid) begin
             rom_checks = rom_checks + 1;
-            if (dut.weight_out !== rom_expect) begin
+            if ((dut.weight_out & rom_mask) !== (rom_expect & rom_mask)) begin
                 rom_errs = rom_errs + 1;
                 if (rom_shown < MAX_REPORT) begin
                     rom_shown = rom_shown + 1;
-                    $display("[FAIL][rom] %t cyc %0d: out_ch_sel=%0d is_ch35=%b, weight_out.tap0=%04x exp %04x",
-                             $realtime, cyc, dut.out_ch_sel, dut.rom_is_ch35,
+                    $display("[FAIL][rom] %t cyc %0d: out_ch_sel(-1clk)=%0d is_ch35(-1clk)=%b, weight_out.tap0=%04x exp %04x",
+                             $realtime, cyc, rom_sel_d, rom_ph_d,
                              dut.weight_out[15:0], rom_expect[15:0]);
                 end
             end

@@ -82,6 +82,7 @@ module cov2_linebuf_mac #(
         .win_in     (win_out),
         .win_valid  (win_valid),
         .weight_in  (weight_in),
+        .mul_en     ({{9{win_valid[2]}}, {9{win_valid[1]}}, {9{win_valid[0]}}}),
 
         .ch_result0 (ch_result0),
         .ch_result1 (ch_result1),

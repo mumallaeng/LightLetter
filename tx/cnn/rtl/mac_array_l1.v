@@ -6,6 +6,8 @@ module mac_array_l1 (
     input wire [143:0] win_in,
     input wire         win_valid,
     input wire [143:0] weight_in,
+    // 곱셈기별 enable: mul_en[k] <-> win_in[k*16 +: 16]
+    input wire [  8:0] mul_en,
 
     output wire [35:0] ch_result0,
     output wire        mac_valid
@@ -26,7 +28,7 @@ module mac_array_l1 (
         .rst_n     (rst_n),
         .win_row   (win_in[47:0]),
         .weight_row(weight_in[47:0]),
-        .row_valid (win_valid),
+        .mul_en    (mul_en[2:0]),
         .psum_out  (c0_row0_sum)
     );
 
@@ -35,7 +37,7 @@ module mac_array_l1 (
         .rst_n     (rst_n),
         .win_row   (win_in[95:48]),
         .weight_row(weight_in[95:48]),
-        .row_valid (win_valid),
+        .mul_en    (mul_en[5:3]),
         .psum_out  (c0_row1_sum)
     );
 
@@ -44,7 +46,7 @@ module mac_array_l1 (
         .rst_n     (rst_n),
         .win_row   (win_in[143:96]),
         .weight_row(weight_in[143:96]),
-        .row_valid (win_valid),
+        .mul_en    (mul_en[8:6]),
         .psum_out  (c0_row2_sum)
     );
 

@@ -13,7 +13,8 @@ module weight_addr_ctrl_l2 #(
     output                       rom_is_ch35,
     output reg [$clog2(OCH)-1:0] out_ch_sel,
     // mac array
-    output                       cal_valid
+    output                       cal_valid_next,  // = WEIGHT_CAL, weight ROM 읽기 enable 용 (주소와 같은 clk)
+    output reg                   cal_valid        // BRAM 읽기 지연에 맞춰 1clk 지연된 valid
 );
     // ========== FSM ==========
     localparam IDLE = 0;
@@ -31,10 +32,12 @@ module weight_addr_ctrl_l2 #(
             c_state <= IDLE;
             mac_done <= 0;
             out_ch_sel <= 0;
+            cal_valid <= 0;
         end else begin
             c_state <= n_state;
             mac_done <= mac_done_next;
             out_ch_sel <= out_ch_sel_next;
+            cal_valid <= cal_valid_next;
         end
     end
 
@@ -64,7 +67,9 @@ module weight_addr_ctrl_l2 #(
     end
 
     // ----- Moore output logic -----
-    assign cal_valid = c_state;  // equal to c_state = WEIGHT_CAL
+    // weight ROM(BRAM)은 out_ch_sel 주소를 받은 다음 clk에 weight를 출력하므로
+    // cal_valid도 1clk 지연시켜 weight_out과 같은 clk에 맞춘다
+    assign cal_valid_next = c_state;  // equal to c_state = WEIGHT_CAL
 
     // ----- is_ch35 pass-through (ce_ctrl -> weight rom) -----
     assign rom_is_ch35 = is_ch35;

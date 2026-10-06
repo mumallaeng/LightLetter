@@ -6,7 +6,11 @@ module MAC_unit (
 
     input  wire [47:0] win_row,
     input  wire [47:0] weight_row,
-    input  wire        row_valid,
+    // 곱셈기별 enable: mul_en[k] = 0 이면 k번째 곱 결과를 0으로 마스킹
+    //   mul_en[0] -> win_row[15:0]  * weight_row[15:0]
+    //   mul_en[1] -> win_row[31:16] * weight_row[31:16]
+    //   mul_en[2] -> win_row[47:32] * weight_row[47:32]
+    input  wire [2:0]  mul_en,
 
     output wire [35:0] psum_out
 );
@@ -45,14 +49,10 @@ module MAC_unit (
             mul0_reg <= 36'sd0;
             mul1_reg <= 36'sd0;
             mul2_reg <= 36'sd0;
-        end else if (row_valid) begin
-            mul0_reg <= {{4{mul0[31]}}, mul0};
-            mul1_reg <= {{4{mul1[31]}}, mul1};
-            mul2_reg <= {{4{mul2[31]}}, mul2};
         end else begin
-            mul0_reg <= 36'sd0;
-            mul1_reg <= 36'sd0;
-            mul2_reg <= 36'sd0;
+            mul0_reg <= mul_en[0] ? {{4{mul0[31]}}, mul0} : 36'sd0;
+            mul1_reg <= mul_en[1] ? {{4{mul1[31]}}, mul1} : 36'sd0;
+            mul2_reg <= mul_en[2] ? {{4{mul2[31]}}, mul2} : 36'sd0;
         end
     end
 

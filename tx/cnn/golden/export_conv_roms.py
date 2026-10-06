@@ -6,7 +6,8 @@ Reads tx/cnn/model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json and
     tx/cnn/rtl/rtl_ref/conv2_weight.mem     32 rows  [och][grp], 432 bit  (reference copy of weight_rom_l2)
     tx/cnn/rtl/rtl_ref/conv1_bias_ce.mem     6 rows  INT32 at the conv1 accumulator scale
     tx/cnn/rtl/rtl_ref/conv2_bias_ce.mem    16 rows  INT32 at the conv2 accumulator scale
-    tx/cnn/rtl/mem/l2_weight_chNN.mem        2 rows  (grp 0, grp 1) per output channel = weight_rom_l2 ROM
+    tx/cnn/rtl/mem/l2_weight_ic{0,1,2}.mem  32 rows  [och][grp], 144 bit = lane 0/1/2 = weight_rom_l2 BRAM bank (addr {och, grp})
+    tx/cnn/rtl/mem/l2_weight_chNN.mem        2 rows  (grp 0, grp 1) per output channel (old per-channel ROM layout)
     tx/cnn/rtl/rtl_ref/conv1_weight_rom_l1.txt   the case constants weight_rom_l1.v must carry (it has no .mem)
 
 Row layout (tx/cnn/rtl/rtl_ref/README.md): lane l = in_ch grp*3+l in bits [144*l +: 144],
@@ -84,6 +85,9 @@ def main():
             lines += [f"{och}: weight_out = 144'h{rows[2 * och][-36:]};" for och in range(c_out)]
             (ref_dir / "conv1_weight_rom_l1.txt").write_text("\n".join(lines) + "\n")
         else:
+            for lane in range(3):  # 432 bit row = lane2 | lane1 | lane0 (hex, MSB first)
+                (mem_dir / f"l2_weight_ic{lane}.mem").write_text(
+                    "".join(r[len(r) - 36 * (lane + 1):len(r) - 36 * lane] + "\n" for r in rows))
             for och in range(c_out):
                 (mem_dir / f"l2_weight_ch{och:02d}.mem").write_text(rows[2 * och] + "\n" + rows[2 * och + 1] + "\n")
         print(f"{name}: in 2^{in_exp} w 2^{w_exp} acc 2^{acc_exp} out 2^{out_exp} -> SCALE_EXP {out_exp - acc_exp}"
