@@ -1,0 +1,3 @@
+ArUco rc=ERR_MARKERS  markers=[]  fit=0.000px  128 ms
+  threshold win 23: candidates 0, identified 0, pool 0
+  threshold win 13: candidates 0, identified 0, pool 0
