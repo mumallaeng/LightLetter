@@ -6,6 +6,8 @@ module mac_array_l1 (
     input wire [143:0] win_in,
     input wire         win_valid,
     input wire [143:0] weight_in,
+    // 곱셈기별 enable: mul_en[k] <-> win_in[k*16 +: 16]
+    input wire [  8:0] mul_en,
 
     output wire [35:0] ch_result0,
     output wire        mac_valid
@@ -20,18 +22,14 @@ module mac_array_l1 (
     wire [35:0] c0_row1_sum;
     wire [35:0] c0_row2_sum;
 
-    wire c0_row0_valid;
-    wire c0_row1_valid;
-    wire c0_row2_valid;  // row0 / row1 / row2를 서로 독립적으로 계산
 
     MAC_unit U_MAC_C0_R0 (
         .clk       (clk),
         .rst_n     (rst_n),
         .win_row   (win_in[47:0]),
         .weight_row(weight_in[47:0]),
-        .row_valid (win_valid),
-        .psum_out  (c0_row0_sum),
-        .valid_out (c0_row0_valid)
+        .mul_en    (mul_en[2:0]),
+        .psum_out  (c0_row0_sum)
     );
 
     MAC_unit U_MAC_C0_R1 (
@@ -39,9 +37,8 @@ module mac_array_l1 (
         .rst_n     (rst_n),
         .win_row   (win_in[95:48]),
         .weight_row(weight_in[95:48]),
-        .row_valid (win_valid),
-        .psum_out  (c0_row1_sum),
-        .valid_out (c0_row1_valid)
+        .mul_en    (mul_en[5:3]),
+        .psum_out  (c0_row1_sum)
     );
 
     MAC_unit U_MAC_C0_R2 (
@@ -49,9 +46,8 @@ module mac_array_l1 (
         .rst_n     (rst_n),
         .win_row   (win_in[143:96]),
         .weight_row(weight_in[143:96]),
-        .row_valid (win_valid),
-        .psum_out  (c0_row2_sum),
-        .valid_out (c0_row2_valid)
+        .mul_en    (mul_en[8:6]),
+        .psum_out  (c0_row2_sum)
     );
 
     // ===============================================================
@@ -68,31 +64,20 @@ module mac_array_l1 (
     reg signed [35:0] c0_row2_reg;
 
     // ===============================================================
-    // valid도 데이터와 동일하게 FF를 통과시킴
-    //
-    // 데이터가 FF에서 한 단계 지연되므로 valid 역시 동일하게 한 단계 지연
+    // valid는 아래 공통 3단 파이프라인에서 관리
+    // 유닛별 valid 및 row valid AND 로직 제거
     // ===============================================================
-
-    reg c0_valid_reg;
-    reg c1_valid_reg;
-    reg c2_valid_reg;
-
-
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
 
             c0_row0_reg  <= 36'd0;
             c0_row1_reg  <= 36'd0;
             c0_row2_reg  <= 36'd0;
-
-            c0_valid_reg <= 1'b0;
         end else begin
 
             c0_row0_reg  <= c0_row0_sum;
             c0_row1_reg  <= c0_row1_sum;
             c0_row2_reg  <= c0_row2_sum;
-
-            c0_valid_reg <= c0_row0_valid & c0_row1_valid & c0_row2_valid;
         end
     end
 
@@ -123,18 +108,29 @@ module mac_array_l1 (
 
     reg signed [35:0] ch_result0_reg;
 
+    // 공통 valid: 곱셈 FF -> row 합 FF -> 최종 결과 FF
+    reg mul_valid_reg;
+    reg row_valid_reg;
     reg mac_valid_reg;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            mul_valid_reg <= 1'b0;
+            row_valid_reg <= 1'b0;
+            mac_valid_reg <= 1'b0;
+        end else begin
+            mul_valid_reg <= win_valid;
+            row_valid_reg <= mul_valid_reg;
+            mac_valid_reg <= row_valid_reg;
+        end
+    end
 
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             ch_result0_reg <= 36'd0;
-            mac_valid_reg  <= 1'b0;
         end else begin
             ch_result0_reg <= c0_final_sum;
-
-            // NUM_ACTIVE_CH개의 채널이 모두 유효할 때만 valid
-            mac_valid_reg  <= c0_valid_reg;
         end
     end
 

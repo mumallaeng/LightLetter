@@ -53,6 +53,7 @@ module fc_top #(
         .clk        (clk),
         .rst_n      (rst_n),
         .fc_in_valid(fc_in_valid),
+        .feature    (feature),
         .mac_busy   (mac_busy),
         .hold_free  (qout_hold_free),
         .fc_in_ready(fc_in_ready),

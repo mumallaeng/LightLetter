@@ -41,12 +41,14 @@ module conv_l1 #(
     // ----------------------------------
     wire [$clog2(OCH)-1:0] out_ch_sel;
     wire cal_valid;
+    wire win_zero;  // 3x3 window 가 전부 0
 
     weight_addr_ctrl_l1 U_WEIGHT_ADDR_CONTROLLER_L1 (
         .clk       (clk),
         .rst_n     (rst_n),
         .mac_start (mac_start),
         .mac_done  (mac_done),
+        .win_zero  (win_zero),
         .out_ch_sel(out_ch_sel),
         .cal_valid (cal_valid)
     );
@@ -76,6 +78,28 @@ module conv_l1 #(
         .win_valid  (win_valid)
     );
 
+    // Zero Gating Array
+    // ----------------------------------
+    wire [143:0] zg_win, zg_weight;
+    wire [  8:0] is_zero;
+    wire         cal_valid_rt;
+
+    zero_gating_array #(
+        .N(9)
+    ) U_ZERO_GATING_L1 (
+        .clk         (clk),
+        .rst_n       (rst_n),
+        .win_next    (win_out),
+        .weight_next (weight_out),
+        .cal_valid   (cal_valid),
+        .win_in      (zg_win),
+        .weight_in   (zg_weight),
+        .is_zero     (is_zero),
+        .cal_valid_rt(cal_valid_rt)
+    );
+
+    assign win_zero = &is_zero;
+
     // MAC Array
     // ----------------------------------
     wire [35:0] ch_result;
@@ -84,9 +108,10 @@ module conv_l1 #(
     mac_array_l1 U_MAC_ARRAY_L1 (
         .clk       (clk),
         .rst_n     (rst_n),
-        .win_in    (win_out),
-        .win_valid (cal_valid),
-        .weight_in (weight_out),
+        .win_in    (zg_win),
+        .win_valid (cal_valid_rt),
+        .weight_in (zg_weight),
+        .mul_en    ({9{cal_valid_rt}} & ~is_zero),
         .ch_result0(ch_result),
         .mac_valid (mac_valid)
     );
