@@ -22,11 +22,11 @@ function buildStages() {
   $('stages').innerHTML = '';
   for (const s of list) {
     const label = document.createElement('label');
-    label.innerHTML = '<input type="checkbox"><span></span><small></small>';
+    label.innerHTML = '<input type="checkbox"><span></span>';
     label.querySelector('input').checked = on.has(s.id);
     label.querySelector('input').dataset.id = s.id;
     label.querySelector('span').textContent = s.label;
-    label.querySelector('small').textContent = s.desc;
+    label.title = s.desc;
     $('stages').append(label);
   }
   buildPanel();
@@ -36,13 +36,14 @@ function buildPanel() {
   const panel = $('panel'), on = selected(), list = status.stages[mode].filter(s => on.includes(s.id));
   panel.innerHTML = '';
   $('panelEmpty').hidden = list.length > 0;
+  panel.style.setProperty('--n', Math.max(list.length, 1));
   for (const s of list) {
     const row = document.createElement('div');
     row.className = 'stagerow';
-    row.innerHTML = '<h3></h3>' + (mode === 'aruco' ? '<div class="cellhead">' + Array.from({ length: status.cells }, (_, k) => `<span>cell ${k}</span>`).join('') + '</div>' : '') + '<img>';
+    const head = mode === 'aruco' ? '<div class="cellhead">' + Array.from({ length: status.cells }, (_, k) => `<span>cell ${k}</span>`).join('') + '</div>' : '';
+    row.innerHTML = `<h3></h3><div class="stagebox">${head}<img></div>`;
     row.querySelector('h3').textContent = s.label;
     row.dataset.id = s.id;
-    row.classList.toggle('cellrow', mode === 'aruco');
     panel.append(row);
   }
 }
