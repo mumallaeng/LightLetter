@@ -16,6 +16,9 @@ foreach m {fc_top fc_layer fc_ctrl fc_mac fc_staging fc_weight_rom output_buffer
 # $readmemh in the ROMs resolves its file name against the working directory
 cd [file join $rtl mem]
 
+# with more threads synth_design fails on the lab PC (Vivado 2020.2, "couldn't read file ... realtime/fc_top.tcl")
+set_param general.maxThreads 1
+
 synth_design -top fc_top -part xc7z020clg400-1 -mode out_of_context
 create_clock -name clk -period $period [get_ports clk]
 
