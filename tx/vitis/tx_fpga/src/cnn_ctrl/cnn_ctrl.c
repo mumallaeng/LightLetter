@@ -129,6 +129,11 @@ int cnn_ctrl_get_result(u8 *cls)
     return has_result;
 }
 
+XTime cnn_ctrl_result_time(void)
+{
+    return result_time;
+}
+
 void cnn_ctrl_set_isr_hook(int (*hook)(u8 cls, XTime done_at))
 {
     isr_hook = hook;

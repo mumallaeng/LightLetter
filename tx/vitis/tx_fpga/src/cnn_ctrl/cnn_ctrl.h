@@ -17,6 +17,8 @@ void cnn_ctrl_poll(void);
  */
 void cnn_ctrl_set_isr_hook(int (*hook)(u8 cls, XTime done_at));
 int  cnn_ctrl_get_result(u8 *cls);
+/* cnn_done (cnn_isr entry) of the result the last cnn_ctrl_get_result() returned. */
+XTime cnn_ctrl_result_time(void);
 /* Prints one result (log line + recognition JSON) and sends it over BFSK TX.
  * Blocks until the BFSK frame is out, so call it from the main loop only. */
 void cnn_ctrl_report(u8 cls);

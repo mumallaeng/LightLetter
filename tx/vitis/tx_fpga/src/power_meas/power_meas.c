@@ -26,6 +26,8 @@
 #include "../cnn_ctrl/cnn_ctrl.h"
 #include "../cpu_cnn/cpu_cnn.h"
 #include "../cpu_cnn/cpu_preprocess.h"
+#include "../cpu_cnn/cpu_bench.h"
+#include "../cpu_cnn/cpu_cnn_testset.h"
 
 /* main.c 의 영상 경로 인스턴스 (정지할 때만 씀) */
 extern XAxiVdma    vdma;
@@ -113,10 +115,15 @@ static XAdcPs    meas_xadc;
 static int       hw_ready;
 static int       video_stopped;
 
-static u8  meas_img[ROI_DMA_FRAME_BYTES] __attribute__((aligned(64)));
+/* 입력 70 장 (112x112 G,B,R). 37632 B 는 64 의 배수라 모든 장이 64 B 정렬 -> DMA 가 바로 읽음 */
+#define TS_SCALE    (ROI_DMA_WIDTH / CPU_CNN_IMG_W)     /* 28 -> 112 : 4 */
+static u8  ts_img[TESTSET_N][ROI_DMA_FRAME_BYTES] __attribute__((aligned(64)));
+static u8  cpu_ref[TESTSET_N];      /* 같은 112 이미지로 돌린 CPU 모델 class */
+static u8  pl_ref[TESTSET_N];       /* PL class (확인 단계)                  */
+static u32 ts_match;                /* cpu_ref == pl_ref 인 장 수            */
+static u32 ts_cpu_hit;              /* cpu_ref == testset_label              */
+static u32 ts_pl_hit;               /* pl_ref  == testset_label              */
 static s16 cpu_in[CPU_CNN_IMG_PIX];
-static int cpu_cls;
-static u8  pl_cls;
 static Pl_done_mode pl_mode;
 
 /* timer ISR <-> 전경 */
@@ -331,52 +338,6 @@ static void pl_drain(void)
     (void)Xil_In32(CNN_BASEADDR + CNN_SR_OFFSET);   /* 남은 done_flag 정리 */
 }
 
-/*===========================================================================
- *  입력 준비 + CPU / PL class 확인
- *===========================================================================*/
-static int meas_prepare_input(void)
-{
-    u8 c;
-
-    if (roi_dma_last_times()->kick == 0) {
-        xil_printf("power: no ROI sent yet, using the synthetic test frame\r\n");
-        if (roi_dma_send_test_frame() != XST_SUCCESS) {
-            return XST_FAILURE;
-        }
-        usleep(10000);
-    }
-    /* 이전 측정의 PL_KICK_WFI 뒤에는 roi_dma_frame() 이 meas_img 자신을 가리킴 */
-    if (roi_dma_frame() != meas_img) {
-        memcpy(meas_img, roi_dma_frame(), ROI_DMA_FRAME_BYTES);
-    }
-    pl_drain();
-
-    cpu_preprocess(meas_img, cpu_in);
-    cpu_cls = cpu_cnn_run(cpu_in, NULL);
-
-    pl_mode = PL_DONE_IRQ;
-    if (roi_dma_send_image(meas_img) != XST_SUCCESS) {
-        return XST_FAILURE;
-    }
-    if (pl_wait(&c, 0)) {
-        xil_printf("power: PL done via cnn IRQ\r\n");
-    } else if (Xil_In32(CNN_BASEADDR + CNN_SR_OFFSET) & CNN_SR_DONE) {
-        c = (u8)(Xil_In32(CNN_BASEADDR + CNN_RDR_OFFSET) & CNN_RESULT_MASK);
-        pl_mode = PL_DONE_POLL;
-        xil_printf("power: WARNING cnn IRQ did not fire, falling back to SR polling "
-                   "(PL_CNN_WFI / PL_KICK_WFI are skipped)\r\n");
-    } else {
-        xil_printf("power: PL CNN did not finish (no IRQ, SR done = 0). "
-                   "Check that the bitstream has the latched SR / intr.\r\n");
-        return XST_FAILURE;
-    }
-    pl_cls = c;
-
-    xil_printf("power: check CPU class = %d, PL class = %d -> %s\r\n",
-               cpu_cls, (int)pl_cls,
-               (cpu_cls == (int)pl_cls) ? "MATCH" : "MISMATCH");
-    return XST_SUCCESS;
-}
 
 /*===========================================================================
  *  상태 하나 실행
@@ -387,6 +348,7 @@ static void meas_run_state(Meas_state st, u32 settle_ms, u32 meas_ms, Meas_run *
     XTime t1;
     u32 n = 0;
     u32 n0 = 0;
+    u32 k = 0;          /* 70 장을 순서대로 돌림 */
     int started = 0;
     u8 c;
 
@@ -412,10 +374,11 @@ static void meas_run_state(Meas_state st, u32 settle_ms, u32 meas_ms, Meas_run *
                 n0 = n;
                 started = 1;
             }
-            cpu_preprocess(meas_img, cpu_in);
-            if (cpu_cnn_run(cpu_in, NULL) != cpu_cls) {
+            cpu_preprocess(ts_img[k], cpu_in);
+            if (cpu_cnn_run(cpu_in, NULL) != (int)cpu_ref[k]) {
                 r->cls_err++;
             }
+            k = (k + 1u == TESTSET_N) ? 0u : k + 1u;
             n++;
         }
         break;
@@ -428,14 +391,15 @@ static void meas_run_state(Meas_state st, u32 settle_ms, u32 meas_ms, Meas_run *
                 n0 = n;
                 started = 1;
             }
-            if (roi_dma_send_image(meas_img) != XST_SUCCESS ||
+            if (roi_dma_send_image(ts_img[k]) != XST_SUCCESS ||
                 !pl_wait(&c, st == ST_PL_CNN_WFI)) {
                 r->cls_err++;
                 break;
             }
-            if (c != pl_cls) {
+            if (c != pl_ref[k]) {
                 r->cls_err++;
             }
+            k = (k + 1u == TESTSET_N) ? 0u : k + 1u;
             n++;
         }
         while (!meas_done()) {          /* 실패로 빠져나온 경우에도 구간 길이는 유지 */
@@ -443,21 +407,22 @@ static void meas_run_state(Meas_state st, u32 settle_ms, u32 meas_ms, Meas_run *
         break;
 
     case ST_PL_KICK_WFI:
-        /* 입력이 바뀌지 않으므로 flush 는 여기 한 번 (settle 구간 안) */
-        Xil_DCacheFlushRange((INTPTR)meas_img, ROI_DMA_FRAME_BYTES);
+        /* 70 장은 측정 중 바뀌지 않으므로 flush 는 여기 한 번 (settle 구간 안) */
+        Xil_DCacheFlushRange((INTPTR)ts_img, sizeof(ts_img));
         while (!meas_done()) {
             if (!started && meas_in_window()) {
                 XTime_GetTime(&t0);
                 n0 = n;
                 started = 1;
             }
-            if (roi_dma_start_image(meas_img) != XST_SUCCESS || !pl_wait(&c, 1)) {
+            if (roi_dma_start_image(ts_img[k]) != XST_SUCCESS || !pl_wait(&c, 1)) {
                 r->cls_err++;
                 break;
             }
-            if (c != pl_cls) {
+            if (c != pl_ref[k]) {
                 r->cls_err++;
             }
+            k = (k + 1u == TESTSET_N) ? 0u : k + 1u;
             n++;
         }
         while (!meas_done()) {
@@ -638,6 +603,156 @@ static int meas_abort_requested(void)
 }
 
 /*===========================================================================
+ *  입력 : RTL 검증과 같은 70 장 (cpu_cnn_testset.h, EMNIST M..Z 5 장씩)
+ *
+ *  testset 은 이미 전처리된 28x28 pixel_in 이라 PL 의 DMA 경로
+ *  (112x112 RGB -> img_preprocess -> cnn_ip) 에 그대로 넣을 수 없다. 그래서
+ *  흰 종이 위 검은 글자로 되돌린다.
+ *      p = round(pixel_in * 255 / 2^14)   pixel_in = round(p / 255 * 2^14) 의 역 (정확히 복원)
+ *      28x28 -> 112x112                   한 픽셀을 4x4 로
+ *      R = G = B = 255 - p
+ *  img_preprocess 의 grayscale (77R + 150G + 29B + 128) >> 8 은 R = G = B 이면 값이
+ *  그대로이고, 반전하면 p 가 된다. 다만 threshold / bbox / 22 px 맞춤을 다시 거치므로
+ *  CNN 입력은 원래 28x28 과 다르다. 그래서 기대값은 testset_class 가 아니라 같은
+ *  112 이미지로 돌린 CPU 모델 결과 (cpu_ref) 이고, 정답률은 testset_label 로 본다.
+ *===========================================================================*/
+static void ts_build_images(void)
+{
+    u32 n;
+    u32 x;
+    u32 y;
+    u8 *dst;
+    u8 v;
+
+    for (n = 0; n < TESTSET_N; n++) {
+        dst = ts_img[n];
+        for (y = 0; y < ROI_DMA_HEIGHT; y++) {
+            for (x = 0; x < ROI_DMA_WIDTH; x++) {
+                u32 pin = (u32)testset_img[n][(y / TS_SCALE) * CPU_CNN_IMG_W + (x / TS_SCALE)];
+
+                v = (u8)(255u - ((pin * 255u + 8192u) >> 14));
+                dst[0] = v;
+                dst[1] = v;
+                dst[2] = v;
+                dst += ROI_DMA_RGB_BYTES;
+            }
+        }
+    }
+    /* CPU 가 쓴 2.6 MB 를 DDR 로. 이후로는 아무도 쓰지 않으니 DMA 가 바로 읽어도 됨 */
+    Xil_DCacheFlushRange((INTPTR)ts_img, sizeof(ts_img));
+}
+
+/* 확인 단계의 PL 대기. 첫 장에서 IRQ 가 안 오면 SR polling 으로 바꾼다. */
+static int ts_wait_done(u8 *cls, XTime *done)
+{
+    if (pl_mode == PL_DONE_IRQ) {
+        if (pl_wait(cls, 0)) {
+            *done = cnn_ctrl_result_time();      /* cnn_isr 진입 시각 = cnn_done */
+            return 1;
+        }
+        if ((Xil_In32(CNN_BASEADDR + CNN_SR_OFFSET) & CNN_SR_DONE) == 0u) {
+            return 0;
+        }
+        XTime_GetTime(done);
+        *cls = (u8)(Xil_In32(CNN_BASEADDR + CNN_RDR_OFFSET) & CNN_RESULT_MASK);
+        pl_mode = PL_DONE_POLL;
+        XScuGic_DisableIntr(GIC_DIST_BASEADDR, CNN_IRQ_ID);
+        xil_printf("power: WARNING cnn IRQ did not fire, falling back to SR polling "
+                   "(PL_CNN_WFI / PL_KICK_WFI are skipped)\r\n");
+        return 1;
+    }
+    if (pl_wait(cls, 0)) {
+        XTime_GetTime(done);
+        return 1;
+    }
+    return 0;
+}
+
+static void print_avg_us(const char *label, u64 sum_ticks)
+{
+    cnn_ctrl_print_us(label, 0, sum_ticks / TESTSET_N);
+}
+
+/*
+ * 70 장을 한 장씩 CPU 와 PL 로 돌려 class 를 비교하고, 구간별 시간의 평균을 낸다
+ * ('d' 키 출력과 같은 구간 정의). 측정 단계의 기대값 cpu_ref / pl_ref 도 여기서 정해진다.
+ */
+static int ts_check(void)
+{
+    Cpu_bench_result cb;
+    const Roi_dma_times *t;
+    XTime done;
+    u64 s_pre   = 0;
+    u64 s_cnn   = 0;
+    u64 s_flush = 0;
+    u64 s_dma   = 0;
+    u64 s_comp  = 0;
+    u32 n;
+    u8 c;
+
+    pl_drain();
+    pl_mode    = PL_DONE_IRQ;
+    ts_match   = 0;
+    ts_cpu_hit = 0;
+    ts_pl_hit  = 0;
+
+    xil_printf("#IMG,idx,label,cpu_cls,pl_cls,cpu_us,pl_kick_us\r\n");
+    for (n = 0; n < TESTSET_N; n++) {
+        cpu_bench_roi(ts_img[n]);
+        cpu_bench_take(&cb);
+        cpu_ref[n] = (u8)cb.cls;
+
+        if (roi_dma_send_image(ts_img[n]) != XST_SUCCESS || !ts_wait_done(&c, &done)) {
+            xil_printf("power: image %d: PL CNN did not finish. Check that the "
+                       "bitstream has the latched SR / intr.\r\n", (int)n);
+            return XST_FAILURE;
+        }
+        t = roi_dma_last_times();
+        pl_ref[n] = c;
+
+        s_pre   += cb.pre_ticks;
+        s_cnn   += cb.cnn_ticks;
+        s_flush += t->kick - t->flush;
+        s_dma   += t->dma_done - t->kick;
+        s_comp  += done - t->dma_done;
+
+        ts_match   += (cpu_ref[n] == pl_ref[n]);
+        ts_cpu_hit += (cpu_ref[n] == testset_label[n]);
+        ts_pl_hit  += (pl_ref[n] == testset_label[n]);
+
+        xil_printf("IMG,%d,%c,%c,%c,", (int)n, 'A' + testset_label[n],
+                   'A' + cpu_ref[n], 'A' + pl_ref[n]);
+        print_fix((double)(cb.pre_ticks + cb.cnn_ticks) * 1e6 / COUNTS_PER_SECOND, 2);
+        xil_printf(",");
+        print_fix((double)(done - t->kick) * 1e6 / COUNTS_PER_SECOND, 2);
+        xil_printf("%s\r\n", (cpu_ref[n] == pl_ref[n]) ? "" : ",MISMATCH");
+    }
+
+    xil_printf("\r\npower: testset %d images (EMNIST M..Z x 5, 28x28 -> 112x112, "
+               "dark glyph on white)\r\n", TESTSET_N);
+    xil_printf("  CPU vs PL class : %u / %d match\r\n", (unsigned)ts_match, TESTSET_N);
+    xil_printf("  accuracy        : CPU %u / %d, PL %u / %d\r\n",
+               (unsigned)ts_cpu_hit, TESTSET_N, (unsigned)ts_pl_hit, TESTSET_N);
+    xil_printf("TIME (one inference per image, mean of %d images):\r\n", TESTSET_N);
+    xil_printf("CPU (ARM A9):\r\n");
+    print_avg_us("preprocess      :", s_pre);
+    print_avg_us("CNN             :", s_cnn);
+    print_avg_us("CPU total       :", s_pre + s_cnn);
+    xil_printf("PL  (PS hand-off -> CNN done):\r\n");
+    print_avg_us("cache flush     :", s_flush);
+    print_avg_us("DMA 112x112 in  :", s_dma);
+    print_avg_us("preprocess+CNN  :", s_comp);
+    print_avg_us("PL total (kick) :", s_dma + s_comp);
+    print_avg_us("total (flush)   :", s_flush + s_dma + s_comp);
+    xil_printf("  speed-up        : x");
+    print_fix((double)(s_pre + s_cnn) / (double)(s_dma + s_comp), 2);
+    xil_printf(" (CPU total / PL kick), x");
+    print_fix((double)(s_pre + s_cnn) / (double)(s_flush + s_dma + s_comp), 2);
+    xil_printf(" (CPU total / PL flush)\r\n\r\n");
+    return XST_SUCCESS;
+}
+
+/*===========================================================================
  *  public
  *===========================================================================*/
 void power_meas_run(void)
@@ -655,21 +770,25 @@ void power_meas_run(void)
     if (!hw_ready && meas_hw_init() != XST_SUCCESS) {
         return;
     }
-    if (meas_prepare_input() != XST_SUCCESS) {
-        xil_printf("power: input / PL check failed, aborted\r\n");
-        return;
-    }
+    /* 확인 단계의 시간도 카메라 DDR 트래픽 없이 재도록 영상 경로부터 세운다 */
     if (!video_stopped) {
         meas_stop_video();
     }
+    ts_build_images();
+    if (ts_check() != XST_SUCCESS) {
+        xil_printf("power: testset check failed, aborted\r\n");
+        return;
+    }
 
     xil_printf("CFG,vin_mV=%u,sample_hz=%u,xadc_avg=256,settle_ms=%u,state_ms=%u,"
-               "rounds=%u,cpu_hz=%u,pl_done=%s,cpu_cls=%d,pl_cls=%d\r\n",
+               "rounds=%u,cpu_hz=%u,pl_done=%s,input=testset%d,match=%u,"
+               "cpu_hit=%u,pl_hit=%u\r\n",
                (unsigned)POWER_MEAS_VIN_MV, (unsigned)POWER_MEAS_SAMPLE_HZ,
                (unsigned)POWER_MEAS_SETTLE_MS, (unsigned)POWER_MEAS_STATE_MS,
                (unsigned)POWER_MEAS_ROUNDS,
                (unsigned)XPAR_CPU_CORTEXA9_0_CPU_CLK_FREQ_HZ,
-               (pl_mode == PL_DONE_IRQ) ? "irq" : "poll", cpu_cls, (int)pl_cls);
+               (pl_mode == PL_DONE_IRQ) ? "irq" : "poll", TESTSET_N,
+               (unsigned)ts_match, (unsigned)ts_cpu_hit, (unsigned)ts_pl_hit);
 
     xil_printf("power: warm-up %u s in WFI ... (press q between states to abort)\r\n",
                (unsigned)(POWER_MEAS_WARMUP_MS / 1000u));
