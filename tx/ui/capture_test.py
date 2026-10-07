@@ -341,41 +341,61 @@ def draw_aruco(frame, ar):
     cv2.putText(frame, status, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
 
 
-def show_cells(ar):
+def cell_tiles(ar, k):
+    """칸 k의 단계별 타일 5개 (STAGES 순서). threshold 타일에는 bbox를 그린다."""
+    T = TILE
+    proc, out8, _, info = ar["cnn"][k]
+    raw, undist = ar["views"][k]
+    rgb = cv2.resize(ar["cells"][k], (T, T), interpolation=cv2.INTER_NEAREST)
+    thr = cv2.resize(cv2.cvtColor(proc, cv2.COLOR_GRAY2BGR), (T, T),
+                     interpolation=cv2.INTER_NEAREST)
+    if info is not None:
+        s = T / proc.shape[1]
+        bx, by, bw, bh = info["bbox"]
+        cv2.rectangle(thr, (int(bx * s), int(by * s)),
+                      (int((bx + bw) * s) - 1, int((by + bh) * s) - 1), (0, 0, 255), 1)
+    cnn = cv2.resize(cv2.cvtColor(out8, cv2.COLOR_GRAY2BGR), (T, T),
+                     interpolation=cv2.INTER_NEAREST)
+    return [raw, undist, rgb, thr, cnn]
+
+
+def put_label(canvas, text, x, y):
+    cv2.putText(canvas, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 3)
+    cv2.putText(canvas, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, CELL_COLOR, 1)
+
+
+def show_cells(ar, strip=None):
     """칸 5개를 열로, 위에서 아래로 STAGES 순서: 원본 crop, 왜곡 보정, homography 112,
-    threshold + bbox, CNN 28x28. 첫 열 타일에 단계 이름을 적는다."""
+    threshold + bbox, CNN 28x28. strip이 칸 번호면 그 칸의 5단계를 첫 행에 가로로 놓고
+    아래에는 homography, threshold, CNN 3행만 남긴다 (4x5)."""
     T, GAP, HEAD = TILE, 6, 26
-    rows = len(STAGES)
-    canvas = np.full((HEAD + rows * T + (rows - 1) * GAP, 5 * T + 4 * GAP, 3), 40, np.uint8)
-    for k in range(aruco_c.NUM_CELLS):
+    n = aruco_c.NUM_CELLS
+    first = 2 if strip is not None else 0       # 아래 격자에서 건너뛸 앞쪽 단계 수
+    rows = len(STAGES) - first
+    top = (HEAD + T + GAP) if strip is not None else 0
+    canvas = np.full((top + HEAD + rows * T + (rows - 1) * GAP, n * T + (n - 1) * GAP, 3),
+                     40, np.uint8)
+    ok = ar["cnn"] is not None
+    if strip is not None:
+        cv2.putText(canvas, f"cell {strip}: " + " > ".join(STAGES), (4, 19),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, CELL_COLOR, 1)
+        if ok:
+            for j, img in enumerate(cell_tiles(ar, strip)):
+                canvas[HEAD:HEAD + T, j * (T + GAP):j * (T + GAP) + T] = img
+    for k in range(n):
         x = k * (T + GAP)
-        cv2.putText(canvas, f"cell {k}", (x + 4, 19), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+        cv2.putText(canvas, f"cell {k}", (x + 4, top + 19), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                     CELL_COLOR, 1)
-        if ar["cnn"] is None:
+        if not ok:
             continue
-        proc, out8, _, info = ar["cnn"][k]
-        raw, undist = ar["views"][k]
-        rgb = cv2.resize(ar["cells"][k], (T, T), interpolation=cv2.INTER_NEAREST)
-        thr = cv2.resize(cv2.cvtColor(proc, cv2.COLOR_GRAY2BGR), (T, T),
-                         interpolation=cv2.INTER_NEAREST)
-        if info is not None:
-            s = T / proc.shape[1]
-            bx, by, bw, bh = info["bbox"]
-            cv2.rectangle(thr, (int(bx * s), int(by * s)),
-                          (int((bx + bw) * s) - 1, int((by + bh) * s) - 1), (0, 0, 255), 1)
-        cnn = cv2.resize(cv2.cvtColor(out8, cv2.COLOR_GRAY2BGR), (T, T),
-                         interpolation=cv2.INTER_NEAREST)
-        y = HEAD
-        for img, name in zip((raw, undist, rgb, thr, cnn), STAGES):
+        y = top + HEAD
+        for img, name in zip(cell_tiles(ar, k)[first:], STAGES[first:]):
             canvas[y:y + T, x:x + T] = img
             if k == 0:
-                cv2.putText(canvas, name, (x + 4, y + T - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
-                            (0, 0, 0), 3)
-                cv2.putText(canvas, name, (x + 4, y + T - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
-                            CELL_COLOR, 1)
+                put_label(canvas, name, x + 4, y + T - 6)
             y += T + GAP
-    if ar["cnn"] is None:
-        cv2.putText(canvas, f"crop failed: {aruco_c.ERR_NAME[ar['rc']]}", (20, HEAD + 60),
+    if not ok:
+        cv2.putText(canvas, f"crop failed: {aruco_c.ERR_NAME[ar['rc']]}", (20, top + HEAD + 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, MISSING_COLOR, 2)
     cv2.imshow(WIN_CELLS, canvas)
 
@@ -427,6 +447,8 @@ def main():
     ap.add_argument("--no-mjpg", action="store_true", help="MJPG 요청을 끈다 (화면이 안 나오면 시도)")
     ap.add_argument("--list", action="store_true", help="장치 목록만 출력")
     ap.add_argument("--image", help="캡처보드 대신 저장한 프레임(PNG 등)을 계속 보여준다")
+    ap.add_argument("--strip", choices=("none", "first", "last"), default="none",
+                    help="칸 창 첫 행에 첫(first)/마지막(last) 칸의 5단계를 가로로 놓는다")
     args = ap.parse_args()
 
     if args.list:
@@ -449,6 +471,7 @@ def main():
               f"{int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}")
     cv2.namedWindow(WIN_CAP, cv2.WINDOW_NORMAL)
 
+    strip = {"none": None, "first": 0, "last": aruco_c.NUM_CELLS - 1}[args.strip]
     guide = True
     mode = "aruco"                              # "aruco" | "center"
     worker = ArucoWorker()
@@ -479,7 +502,7 @@ def main():
             ar = worker.latest()
             if guide and ar is not None:
                 draw_aruco(frame, ar)
-                show_cells(ar)
+                show_cells(ar, strip)
         else:
             roi, proc, out8, cnn, info = cnn_pipeline(raw)
             if guide:
