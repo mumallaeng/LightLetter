@@ -124,7 +124,12 @@ def fmt(pair, nd=2):
 def report(cfg, summary, vin):
     print()
     print(f"Vin = {vin:.3f} V, CPU = {int(cfg.get('cpu_hz', 0)) / 1e6:.1f} MHz, "
-          f"PL done = {cfg.get('pl_done', '?')}, class CPU/PL = {cfg.get('cpu_cls')}/{cfg.get('pl_cls')}")
+          f"PL done = {cfg.get('pl_done', '?')}")
+    if "input" in cfg:
+        print(f"input = {cfg['input']}, CPU/PL class match = {cfg.get('match')}, "
+              f"accuracy CPU {cfg.get('cpu_hit')} / PL {cfg.get('pl_hit')}")
+    else:
+        print(f"class CPU/PL = {cfg.get('cpu_cls')}/{cfg.get('pl_cls')}")
     print("값은 라운드 간 평균 ± 표준편차. dP / dE 는 인접 WFI 대비 증가분 (board-level).")
     hdr = f"{'state':<11} {'runs':>4} {'P [mW]':>18} {'dP [mW]':>16} {'t/inf [us]':>18} " \
           f"{'E/inf [uJ]':>16} {'dE/inf [uJ]':>16} {'err':>4}"
