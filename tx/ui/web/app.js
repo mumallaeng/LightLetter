@@ -133,6 +133,10 @@ async function poll() {
     status = await (await fetch('/api/status')).json();
   }
   $('camControls').hidden = status.kind !== 'browser';
+  $('camNote').hidden = status.kind === 'browser';
+  $('camNote').textContent = status.kind === 'device'
+    ? '서버가 --device 로 캡처보드를 직접 열고 있어서 브라우저로 켜는 버튼은 없습니다. 브라우저에서 켜려면 서버를 --device 없이 다시 실행하세요.'
+    : '저장한 프레임(--image)을 보여 주는 중이라 캡처보드를 켜는 버튼은 없습니다.';
   if (first) {
     if (status.kind === 'browser') listCameras();
     $('cell').innerHTML = Array.from({ length: status.cells }, (_, k) => `<option value="${k}">${k}</option>`).join('');
