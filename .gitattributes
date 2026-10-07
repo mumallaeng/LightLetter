@@ -4,3 +4,8 @@
 # file, which we still want.
 *.ipynb linguist-detectable=false
 *.html linguist-detectable=false
+
+# Git on Windows (core.autocrlf=true) would check bash and Tcl scripts out as CRLF, which breaks them; cmd files need CRLF
+*.sh text eol=lf
+*.tcl text eol=lf
+*.cmd text eol=crlf
