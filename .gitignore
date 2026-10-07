@@ -193,3 +193,6 @@ legacy/vitis/BFSK_TX_Test_system/_ide/scripts/systemdebugger_*.tcl
 # Board-level XSA exports live in vivado/export/ (re-include past **/export/)
 !tx/vivado/export/
 !rx/vivado/export/
+
+# TX UI captures
+tx/ui/captures/

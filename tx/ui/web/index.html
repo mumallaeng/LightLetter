@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LightLetter 송신 UI</title><link rel="stylesheet" href="style.css"></head>
+<body><header><div><h1>LightLetter 송신 UI</h1><p>FPGA HDMI 캡처를 ArUco 5칸으로 자르고 CNN 입력까지 만드는 전처리 과정을 단계별로 확인합니다.</p></div><span class="brand">ArUco · 전처리 · CNN 입력</span></header>
+<nav><button class="tab active">촬영 · 전처리</button></nav>
+<main><div class="layout"><div class="left">
+<article class="card"><div class="cardhead"><div><h2>촬영 화면</h2><p>마커와 칸 5개의 crop 영역을 겹쳐 보여 줍니다.</p></div><span id="fps">—</span></div><div class="frame"><img id="frame" alt="촬영 화면"></div></article>
+<article class="card"><div class="cardhead"><div><h2>전처리 단계</h2><p>오른쪽에서 체크한 단계만 표시합니다.</p></div></div><div id="panel" class="stagepanel"></div><p id="panelEmpty" class="stageempty" hidden>표시할 단계를 체크하세요.</p></article>
+</div><div class="right">
+<article class="card"><h2>표시할 전처리 단계</h2><p class="hint">보드의 버튼 캡처 경로를 그대로 흉내 냅니다. 앞의 두 단계는 PC 시각화용입니다.</p><div class="modes"><label><input type="radio" name="mode" value="aruco" checked><span>ArUco 5칸</span></label><label><input type="radio" name="mode" value="center"><span>정중앙 ROI</span></label></div><div id="stages" class="stagelist"></div><div class="row"><label><input id="showFrame" type="checkbox" checked> 촬영 화면</label><label><input id="guide" type="checkbox" checked> 마커·칸 표시</label></div><div class="row"><button id="all">모두 선택</button><button id="none">모두 해제</button></div></article>
+<article class="card"><h2>시스템 상태</h2><div class="status"><div><span>입력</span><b id="source">—</b></div><div><span>프레임</span><b id="size">—</b></div><div><span>ArUco</span><b id="aruco">—</b></div><div><span>마커</span><b id="markers">—</b></div><div><span>맞춤 오차 / 시간</span><b id="fit">—</b></div></div><p id="health" class="hint" role="status"></p><div class="row"><button id="save" class="primary">현재 프레임 저장</button></div><p id="saveMsg" class="hint"></p></article>
+<article class="card"><h2>CNN 입력값</h2><div class="row"><label>칸 <select id="cell"></select></label><button id="dump">값 보기</button></div><pre id="cnnText">28×28 값을 보려면 버튼을 누르세요.</pre></article>
+</div></div></main><footer>LightLetter · Zybo HDMI 캡처보드 · ArUco 전처리 미리보기</footer><script src="app.js"></script></body></html>
