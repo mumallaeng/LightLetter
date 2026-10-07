@@ -1,7 +1,7 @@
 """LightLetter 송신 UI 서버. capture_test.py 의 미리보기를 웹 페이지로 보여 준다.
 
-    python server.py                     # 0번 캡처보드, http://localhost:8766
-    python server.py --device 1          # 번호는 python server.py --list 로 확인
+    python server.py                     # 브라우저가 캡처보드를 열어 영상을 보낸다, http://localhost:8766
+    python server.py --device 1          # 서버가 직접 연다 (번호는 --list 로 확인)
     python server.py --image captures/synth_frame.png    # 보드 없이 저장한 프레임으로
 
 수신 UI(rx/ui)와 같은 테마의 정적 페이지(web/)와 JSON/이미지 API 를 같이 낸다.
@@ -65,15 +65,28 @@ class Source:
         self.frame, self.fps, self.error = None, 0.0, None
         self.still, self.cap = None, None
         if args.image:
+            self.kind = "image"
             self.still = cv2.imread(args.image, cv2.IMREAD_COLOR)
             if self.still is None:
                 raise SystemExit(f"이미지를 읽을 수 없습니다: {args.image}")
             self.name = f"image {Path(args.image).name}"
-        else:
-            self.name = f"device {args.device}"
+        elif args.device is not None:
+            self.kind, self.name = "device", f"device {args.device}"
             # macOS 는 카메라 권한 요청을 메인 스레드에서만 띄울 수 있어서 여기서 연다
             self.cap = self._open()
+        else:
+            self.kind, self.name = "browser", "브라우저 캡처"
+            self.t_prev = time.perf_counter()
+            return
         threading.Thread(target=self._run, daemon=True).start()
+
+    def push(self, frame):
+        """브라우저가 보낸 프레임을 최근 프레임으로 둔다."""
+        now = time.perf_counter()
+        with self.lock:
+            self.fps = 0.9 * self.fps + 0.1 / max(now - self.t_prev, 1e-6)
+            self.frame, self.error = frame, None
+        self.t_prev = now
 
     def _open(self):
         a = self.args
@@ -247,14 +260,15 @@ def make_handler(state):
                     aruco = dict(rc=aruco_c.ERR_NAME[ar["rc"]], markers=[m["id"] for m in ar["markers"]],
                                  fit_px=round(float(ar["res"]["fit_rms_px"]), 2), ms=round(ar["ms"]))
                 return self.send_json(dict(
-                    source=state.src.name, error=state.src.error, fps=round(fps, 1), mode=state.mode,
+                    source=state.src.name, kind=state.src.kind, error=state.src.error, fps=round(fps, 1), mode=state.mode,
                     frame=None if raw is None else [raw.shape[1], raw.shape[0]], aruco=aruco,
                     stages={m: [dict(id=i, label=l, desc=d) for i, l, d in s] for m, s in STAGES.items()},
                     cells=aruco_c.NUM_CELLS))
             if path == "/api/frame.jpg":
                 raw, fps, res = state.snapshot()
                 if raw is None:
-                    return self.send_bytes(encode(message_tile(state.src.error or "프레임 대기 중"), ".jpg"), "image/jpeg")
+                    wait = "캡처보드 켜기를 누르세요" if state.src.kind == "browser" else "프레임 대기 중"
+                    return self.send_bytes(encode(message_tile(state.src.error or wait), ".jpg"), "image/jpeg")
                 guide = q.get("guide", ["1"])[0] == "1"
                 ct.draw_overlay(raw, fps, guide and state.mode == "center")
                 if state.mode == "aruco" and res is not None and guide:
@@ -275,7 +289,14 @@ def make_handler(state):
         def do_POST(self):
             u = urlparse(self.path)
             n = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(n) or b"{}")
+            data = self.rfile.read(n)
+            if u.path == "/api/frame" and state.src.kind == "browser":
+                frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+                if frame is None:
+                    return self.send_bytes(b"bad frame", "text/plain", 400)
+                state.src.push(frame)
+                return self.send_bytes(b"ok", "text/plain")
+            body = json.loads(data or b"{}")
             if u.path == "/api/mode" and body.get("mode") in STAGES:
                 state.mode = body["mode"]
                 return self.send_json(dict(mode=state.mode))
@@ -289,7 +310,7 @@ def make_handler(state):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--device", type=int, default=0)
+    ap.add_argument("--device", type=int, help="서버가 직접 여는 캡처보드 번호. 생략하면 브라우저가 캡처보드를 연다")
     ap.add_argument("--width", type=int, default=ct.IN_W)
     ap.add_argument("--height", type=int, default=ct.IN_H)
     ap.add_argument("--fps", type=int, default=60)

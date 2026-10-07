@@ -6,13 +6,13 @@ Zybo HDMI 출력을 USB 캡처보드로 받아, 보드의 버튼 캡처 경로(A
 
 ```text
 pip install -r requirements.txt
-python server.py                 # 0번 장치, http://localhost:8766
-python server.py --list          # 0~4번 장치를 찾아 번호 확인
-python server.py --device 1      # 다른 장치
+python server.py                 # 브라우저가 캡처보드를 열어 영상을 보낸다, http://localhost:8766
+python server.py --list          # 서버가 직접 열 때 쓸 장치 번호 확인
+python server.py --device 1      # 서버가 캡처보드를 직접 연다
 python server.py --image captures/synth_frame.png    # 보드 없이 저장한 프레임으로
 ```
 
-화면이 안 뜨면 `--list` 로 캡처보드 번호를 확인하고 `--device` 로 지정한다. 노트북 내장 웹캠이 0번이면 캡처보드는 1번 이상이다. 다른 프로그램(OBS 등)이 같은 캡처보드를 쓰고 있으면 닫고, 영상이 계속 안 나오면 `--no-mjpg` 를 붙인다.
+기본 방식은 브라우저가 캡처보드를 여는 것이다. 페이지의 '영상 장치'에서 캡처보드를 고르고 '캡처보드 켜기'를 누른다. 카메라 권한은 브라우저가 묻는다. macOS 터미널에서 `--device` 로 직접 열면 터미널에 카메라 권한이 있어야 하고 그렇지 않으면 열리지 않는다. 다른 프로그램(OBS 등)이 같은 캡처보드를 쓰고 있으면 닫는다.
 
 Chrome 또는 Edge에서 `http://localhost:8766` 을 연다. 캡처보드는 Windows(DirectShow)에서 연다. 다른 OS에서는 `--image` 로 화면만 확인할 수 있다.
 

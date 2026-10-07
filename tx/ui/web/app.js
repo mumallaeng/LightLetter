@@ -82,6 +82,49 @@ $('dump').onclick = async () => {
   $('cnnText').textContent = await (await fetch(`/api/cnn.txt?cell=${$('cell').value}`)).text();
 };
 
+// 브라우저가 캡처보드를 열어 프레임을 서버로 보낸다 (서버에 --device 가 없을 때)
+let stream = null, sending = false, sender = null;
+
+async function listCameras() {
+  try { (await navigator.mediaDevices.getUserMedia({ video: true })).getTracks().forEach(t => t.stop()); } catch {}
+  const devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+  const keep = $('cameraSelect').value;
+  $('cameraSelect').innerHTML = '<option value="">기본 영상 장치</option>' +
+    devices.map((d, i) => `<option value="${d.deviceId}">${d.label || '영상 장치 ' + (i + 1)}</option>`).join('');
+  $('cameraSelect').value = keep;
+}
+
+async function cameraStart() {
+  cameraStop();
+  const video = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
+  if ($('cameraSelect').value) video.deviceId = { exact: $('cameraSelect').value };
+  try { stream = await navigator.mediaDevices.getUserMedia({ video }); }
+  catch (e) { $('health').textContent = `영상 장치를 열 수 없습니다: ${e.message}`; return; }
+  $('video').srcObject = stream;
+  await $('video').play();
+  const canvas = document.createElement('canvas');
+  sender = setInterval(async () => {
+    const v = $('video');
+    if (sending || !v.videoWidth) return;
+    sending = true;
+    canvas.width = v.videoWidth; canvas.height = v.videoHeight;
+    canvas.getContext('2d').drawImage(v, 0, 0);
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.92));
+    try { await fetch('/api/frame', { method: 'POST', body: blob }); } catch {}
+    sending = false;
+  }, 66);
+}
+
+function cameraStop() {
+  clearInterval(sender);
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null;
+}
+
+$('cameraRefresh').onclick = listCameras;
+$('cameraStart').onclick = cameraStart;
+$('cameraStop').onclick = cameraStop;
+
 async function poll() {
   const first = status === null;
   status = await (await fetch('/api/status')).json();
@@ -89,7 +132,9 @@ async function poll() {
     await fetch('/api/mode', { method: 'POST', body: JSON.stringify({ mode }) });
     status = await (await fetch('/api/status')).json();
   }
+  $('camControls').hidden = status.kind !== 'browser';
   if (first) {
+    if (status.kind === 'browser') listCameras();
     $('cell').innerHTML = Array.from({ length: status.cells }, (_, k) => `<option value="${k}">${k}</option>`).join('');
     buildStages();
   }
