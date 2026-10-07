@@ -1,7 +1,7 @@
 """LightLetter 송신 UI 서버. capture_test.py 의 미리보기를 웹 페이지로 보여 준다.
 
     python server.py                     # 0번 캡처보드, http://localhost:8766
-    python server.py --device 1
+    python server.py --device 1          # 번호는 python server.py --list 로 확인
     python server.py --image captures/synth_frame.png    # 보드 없이 저장한 프레임으로
 
 수신 UI(rx/ui)와 같은 테마의 정적 페이지(web/)와 JSON/이미지 API 를 같이 낸다.
@@ -41,6 +41,22 @@ STAGES = {"aruco": ARUCO_STAGES, "center": CENTER_STAGES}
 TILE_GAP = 6
 
 
+def backend():
+    return cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
+
+
+def list_devices(n=5):
+    for i in range(n):
+        cap = cv2.VideoCapture(i, backend())
+        if not cap.isOpened():
+            print(f"device {i}: -")
+            continue
+        ok, _ = cap.read()
+        w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        print(f"device {i}: {w}x{h}, read={'ok' if ok else 'fail'}")
+        cap.release()
+
+
 class Source:
     """캡처보드(또는 저장한 프레임)를 계속 읽어 가장 최근 프레임과 fps 를 보관한다."""
 
@@ -59,8 +75,7 @@ class Source:
 
     def _open(self):
         a = self.args
-        backend = cv2.CAP_DSHOW if sys.platform == "win32" else cv2.CAP_ANY
-        cap = cv2.VideoCapture(a.device, backend)
+        cap = cv2.VideoCapture(a.device, backend())
         if not cap.isOpened():
             return None
         if not a.no_mjpg:
@@ -281,7 +296,11 @@ def main():
     ap.add_argument("--no-mjpg", action="store_true", help="MJPG 요청을 끈다 (화면이 안 나오면 시도)")
     ap.add_argument("--image", help="캡처보드 대신 저장한 프레임(PNG 등)을 계속 보여 준다")
     ap.add_argument("--port", type=int, default=8766)
+    ap.add_argument("--list", action="store_true", help="0~4번 장치를 탐색해 번호를 보여 주고 종료")
     args = ap.parse_args()
+    if args.list:
+        list_devices()
+        return
     state = State(args)
     print(f"LightLetter 송신 UI: http://localhost:{args.port}  ({state.src.name})", flush=True)
     ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(state)).serve_forever()
