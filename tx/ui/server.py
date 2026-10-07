@@ -63,7 +63,7 @@ class Source:
     def __init__(self, args):
         self.args, self.lock = args, threading.Lock()
         self.frame, self.fps, self.error = None, 0.0, None
-        self.still = None
+        self.still, self.cap = None, None
         if args.image:
             self.still = cv2.imread(args.image, cv2.IMREAD_COLOR)
             if self.still is None:
@@ -71,6 +71,8 @@ class Source:
             self.name = f"image {Path(args.image).name}"
         else:
             self.name = f"device {args.device}"
+            # macOS 는 카메라 권한 요청을 메인 스레드에서만 띄울 수 있어서 여기서 연다
+            self.cap = self._open()
         threading.Thread(target=self._run, daemon=True).start()
 
     def _open(self):
@@ -87,12 +89,10 @@ class Source:
         return cap
 
     def _run(self):
-        cap = None
-        if self.still is None:
-            cap = self._open()
-            if cap is None:
-                self.error = f"캡처보드(device {self.args.device})를 열 수 없습니다. --list 로 번호를 확인하세요."
-                return
+        cap = self.cap
+        if self.still is None and cap is None:
+            self.error = f"캡처보드(device {self.args.device})를 열 수 없습니다. --list 로 번호를 확인하세요."
+            return
         t_prev, fails = time.perf_counter(), 0
         while True:
             if self.still is not None:
