@@ -29,7 +29,8 @@ module fc_top #(
     wire [ROM_AW-1:0] ctrl_weight_addr;
     wire [BIAS_AW-1:0] ctrl_bias_addr;
 
-    wire [15:0] x_fc1, x_fc2, x_fc3, feature;
+    wire [15:0] x_fc1, x_fc2, x_fc3;
+    reg  [15:0] feature;
     wire [16*P-1:0]    rom_weight;
     wire [32*P-1:0]    rom_bias;
     wire               mac_sum_valid, mac_busy;
@@ -77,7 +78,13 @@ module fc_top #(
         .clk(clk), .we(qout_feature_we & (qout_feature_layer == 2'd2)), .waddr(qout_feature_waddr), .wdata(qout_feature_wdata),
         .raddr(ctrl_feature_raddr[FEAT_AW-1:0]), .rdata(x_fc3));
 
-    assign feature = (ctrl_layer == 2'd1) ? x_fc1 : (ctrl_layer == 2'd2) ? x_fc2 : x_fc3;
+    always @(*) begin
+        case (ctrl_layer)
+            2'd1:    feature = x_fc1;
+            2'd2:    feature = x_fc2;
+            default: feature = x_fc3;
+        endcase
+    end
 
     // ========== ROMs ==========
     fc_weight_rom #(.P(P), .ROWS(ROM_ROWS), .ROM_FILE(WEIGHT_FILE), .AW(ROM_AW)) u_wrom (

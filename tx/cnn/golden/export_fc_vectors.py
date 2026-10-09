@@ -33,6 +33,7 @@ DUMP = HERE.parent / "model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule
 # fc<K>.txt keeps the step 1 chunk layout (test/vector readers parse it); the RTL ROM is the shared P-lane one
 FC_LANES = {1: 25, 2: 10, 3: 5}
 P = 20  # shared engine lanes (fc_common.h FC_P)
+ACC_W = 40  # fc_top ACC_W: accumulator width
 # 36-class dump rows that are the uppercase letters A..Z
 UPPERCASE = slice(10, 36)
 
@@ -95,8 +96,14 @@ def export(layer, x_int, in_exp, w, bias, y_q, out_dir):
         f.writelines(f"{int(e)}\n" for e in expected)
 
     acc_peak = int(np.abs(np.asarray(x_int, dtype=np.int64) @ w_int.T).max())
+    # every input at 32767 against |w|: no frame can push a neuron's sum past this
+    acc_bound = int((np.abs(w_int).sum(axis=1) * 32767 + np.abs(bias_int)).max())
+    bound_bits = acc_bound.bit_length() + 1
     print(f"fc{layer}: {n_in}->{n_out}, groups={math.ceil(n_out / P)}, w=2^{w_exp}, acc=2^{acc_exp}, "
-          f"out=2^{out_exp}, scale_exp={scale_exp}, |acc| max={acc_peak} ({acc_peak.bit_length() + 1} bits signed)")
+          f"out=2^{out_exp}, scale_exp={scale_exp}, |acc| max={acc_peak} ({acc_peak.bit_length() + 1} bits signed), "
+          f"worst case {bound_bits} bits")
+    if bound_bits > ACC_W:
+        sys.exit(f"fc{layer}: worst-case sum needs {bound_bits} bits, more than ACC_W = {ACC_W}")
     return out_exp, dict(n_in=n_in, n_out=n_out, w=w_int, bias=bias_int, scale_exp=scale_exp, relu=relu)
 
 
