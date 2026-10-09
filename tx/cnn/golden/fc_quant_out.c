@@ -1,7 +1,7 @@
 #include "fc_quant_out.h"
 #include <string.h>
 
-/* same rounding as quantizer.v / quantizer_signed.v: floor shift, then round half to even */
+/* same rounding as quantizer.v: floor shift, then round half to even */
 int16_t fc_quant_value(fc_acc_t x, uint8_t scale_exp, uint8_t relu, uint8_t *dbg_sat)
 {
     if (relu && x < 0)

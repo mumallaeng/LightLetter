@@ -24,14 +24,14 @@ module fc_mac #(
     // ========== stage 1: operand registers ==========
     reg [    15:0] s1_feature;
     reg [16*P-1:0] s1_weight;
-    reg            s1_first, s1_mac, s1_last, s1_valid;
+    reg            s1_first, s1_last, s1_valid;
     reg [     1:0] s1_layer;
     reg [     2:0] s1_group;
 
     // ========== stage 2: products, and the bias for the group's first input ==========
     reg signed [31:0] s2_prod[0:P-1];
     reg [32*P-1:0]    s2_bias;
-    reg               s2_first, s2_mac, s2_last, s2_valid;
+    reg               s2_first, s2_last, s2_valid;
     reg [     1:0]    s2_layer;
     reg [     2:0]    s2_group;
 
@@ -49,27 +49,25 @@ module fc_mac #(
 
     always @(posedge clk) begin
         if (!rst_n) begin
-            s1_first <= 1'b0; s1_mac <= 1'b0; s1_last <= 1'b0; s1_valid <= 1'b0;
+            s1_first <= 1'b0; s1_last <= 1'b0; s1_valid <= 1'b0;
             s1_layer <= 2'd0; s1_group <= 3'd0;
-            s2_first <= 1'b0; s2_mac <= 1'b0; s2_last <= 1'b0; s2_valid <= 1'b0;
+            s2_first <= 1'b0; s2_last <= 1'b0; s2_valid <= 1'b0;
             s2_layer <= 2'd0; s2_group <= 3'd0;
             sum_valid_r <= 1'b0; sum_layer_r <= 2'd0; sum_group_r <= 3'd0;
         end else begin
             s1_first <= first & mac_en;
-            s1_mac   <= mac_en;
             s1_last  <= last & mac_en;
             s1_valid <= mac_en;
             s1_layer <= layer;
             s1_group <= group;
 
             s2_first <= s1_first;
-            s2_mac   <= s1_mac;
             s2_last  <= s1_last;
             s2_valid <= s1_valid;
             s2_layer <= s1_layer;
             s2_group <= s1_group;
 
-            sum_valid_r <= s2_valid & s2_mac & s2_last;
+            sum_valid_r <= s2_valid & s2_last;
             sum_layer_r <= s2_layer;
             sum_group_r <= s2_group;
         end
@@ -85,7 +83,7 @@ module fc_mac #(
             wire signed [ACC_W-1:0] base     = s2_first ? bias_ext : acc[l];
 
             always @(posedge clk) begin
-                if (s2_valid & s2_mac) acc[l] <= base + prod_ext;
+                if (s2_valid) acc[l] <= base + prod_ext;
             end
 
             assign sum[ACC_W*l+:ACC_W] = acc[l];

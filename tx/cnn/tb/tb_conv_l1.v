@@ -7,7 +7,7 @@
 //         ../rtl/weight_rom_l1.v ../rtl/line_buffer.v ../rtl/mac_array_l1.v \
 //         ../rtl/MAC_unit.v ../rtl/conv_out_stage.v ../rtl/output_buffer.v \
 //         ../rtl/partial_sum.v ../rtl/buffer_ctrl.v ../rtl/bias_rom.v \
-//         ../rtl/relu_quant.v ../rtl/quantizer.v ../rtl/relu.v \
+//         ../rtl/relu_quant.v ../rtl/quantizer.v \
 //         ../rtl/lane_packer.v ../rtl/out_reorder.v tb_conv_l1.v
 //   xelab tb_conv_l1 -s tb_conv_l1_sim
 //   xsim tb_conv_l1_sim -runall

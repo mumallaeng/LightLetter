@@ -49,14 +49,23 @@ module fc_quant_out #(
     // ========== the lane being output ==========
     wire signed [ACC_W-1:0] cur = $signed(hold[ACC_W*idx+:ACC_W]);
 
-    wire [ACC_W-1:0] relu_out;
-    wire [     15:0] q1, q2;
-    wire signed [15:0] q3;
+    wire signed [15:0] q1, q2, q3;
 
-    relu #(.ACC_W(ACC_W)) u_relu (.x_in(s1_cur), .y_out(relu_out));
-    quantizer #(.ACC_W(ACC_W), .SCALE_EXP(SCALE_EXP1)) u_q1 (.x_in(relu_out), .y_out(q1));
-    quantizer #(.ACC_W(ACC_W), .SCALE_EXP(SCALE_EXP2)) u_q2 (.x_in(relu_out), .y_out(q2));
-    quantizer_signed #(.ACC_W(ACC_W), .SCALE_EXP(SCALE_EXP3)) u_q3 (.x_in(s1_cur), .y_out(q3));
+    quantizer #(.ACC_W(ACC_W), .SCALE_EXP(SCALE_EXP1), .RELU(1)) u_q1 (.x_in(s1_cur), .y_out(q1));
+
+    // FC2 and FC3 share one quantizer when their shifts match; FC2 zeroes a negative sum in front of it
+    generate
+        if (SCALE_EXP2 == SCALE_EXP3) begin : GEN_SHARED_Q
+            wire signed [ACC_W-1:0] x23 = (s1_layer == 2'd2 && s1_cur[ACC_W-1]) ? {ACC_W{1'b0}} : s1_cur;
+            wire signed [15:0] q23;
+            quantizer #(.ACC_W(ACC_W), .SCALE_EXP(SCALE_EXP3), .RELU(0)) u_q23 (.x_in(x23), .y_out(q23));
+            assign q2 = q23;
+            assign q3 = q23;
+        end else begin : GEN_SPLIT_Q
+            quantizer #(.ACC_W(ACC_W), .SCALE_EXP(SCALE_EXP2), .RELU(1)) u_q2 (.x_in(s1_cur), .y_out(q2));
+            quantizer #(.ACC_W(ACC_W), .SCALE_EXP(SCALE_EXP3), .RELU(0)) u_q3 (.x_in(s1_cur), .y_out(q3));
+        end
+    endgenerate
 
     wire [15:0] y = (s1_layer == 2'd1) ? q1 : (s1_layer == 2'd2) ? q2 : q3;
 
@@ -134,16 +143,16 @@ module fc_quant_out #(
         end
     end
 
+    always @(posedge clk) hold <= hold_next;
+
     always @(posedge clk) begin
         if (!rst_n) begin
-            hold  <= {(ACC_W * P) {1'b0}};
             valid <= 1'b0;
             idx   <= {LANE_AW{1'b0}};
             len   <= {LANE_AW{1'b0}};
             layer <= 2'd0;
             group <= 3'd0;
         end else begin
-            hold  <= hold_next;
             valid <= valid_next;
             idx   <= idx_next;
             len   <= len_next;
