@@ -42,6 +42,13 @@ module fc_top #(
     wire [       15:0] qout_feature_wdata;
     wire signed [15:0] qout_logit;
 
+    // MAC inputs delayed by 1 clk to line up with the registered weight ROM address
+    reg [       15:0] d_feature;
+    reg               d_first, d_mac_en, d_last;
+    reg [        1:0] d_layer;
+    reg [        2:0] d_group;
+    reg [BIAS_AW-1:0] d_bias_addr;
+
     // ========== control ==========
     fc_ctrl #(
         .N_IN1(N_IN1), .N_IN2(N_IN2), .N_IN3(N_IN3),
@@ -54,7 +61,7 @@ module fc_top #(
         .rst_n      (rst_n),
         .fc_in_valid(fc_in_valid),
         .feature    (feature),
-        .mac_busy   (mac_busy),
+        .mac_busy   (mac_busy | d_mac_en),  // the align stage counts as part of the MAC pipeline
         .hold_free  (qout_hold_free),
         .fc_in_ready(fc_in_ready),
         .fc1_in_we    (ctrl_fc1_in_we),
@@ -81,24 +88,43 @@ module fc_top #(
 
     assign feature = (ctrl_layer == 2'd1) ? x_fc1 : (ctrl_layer == 2'd2) ? x_fc2 : x_fc3;
 
+    // ========== MAC input align ==========
+    // fc_ctrl registers the weight ROM address, so the weight comes out 1 clk late:
+    // delay everything else that goes into the MAC by the same 1 clk
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            d_feature <= 16'd0;
+            d_first <= 1'b0; d_mac_en <= 1'b0; d_last <= 1'b0;
+            d_layer <= 2'd0; d_group <= 3'd0; d_bias_addr <= {BIAS_AW{1'b0}};
+        end else begin
+            d_feature   <= feature;
+            d_first     <= ctrl_first;
+            d_mac_en    <= ctrl_mac_en;
+            d_last      <= ctrl_last;
+            d_layer     <= ctrl_layer;
+            d_group     <= ctrl_group;
+            d_bias_addr <= ctrl_bias_addr;
+        end
+    end
+
     // ========== ROMs ==========
     fc_weight_rom #(.P(P), .ROWS(ROM_ROWS), .ROM_FILE(WEIGHT_FILE), .AW(ROM_AW)) u_wrom (
         .clk(clk), .addr(ctrl_weight_addr), .w_out(rom_weight));
     fc_bias_rom #(.P(P), .ROWS(BIAS_ROWS), .ROM_FILE(BIAS_FILE), .AW(BIAS_AW)) u_brom (
-        .addr(ctrl_bias_addr), .b_out(rom_bias));
+        .addr(d_bias_addr), .b_out(rom_bias));
 
     // ========== multiply-accumulate ==========
     fc_mac #(.P(P), .ACC_W(ACC_W)) u_mac (
         .clk      (clk),
         .rst_n    (rst_n),
-        .feature  (feature),
+        .feature  (d_feature),
         .weight   (rom_weight),
         .bias     (rom_bias),
-        .first    (ctrl_first),
-        .mac_en   (ctrl_mac_en),
-        .last     (ctrl_last),
-        .layer    (ctrl_layer),
-        .group    (ctrl_group),
+        .first    (d_first),
+        .mac_en   (d_mac_en),
+        .last     (d_last),
+        .layer    (d_layer),
+        .group    (d_group),
         .sum_valid(mac_sum_valid),
         .sum      (mac_sum),
         .sum_layer(mac_layer),

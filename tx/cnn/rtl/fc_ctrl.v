@@ -28,8 +28,8 @@ module fc_ctrl #(
     output wire [ IN_AW-1:0]  fc1_in_waddr,
     output wire [       1:0]  layer,      // 1..3, 0 in IDLE
     output wire [       2:0]  group,
-    output wire [ IN_AW-1:0]  feature_raddr,
-    output wire [ROM_AW-1:0]  weight_addr, // prefetch for the next cycle
+    output wire [ IN_AW-1:0]  feature_raddr, // registered
+    output wire [ROM_AW-1:0]  weight_addr,   // registered; ROM data lines up with fc_top's delayed MAC inputs
     output reg  [BIAS_AW-1:0] bias_addr,
     output reg                first,
     output reg                mac_en,
@@ -66,7 +66,7 @@ module fc_ctrl #(
     wire comp      = (group_r  != 3'd0);
     wire comp_next = (group_next != 3'd0);
 
-    wire [ IN_AW-1:0] zg_idx_cur, zg_idx_nxt, zg_zero_idx;
+    wire [ IN_AW-1:0] zg_idx_nxt, zg_zero_idx;
     wire [ IN_AW:0]   zg_nz;
 
     localparam [IN_AW:0] MIN_ELEM = 2;
@@ -100,17 +100,13 @@ module fc_ctrl #(
         else          n_elem = zg_nz[IN_AW-1:0];
     end
 
-    // 실제 feature / weight 주소 오프셋 (압축 모드면 원래 인덱스로 되돌린다)
-    //   i >= nz_cnt 인 패딩 사이클은 0 인 것이 확실한 인덱스를 읽는다
-    wire use_pad = comp & ({1'b0, i} >= zg_nz);
-    wire [IN_AW-1:0] eff_idx = !comp ? i : (use_pad ? zg_zero_idx : zg_idx_cur);
-
     // ---- weight ROM 주소용 offset 을 레지스터로 미리 읽어 둔다 ----
     // rp 로 idx_mem 을 한 발 앞서 읽어 wofs_q 에 담는다.
     //   읽기 경로 : rp(FF) -> idx_mem -> wofs_q(FF)      (FF 사이라 여유 있음)
-    //   주소 경로 : wofs_q(FF) -> mux -> 덧셈 -> ROM     (baseline 과 같은 깊이)
+    //   주소 경로 : wofs_q(FF) -> mux -> 덧셈 -> addr_q(FF) -> ROM
     // 불변식: 어떤 사이클이든 wofs_q = "다음 사이클에 쓸 원소"의 offset
-    reg [IN_AW-1:0] rp, wofs_q;
+    // wcur_q holds the current element's offset: a stall on the last element repeats it
+    reg [IN_AW-1:0] rp, wofs_q, wcur_q;
 
     wire [IN_AW-1:0] raw_rp = ({1'b0, rp} >= zg_nz) ? zg_zero_idx : zg_idx_nxt;
 
@@ -118,21 +114,24 @@ module fc_ctrl #(
         if (!rst_n) begin
             rp     <= {IN_AW{1'b0}};
             wofs_q <= {IN_AW{1'b0}};
+            wcur_q <= {IN_AW{1'b0}};
         end else if (grp_adv) begin
             rp     <= {IN_AW{1'b0}};          // 그룹 전환: 읽기 포인터 초기화
         end else if (bubble | can) begin
+            wcur_q <= wofs_q;
             wofs_q <= raw_rp;
             rp     <= rp + 1'b1;
         end
     end
 
-    // 직전 그룹의 결과가 MAC 파이프라인(3 단)에 떠 있는 동안에는 hold_free 가 아직 1 이다.
+    // 직전 그룹의 결과가 MAC 파이프라인에 떠 있는 동안에는 hold_free 가 아직 1 이다.
     // 이때 다음 그룹의 last 를 내보내면 fc_quant_out 의 hold 가 덮여 출력이 사라진다.
     // 원래는 그룹 길이가 n_in(>=84) 이라 문제가 없었지만, 압축하면 그룹이 짧아져 드러난다.
+    // 4 = MAC input align stage in fc_top + 3 fc_mac stages
     reg [2:0] res_pend;
     always @(posedge clk) begin
         if (!rst_n)              res_pend <= 3'd0;
-        else if (mac_en & last)  res_pend <= 3'd3;
+        else if (mac_en & last)  res_pend <= 3'd4;
         else if (|res_pend)      res_pend <= res_pend - 1'b1;
     end
     wire result_pending = |res_pend;
@@ -164,7 +163,7 @@ module fc_ctrl #(
         .src_idx   (i),
         .k_cur     (i),
         .k_nxt     (rp),
-        .idx_cur   (zg_idx_cur),
+        .idx_cur   (),
         .idx_nxt   (zg_idx_nxt),
         .nz_cnt    (zg_nz),
         .zero_idx  (zg_zero_idx)
@@ -243,12 +242,28 @@ module fc_ctrl #(
     end
 
     // weight ROM row = grp_base(layer, group) + 원본 입력 인덱스
-    wire [IN_AW-1:0] rom_ofs = comp_next ? wofs_q : i_next;
-    assign weight_addr = grp_base_next + {{(ROM_AW - IN_AW) {1'b0}}, rom_ofs};
+    wire [IN_AW-1:0] rom_ofs = comp_next ? ((bubble | can) ? wofs_q : wcur_q) : i_next;
+    wire [ROM_AW-1:0] weight_addr_c = grp_base_next + {{(ROM_AW - IN_AW) {1'b0}}, rom_ofs};
+
+    // rom_ofs is the next element's input index.
+    // addr_q : weight ROM address (fc_top delays the MAC inputs by 1 clk to match)
+    // fidx_q : feature buffer read address, keeps idx_mem out of the feature path
+    reg [ROM_AW-1:0] addr_q;
+    reg [ IN_AW-1:0] fidx_q;
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            addr_q <= {ROM_AW{1'b0}};
+            fidx_q <= {IN_AW{1'b0}};
+        end else begin
+            addr_q <= weight_addr_c;
+            fidx_q <= rom_ofs;
+        end
+    end
+    assign weight_addr   = addr_q;
+    assign feature_raddr = fidx_q;
 
     assign layer   = layer_r;
     assign group   = group_r;
-    assign feature_raddr = eff_idx;
 
     always @(posedge clk) begin
         if (!rst_n) begin

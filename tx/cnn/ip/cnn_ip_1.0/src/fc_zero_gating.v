@@ -52,9 +52,15 @@ module fc_zero_gating #(
     reg [AW-1:0] src_q;
 
     always @(posedge clk) begin
-        app_q  <= learn & valid &  (|feature);
-        zero_q <= learn & valid & ~(|feature);
-        src_q  <= src_idx;
+        if (!rst_n) begin
+            app_q  <= 1'b0;
+            zero_q <= 1'b0;
+            src_q  <= {AW{1'b0}};
+        end else begin
+            app_q  <= learn & valid &  (|feature);
+            zero_q <= learn & valid & ~(|feature);
+            src_q  <= src_idx;
+        end
     end
 
     always @(posedge clk) begin
