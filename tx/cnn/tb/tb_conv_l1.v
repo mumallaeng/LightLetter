@@ -16,11 +16,10 @@
 //   iverilog -g2005 -o tb_conv_l1.vvp tb_conv_l1.v ../rtl/*.v && vvp -n tb_conv_l1.vvp
 //
 // ---------------------------------------------------------------------------
-// weight_rom_l1 이 $readmemh 배열에서 하드코딩 case 문으로 바뀌면서 TB 도 같이 바뀌었다.
+// weight_rom_l1 은 l1_weight.mem 을 $readmemh 로 읽는다(실행 폴더에 l1_weight.mem 이 있어야 한다).
 //
-//   - ROM 에 rom[] 배열이 없으므로 TB 가 내용을 주입하거나 계층참조할 수 없다.
-//     대신 TB 가 골든 weight 파일을 rom_ref[] 로 직접 읽어서 기대값으로 쓴다.
-//     덕분에 "RTL 에 박아넣은 상수가 골든과 같은가" 까지 검사 범위에 들어온다.
+//   - TB 는 골든 weight 파일(conv1_weight_144.mem)을 rom_ref[] 로 직접 읽어서 기대값으로 쓴다.
+//     덕분에 "RTL ROM 이 읽은 내용이 골든과 같은가" 까지 검사 범위에 들어온다.
 //   - conv_l1 의 out_ready / ch_result1,2 배선이 정리돼서 예전 force 우회는 삭제했다.
 //
 // 남은 우회는 하나뿐이다. RTL 이 고쳐지면 지우면 된다.
@@ -30,8 +29,8 @@
 //
 // 확인하는 것:
 //   [A0] weight ROM 내용 - weight_rom_l1 을 따로 하나 물려서 out_ch_sel 0..5 를
-//        훑고, 하드코딩된 상수가 골든 conv1_weight_144.mem 과 같은지 본다.
-//        case 문에 오타가 났으면 여기서 잡힌다.
+//        훑고, ROM 이 읽은 내용이 골든 conv1_weight_144.mem 과 같은지 본다.
+//        .mem 이 어긋났으면 여기서 잡힌다.
 //   [A1] weight ROM 타이밍 - cal_valid 인 매 사이클마다 weight_out 이
 //        rom_ref[out_ch_sel] 과 같은지. ROM 이 sync read 로 되돌아가 한 박자
 //        밀리면 여기서 잡힌다. ROM entry 별 사용 횟수도 히스토그램으로 보여준다.
@@ -122,7 +121,7 @@ module tb_conv_l1;
 
     // ---------------- [A0] weight ROM 내용 ----------------
     // DUT 와 별개로 ROM 을 하나 더 물려서 out_ch_sel 을 훑는다.
-    // 하드코딩 case 문에는 계층참조로 들여다볼 배열이 없으므로 이게 유일한 방법.
+    // 모든 채널을 훑는 가장 단순한 방법이다.
     reg  [$clog2(OCH)-1:0] rom_chk_sel;
     wire [          143:0] rom_chk_out;
 

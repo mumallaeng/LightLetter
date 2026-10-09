@@ -25,6 +25,7 @@
 """
 import argparse
 import threading
+import traceback
 import time
 from pathlib import Path
 
@@ -108,7 +109,7 @@ def rtl_threshold(roi):
 
 
 def rtl_fit(proc):
-    """img_preprocess.v 출력단: bbox -> 22x22 맞춤 -> 28x28 배치 (스케일 전 8비트).
+    """img_preprocess.v 출력단: bbox -> 22x22 맞춤(줄이는 축은 구간 최댓값) -> 28x28 배치 (스케일 전 8비트).
 
     반환: (28x28 uint8, info dict 또는 전경이 없으면 None)
     """
@@ -133,10 +134,20 @@ def rtl_fit(proc):
         gw, gh = fit, GLYPH_LIMIT
         ox, oy = (OUT_W - fit) >> 1, (OUT_H - GLYPH_LIMIT) // 2
 
-    # ST_X/Y_STORE: map[i] = min + floor(i * bbox / glyph)
-    xm = min_x + (np.arange(gw) * bw) // gw
-    ym = min_y + (np.arange(gh) * bh) // gh
-    out[oy:oy + gh, ox:ox + gw] = proc[ym[:, None], xm[None, :]]
+    # ST_X/Y_STORE: start[i] = min + floor(i * bbox / glyph)
+    # ST_X/Y_ADV:   end[i]   = min + ceil((i + 1) * bbox / glyph) - 1 on a shrinking axis, else start[i]
+    # 출력 한 픽셀은 [start, end] 구간의 최댓값이다 (adaptive max downsampling).
+    def axis(lo, n, g):
+        i = np.arange(g)
+        start = lo + (i * n) // g
+        end = lo + -(-((i + 1) * n) // g) - 1 if n > g else start
+        return start, end
+
+    xs, xe = axis(min_x, bw, gw)
+    ys, ye = axis(min_y, bh, gh)
+    for j in range(gh):
+        for i in range(gw):
+            out[oy + j, ox + i] = proc[ys[j]:ye[j] + 1, xs[i]:xe[i] + 1].max()
 
     info = dict(bbox=(min_x, min_y, bw, bh), glyph=(gw, gh), offset=(ox, oy))
     return out, info
@@ -191,6 +202,7 @@ class ArucoWorker:
         self._wake = threading.Event()
         self._frame = None
         self._result = None
+        self._last_error = None
         self._stop = False
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -220,7 +232,14 @@ class ArucoWorker:
                 frame, self._frame = self._frame, None
             if frame is None:
                 continue
-            result = run_aruco(frame)
+            try:
+                result = run_aruco(frame)
+            except Exception as e:      # 한 프레임이 실패해도 워커가 죽지 않게 한다
+                msg = f"{type(e).__name__}: {e}"
+                if msg != self._last_error:
+                    self._last_error = msg
+                    traceback.print_exc()
+                continue
             with self._lock:
                 self._result = result
 
@@ -234,9 +253,15 @@ def run_aruco(frame):
     cnn = [cell_cnn(c) for c in cells] if rc == aruco_c.OK else None
     views = None
     if rc == aruco_c.OK:
-        views = [(view_raw(board, aruco_c.cell_outline(res, k)),
-                  view_undistorted(board, aruco_c.cell_outline_ideal(res, k)))
-                 for k in range(aruco_c.NUM_CELLS)]
+        # 원본 crop / 왜곡 보정은 PC 시각화용이다. 실패해도 인식(cnn)은 계속 낸다.
+        blank = np.full((TILE, TILE, 3), 40, np.uint8)
+        views = []
+        for k in range(aruco_c.NUM_CELLS):
+            try:
+                views.append((view_raw(board, aruco_c.cell_outline(res, k)),
+                              view_undistorted(board, aruco_c.cell_outline_ideal(res, k))))
+            except Exception:
+                views.append((blank, blank))
     return dict(rc=rc, cells=cells, res=res, markers=markers, debug=dbg, cnn=cnn,
                 views=views, ms=(time.perf_counter() - t0) * 1000)
 
@@ -257,6 +282,8 @@ def view_raw(board, poly, pad=8):
     h, w = board.shape[:2]
     x0, y0 = np.maximum(np.floor(poly.min(axis=0)).astype(int) - pad, 0)
     x1, y1 = np.minimum(np.ceil(poly.max(axis=0)).astype(int) + pad, (w, h))
+    if x1 <= x0 or y1 <= y0:        # 칸이 프레임 밖으로 나가 크롭이 비면 빈 타일
+        return np.full((TILE, TILE, 3), 40, np.uint8)
     tile, s, ox, oy = fit_tile(board[y0:y1, x0:x1])
     pts = np.round((poly - (x0, y0)) * s + (ox, oy)).astype(np.int32)
     cv2.polylines(tile, [pts], True, CELL_COLOR, 1)

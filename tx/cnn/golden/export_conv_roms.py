@@ -7,7 +7,7 @@ Reads tx/cnn/model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json and
     tx/cnn/rtl/rtl_ref/conv1_bias_ce.mem     6 rows  INT32 at the conv1 accumulator scale
     tx/cnn/rtl/rtl_ref/conv2_bias_ce.mem    16 rows  INT32 at the conv2 accumulator scale
     tx/cnn/rtl/mem/l2_weight_chNN.mem        2 rows  (grp 0, grp 1) per output channel = weight_rom_l2 ROM
-    tx/cnn/rtl/rtl_ref/conv1_weight_rom_l1.txt   the case constants weight_rom_l1.v must carry (it has no .mem)
+    tx/cnn/rtl/mem/l1_weight.mem             6 rows  one 144 bit row per output channel = weight_rom_l1 ROM
 
 Row layout (tx/cnn/rtl/rtl_ref/README.md): lane l = in_ch grp*3+l in bits [144*l +: 144],
 tap k = ky*3+kx in bits [16*k +: 16] of its lane, lane 0 / tap 0 at the LSB. conv1 has one
@@ -24,9 +24,9 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-DUMP = HERE.parents[1] / "model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json"
-REF = HERE.parents[1] / "rtl/rtl_ref"
-MEM = HERE.parents[1] / "rtl/mem"
+DUMP = HERE.parent / "model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json"
+REF = HERE.parent / "rtl/rtl_ref"
+MEM = HERE.parent / "rtl/mem"
 
 
 def pow2_scale_of(values, tol=0.05):
@@ -79,10 +79,7 @@ def main():
         (ref_dir / f"{name}_weight.mem").write_text("".join(r + "\n" for r in rows))
         (ref_dir / f"{name}_bias_ce.mem").write_text("".join(f"{int(v) & 0xFFFFFFFF:08x}\n" for v in b_int))
         if k == 1:
-            lines = [f"// weight_rom_l1.v case constants for {dump.name} (144 bit = 9 taps x INT16, tap 0 at the LSB)",
-                     f"// conv1: input 2^{in_exp}, weight 2^{w_exp}, accumulator 2^{acc_exp}, output 2^{out_exp} -> SCALE_EXP {out_exp - acc_exp}"]
-            lines += [f"{och}: weight_out = 144'h{rows[2 * och][-36:]};" for och in range(c_out)]
-            (ref_dir / "conv1_weight_rom_l1.txt").write_text("\n".join(lines) + "\n")
+            (mem_dir / "l1_weight.mem").write_text("".join(rows[2 * och][-36:] + "\n" for och in range(c_out)))
         else:
             for och in range(c_out):
                 (mem_dir / f"l2_weight_ch{och:02d}.mem").write_text(rows[2 * och] + "\n" + rows[2 * och + 1] + "\n")

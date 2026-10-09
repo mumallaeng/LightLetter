@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-DUMP = HERE.parents[1] / "model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json"
+DUMP = HERE.parent / "model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json"
 
 
 def pow2_scale_of(values, tol=0.05):

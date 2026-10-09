@@ -2,7 +2,7 @@
 
 conv_channels=[1,6,16] (kernel 3x3, stride 1, no padding) -> ReLU -> MaxPool(2x2,
 stride 2) after each Conv -> Flatten(5x5x16=400) -> FC1(400->120) -> ReLU ->
-FC2(120->84) -> ReLU -> FC3(84->26, uppercase A-Z). Reproduces LeNet-5's spatial reduction
+FC2(120->84) -> ReLU -> FC3(84->26, A-Z; a-z share the A-Z labels). Reproduces LeNet-5's spatial reduction
 schedule (28->26->13->11->5, matching LeCun 1998's 32x32/5x5 schedule) inside this
 project's fixed 3x3 kernel, chosen after training and comparing 5 candidates
 (1-6-16, 1-6-8-8 conv-3-layer, this 3x3 schedule, and two 32x32/5x5 LeNet-5
@@ -66,7 +66,7 @@ class Quant16(nn.Module):
 
 
 class Net(nn.Module):
-    """Hardcodes the confirmed spec: LeNet-5 3x3_schedule, FC 400->120->84->26 (uppercase only)."""
+    """Hardcodes the confirmed spec: LeNet-5 3x3_schedule, FC 400->120->84->26 (case-merged A-Z)."""
 
     def __init__(self):
         super().__init__()

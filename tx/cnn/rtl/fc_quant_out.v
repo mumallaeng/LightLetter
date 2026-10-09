@@ -7,7 +7,7 @@ module fc_quant_out #(
     parameter N_OUT2     = 84,
     parameter N_OUT3     = 26,
     parameter SCALE_EXP1 = 16,
-    parameter SCALE_EXP2 = 15,
+    parameter SCALE_EXP2 = 14,
     parameter SCALE_EXP3 = 14
 ) (
     input  wire               clk,

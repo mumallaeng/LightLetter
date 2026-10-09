@@ -6,8 +6,8 @@
 > 아래 후보 비교와 정확도 표는 전환 전 36클래스(숫자+대문자) 결과이며 그대로 둔다. 26클래스
 > 재학습 결과는 나오는 대로 여기에 추가한다.
 > `cnn_golden.ipynb`는 확정 모델 하나만 다룬다(`cnn_golden.train` 실행 → `results/layer_outputs/lenet5_3x3_schedule.json` 덤프).
-> 후보 비교 노트북은 git 히스토리(`81a095b` 이전)에 있다. 지금 git에 있는 `lenet5_3x3_schedule.json`은 36클래스 학습본이고(RTL export·UI가 FC3 10–35행을 잘라 쓴다),
-> 26클래스 재학습 후 노트북이 덮어쓰면 그 커밋으로 교체된다.
+> 후보 비교 노트북은 git 히스토리(`81a095b` 이전)에 있다. 지금 git에 있는 `lenet5_3x3_schedule.json`은 대소문자를 한 클래스로 합친 26클래스 학습본(`A-merged26`, best epoch 19, test 94.13%)이다.
+> RTL export·UI가 FC3 행을 자르지 않고 그대로 쓴다. 이 JSON에서 `.mem`을 다시 만들 때는 `tx/cnn/golden/export_conv_roms.py`, `export_fc_vectors.py`를 쓴다.
 
 팀 논의 끝에 **`LeNet-5 3x3_schedule`**(`conv_channels=[1,6,16]`, `padding=0`,
 `pool_stride=2`, kernel 3×3, FC 400→120→84→36, ReLU+MaxPool, INT16 QAT)을 최종

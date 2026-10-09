@@ -30,3 +30,4 @@
 
 .layout{grid-template-columns:1.5fr 1fr}.sticky{position:sticky;top:12px;align-self:start}
 .frame{margin-top:10px}
+.pred{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}.predcell{border:1px solid #ddd;border-radius:8px;padding:8px;text-align:center;background:#fafafa}.predcell small{display:block;color:#777;font-size:12px}.predcell b{display:block;font-family:cursive;font-size:44px;line-height:1.2;font-weight:400}.predcell span{display:block;color:#666;font-size:11px;font-variant-numeric:tabular-nums}

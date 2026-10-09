@@ -17,7 +17,7 @@ module fc_top #(
 );
 
     localparam N_IN1 = 400, N_OUT1 = 120, GROUPS1 = 6, ROM_BASE1 = 0,    BIAS_BASE1 = 0,  SCALE_EXP1 = 16;
-    localparam N_IN2 = 120, N_OUT2 = 84,  GROUPS2 = 5, ROM_BASE2 = 2400, BIAS_BASE2 = 6,  SCALE_EXP2 = 15;
+    localparam N_IN2 = 120, N_OUT2 = 84,  GROUPS2 = 5, ROM_BASE2 = 2400, BIAS_BASE2 = 6,  SCALE_EXP2 = 14;
     localparam N_IN3 = 84,  N_OUT3 = 26,  GROUPS3 = 2, ROM_BASE3 = 3000, BIAS_BASE3 = 11, SCALE_EXP3 = 14;
     localparam ROM_ROWS = 3168, BIAS_ROWS = 13;
     localparam ROM_AW = $clog2(ROM_ROWS), BIAS_AW = $clog2(BIAS_ROWS), IN_AW = $clog2(N_IN1);

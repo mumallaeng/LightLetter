@@ -1,4 +1,4 @@
-"""Training script for the confirmed model (LeNet-5 3x3_schedule, FC 400->120->84->26, uppercase only).
+"""Training script for the confirmed model (LeNet-5 3x3_schedule, FC 400->120->84->26, case-merged A-Z).
 
 Run (from LightLetter/tb):
     .venv/bin/python -u -m cnn_golden.train --data-root results/emnist \
@@ -28,7 +28,7 @@ from torch.nn import functional as F
 from .data import NUM_CLASSES, load_split
 from .model import Net
 
-DATASET = 'ByClass-Uppercase'
+DATASET = 'ByClass-Letters-CaseMerged'
 SEED = 261014
 EPOCHS = 50
 BATCH_SIZE = 128

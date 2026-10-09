@@ -3,6 +3,7 @@
     python server.py                     # 브라우저가 캡처보드를 열어 영상을 보낸다, http://localhost:8766
     python server.py --device 1          # 서버가 직접 연다 (번호는 --list 로 확인)
     python server.py --image captures/synth_frame.png    # 보드 없이 저장한 프레임으로
+    python server.py --weights other.json                # 인식에 쓸 가중치 JSON (기본: tx/cnn/model 의 lenet5_3x3_schedule.json)
 
 수신 UI(rx/ui)와 같은 테마의 정적 페이지(web/)와 JSON/이미지 API 를 같이 낸다.
 전처리 계산은 capture_test.py 의 함수를 그대로 쓴다.
@@ -21,6 +22,7 @@ import numpy as np
 
 import aruco_c
 import capture_test as ct
+import cnn_infer
 
 WEB = Path(__file__).resolve().parent / "web"
 
@@ -30,12 +32,14 @@ ARUCO_STAGES = [
     ("undistorted", "왜곡 보정", "같은 영역의 렌즈 왜곡을 편 영상. 테두리가 곧은 사각형이 된다. (PC 시각화용)"),
     ("homography", "homography 112×112", "보드가 만드는 칸 영상. 원본 프레임에서 112×112 를 바로 샘플한다."),
     ("threshold", "threshold + bbox", "luma → 반전 → threshold. 빨간 상자는 글자의 bbox."),
-    ("cnn28", "CNN 입력 28×28", "bbox 를 22×22 에 맞추고 28×28 가운데에 배치한 CNN 입력."),
+    ("cnn28", "CNN 입력 28×28", "bbox 를 22×22 에 맞추고(줄이는 축은 구간 최댓값) 28×28 가운데에 배치한 CNN 입력."),
+    ("predict", "CNN 인식", "위 CNN 입력을 JSON 가중치로 PC 에서 인식한 결과. 글자와 상위 3개 logit."),
 ]
 CENTER_STAGES = [
     ("roi", "ROI 112×112", "정중앙 224×224 를 112×112 로 nearest 다운스케일한 영상."),
     ("threshold", "threshold + bbox", "luma → 반전 → threshold. 빨간 상자는 글자의 bbox."),
-    ("cnn28", "CNN 입력 28×28", "bbox 를 22×22 에 맞추고 28×28 가운데에 배치한 CNN 입력."),
+    ("cnn28", "CNN 입력 28×28", "bbox 를 22×22 에 맞추고(줄이는 축은 구간 최댓값) 28×28 가운데에 배치한 CNN 입력."),
+    ("predict", "CNN 인식", "위 CNN 입력을 JSON 가중치로 PC 에서 인식한 결과. 글자와 상위 3개 logit."),
 ]
 STAGES = {"aruco": ARUCO_STAGES, "center": CENTER_STAGES}
 TILE_GAP = 6
@@ -135,6 +139,7 @@ class State:
     def __init__(self, args):
         self.src = Source(args)
         self.worker = ct.ArucoWorker()
+        self.infer = cnn_infer.Infer(args.weights)
         self.mode = "aruco"
         self.lock = threading.Lock()
 
@@ -153,6 +158,34 @@ def message_tile(text, w=520, h=160):
     img = np.full((h, w, 3), 40, np.uint8)
     cv2.putText(img, text, (16, h // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1, cv2.LINE_AA)
     return img
+
+
+def predict_tile(top, w, h):
+    """인식 결과 타일: 큰 글자, 1등 logit, 2~3등 후보. 전경이 없으면 글자 없음."""
+    img = np.full((h, w, 3), 250, np.uint8)
+    if top is None:
+        cv2.putText(img, "no glyph", (w // 2 - 48, h // 2 + 6), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (140, 140, 140), 1, cv2.LINE_AA)
+        return img
+    (tw, th), _ = cv2.getTextSize(top[0]["letter"], cv2.FONT_HERSHEY_SIMPLEX, 3.0, 5)
+    cv2.putText(img, top[0]["letter"], ((w - tw) // 2, 12 + th), cv2.FONT_HERSHEY_SIMPLEX, 3.0, (36, 40, 44), 5, cv2.LINE_AA)
+    cv2.putText(img, f"logit {top[0]['logit']}", (8, h - 38), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (36, 40, 44), 1, cv2.LINE_AA)
+    rest = "  ".join(f"{t['letter']} {t['logit']}" for t in top[1:])
+    cv2.putText(img, rest, (8, h - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (110, 110, 110), 1, cv2.LINE_AA)
+    return img
+
+
+def predict_stage_image(state):
+    p = predictions(state)
+    if p["msg"]:
+        return message_tile(p["msg"])
+    if state.mode == "aruco":
+        T = ct.TILE
+        gap = np.full((T, TILE_GAP, 3), 24, np.uint8)
+        row = []
+        for i, top in enumerate(p["cells"]):
+            row += [predict_tile(top, T, T)] if i == 0 else [gap, predict_tile(top, T, T)]
+        return np.hstack(row)
+    return predict_tile(p["cells"][0], ct.OUT_W * 10, ct.OUT_H * 10)
 
 
 def aruco_stage_image(ar, stage):
@@ -202,6 +235,21 @@ def cnn_text(state, cell):
             return f"crop 실패: {aruco_c.ERR_NAME[res['rc']]}"
         return f"cell {cell}\n" + ct.format_cnn(res["cnn"][cell][2], res["cnn"][cell][3])
     return ct.format_cnn(res[3], res[4])
+
+
+def predictions(state):
+    """칸별 CNN 인식 결과. 보드 ROM 과 같은 JSON 가중치로 소프트웨어에서 계산한다."""
+    raw, _, res = state.snapshot()
+    if raw is None or res is None:
+        return dict(msg="프레임 대기 중", cells=[])
+    if state.mode == "aruco":
+        if res["cnn"] is None:
+            return dict(msg=f"crop 실패: {aruco_c.ERR_NAME[res['rc']]}", cells=[])
+        inputs = [(c[2], c[3]) for c in res["cnn"]]
+    else:
+        inputs = [(res[3], res[4])]
+    # info 가 None 이면 전경이 없는 칸이라 글자가 없다
+    return dict(msg=None, cells=[None if info is None else state.infer.predict(cnn) for cnn, info in inputs])
 
 
 def save_capture(state):
@@ -263,7 +311,9 @@ def make_handler(state):
                     source=state.src.name, kind=state.src.kind, error=state.src.error, fps=round(fps, 1), mode=state.mode,
                     frame=None if raw is None else [raw.shape[1], raw.shape[0]], aruco=aruco,
                     stages={m: [dict(id=i, label=l, desc=d) for i, l, d in s] for m, s in STAGES.items()},
-                    cells=aruco_c.NUM_CELLS))
+                    cells=aruco_c.NUM_CELLS,
+                    cnn=dict(weights=state.infer.path.name, sha=state.infer.sha,
+                             accuracy=state.infer.accuracy, classes=len(state.infer.names))))
             if path == "/api/frame.jpg":
                 raw, fps, res = state.snapshot()
                 if raw is None:
@@ -278,9 +328,13 @@ def make_handler(state):
                 stage = path[len("/api/stage/"):-4]
                 if stage not in [s[0] for s in STAGES[state.mode]]:
                     return self.send_bytes(b"unknown stage", "text/plain", 404)
+                if stage == "predict":
+                    return self.send_bytes(encode(predict_stage_image(state)), "image/png")
                 raw, _, res = state.snapshot()
                 img = aruco_stage_image(res, stage) if state.mode == "aruco" else center_stage_image(res, stage)
                 return self.send_bytes(encode(img), "image/png")
+            if path == "/api/predict":
+                return self.send_json(predictions(state))
             if path == "/api/cnn.txt":
                 cell = min(max(int(q.get("cell", ["0"])[0]), 0), aruco_c.NUM_CELLS - 1)
                 return self.send_bytes(cnn_text(state, cell).encode("utf-8"), "text/plain; charset=utf-8")
@@ -316,6 +370,8 @@ def main():
     ap.add_argument("--fps", type=int, default=60)
     ap.add_argument("--no-mjpg", action="store_true", help="MJPG 요청을 끈다 (화면이 안 나오면 시도)")
     ap.add_argument("--image", help="캡처보드 대신 저장한 프레임(PNG 등)을 계속 보여 준다")
+    ap.add_argument("--weights", type=Path, default=cnn_infer.DEFAULT_WEIGHTS,
+                    help="인식에 쓸 가중치 JSON. 보드 ROM(.mem)을 만든 JSON 과 같아야 결과가 같다")
     ap.add_argument("--port", type=int, default=8766)
     ap.add_argument("--list", action="store_true", help="0~4번 장치를 탐색해 번호를 보여 주고 종료")
     args = ap.parse_args()
@@ -324,6 +380,7 @@ def main():
         return
     state = State(args)
     print(f"LightLetter 송신 UI: http://localhost:{args.port}  ({state.src.name})", flush=True)
+    print(f"CNN 가중치: {args.weights.name} (sha256 {state.infer.sha}), {len(state.infer.names)}클래스", flush=True)
     ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(state)).serve_forever()
 
 
