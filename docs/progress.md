@@ -1,5 +1,52 @@
 # FPGA BFSK TX Project — Progress
 
+## 2026-10-08 TX Vitis 생성 및 로컬 ARM 빌드 검증
+
+- 추가: tx/CREATE_VITIS.cmd, tx/vitis/create_workspace.tcl.
+- 입력: tx/vivado/export/tx_top_wrapper.xsa. 출력 작업 공간: tx/vitis/workspace.
+- 기존 tx/vitis/tx_fpga/src를 연결하여 플랫폼/BSP 및 Debug 앱을 생성한다. 패킷 후 대기 400 us 설정 포함.
+- 재실행 시 동일 XSA로 플랫폼을 갱신하고 앱을 재빌드한다. 해당 작업 공간을 연 Vitis는 먼저 닫는다.
+- Vitis 2020.2 XSCT 실제 첫 생성 및 재실행 모두 종료 코드 0, TX_BUILD_SUCCESS 확인.
+- 산출물: tx/vitis/workspace/tx_fpga/Debug/tx_fpga.elf.
+- BSP 드라이버 경고는 존재한다. 보드 다운로드 및 실물 광링크 검증은 미수행. 원격 반영 및 공식 완료 처리 전 로컬 결과이다.
+
+## 2026-10-08 패킷 후 대기 400 us 시험 설정
+
+- BFSK_TX_INTER_BYTE_DELAY_US: 10000U → 400U (0.4 ms).
+- 적용: LightLetter/tx/vitis/tx_fpga/src/drv/bfsk_tx.h, BFSK_Tx/vitis/BFSK_TX_Test/src/drv/bfsk_tx.h, BFSK_Tx/firmware/BFSK_Tx/drv/bfsk_tx.h.
+- 정상 송신 완료 확인 후 대기하며, 마지막 바이트에도 적용한다. 오류 처리와 타임아웃은 유지한다.
+- 새 고속 RTL 기준 최소 송신 시작 간격: 약 9.58464 + 0.4 = 9.98464 ms + 제어 지연. 로그/CPU 비교 시간은 별도.
+- 기존 호스트 회귀 검사 통과: 정상/지연 핸드셰이크, 타임아웃, 버퍼/부분 전송, timer wrap, TX 간격.
+- 이 검사는 C 드라이버의 모의 레지스터/타이머 검증이며, 실제 광링크나 RX UART 대역폭 검증은 아니다.
+- LightLetter 통합 TX ARM ELF는 위 Vitis 생성 작업에서 재빌드 확인. 독립 BFSK_Tx 앱 재빌드와 보드 실행은 미수행. 고속 RTL BIT와 재빌드한 펌웨어를 함께 적용한 후 실물 검증 필요.
+
+
+## 2026-10-08 로컬 고속 프로파일 적용
+
+이 절은 아래 과거 160 kS/s 규격보다 우선한다. 기존 PASS 기록은 구형 프로파일의 이력이다.
+- 적용: TX 100 MHz, XADC DCLK 100 MHz / divider 4 / 기본 26 ADCCLK 변환.
+- 실제 Fs = 100000000 / 104 = 961538.4615384615 Sample/s. RTL FS_HZ=961538은 정수 근삿값.
+- FFT 128 point, 2 FFT/심볼, 256샘플/심볼 유지.
+- BIT0: Bin 8, 60096.153846 Hz, 반주기 832클록; F0_HZ=60096.
+- BIT1: Bin 13, 97656.25 Hz, 반주기 512클록; F1_HZ=97656.
+- SYNC: Bin 16, 120192.307692 Hz, 반주기 416클록; FSYNC_HZ=120192.
+- 심볼 Carrier 출력: 26624클록 = 266.24 us. 실제 프레임 시간에는 기존 모듈 간 제어 공백이 더해진다.
+- TX 심볼 계산: 중간 정수 심볼률 나눗셈 대신 64비트 곱셈 후 클록 수 반올림.
+- RX 기존 포트명 유지: bin8_power=BIT0(Bin8), bin16_power=BIT1(Bin13), bin20_power=SYNC(Bin16).
+- 심볼 판정, SFD D5, CRC, AXI 외부 포트, 4심볼 Preamble은 유지. 외부 인터페이스 변경 없음.
+- XADC 재생성용 두 XCI에도 사용자의 GUI 변경 설정을 동기화.
+- fft_top.sample_overflow를 디버그 관측용으로 연결. 자동 오류 복구 기능 추가는 하지 않음.
+
+### 로컬 검증 결과 (원격 미반영, 공식 완료 처리 전)
+- Vivado XSim 2020.2: 실제 TX 파형을 104클록마다 샘플링한 모델 → 실제 fft_buffer/fft_core/fft_power → rx_top 검증 성공.
+- Carrier 반주기 832/512/416, 심볼 26624클록, 심볼당 에지 32/52/64 확인.
+- Frame ID/DATA/CRC: 00/41/C0, 01/00/15, 02/FF/D9 수신 일치. 230 FFT 블록, overflow=0, RX 오류=0.
+- 테스트: LightLetter/rx/bfsk_rx/tb/tb_highspeed_link.v, 실행: run_highspeed.ps1.
+- 기존 저속 Carrier 회귀: XSim PASS 27 / FAIL 0.
+- 아날로그 광링크, 독립 보드 클록 편차, 합성/구현 타이밍 및 새 BIT/XSA는 아직 검증 전.
+- Git commit/push 및 보드 다운로드는 수행하지 않음.
+
+
 > **Single Source of Truth**
 >
 > 이 문서는 `Critical-mankind/BFSK_Tx` 저장소의 **TX 구현 상태, 인터페이스, 공통 통신 규격, PASS/FAIL 이력**을 관리한다.
