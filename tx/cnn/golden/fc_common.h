@@ -27,7 +27,7 @@ typedef struct
 } fc_param_t;
 
 static const fc_param_t FC_PARAM_FC1 = {1, 400, 120, 25, 16, 40, 16, 1};
-static const fc_param_t FC_PARAM_FC2 = {2, 120, 84, 10, 12, 38, 15, 1};
+static const fc_param_t FC_PARAM_FC2 = {2, 120, 84, 10, 12, 38, 14, 1};
 static const fc_param_t FC_PARAM_FC3 = {3, 84, 26, 5, 17, 38, 14, 0}; /* uppercase A..Z only */
 
 /* inputs of this chunk: the last chunk of a frame is shorter, the rest of the lanes read 0 */

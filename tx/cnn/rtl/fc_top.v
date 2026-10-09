@@ -55,7 +55,7 @@ module fc_top #(
         .NUM_CHUNK  (12),
         .ACC_W      (38),
         .RELU       (1),
-        .SCALE_EXP  (15),
+        .SCALE_EXP  (14),
         .WEIGHT_FILE(FC2_WEIGHT),
         .BIAS_FILE  (FC2_BIAS)
     ) u_fc2 (
