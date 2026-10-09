@@ -1,5 +1,7 @@
 `timescale 1ns / 1ps
 // Controller of the shared engine: layer / group / input counters (IDLE -> RUN -> FLUSH).
+// The weight and bias ROMs hold their rows in processing order (layer, group, input), so both
+// addresses are frame-wide counters that start at 0 and wrap after the last row.
 module fc_ctrl #(
     parameter N_IN1      = 400,
     parameter N_IN2      = 120,
@@ -7,12 +9,6 @@ module fc_ctrl #(
     parameter GROUPS1    = 6,
     parameter GROUPS2    = 5,
     parameter GROUPS3    = 2,
-    parameter ROM_BASE1  = 0,
-    parameter ROM_BASE2  = 2400,
-    parameter ROM_BASE3  = 3000,
-    parameter BIAS_BASE1 = 0,
-    parameter BIAS_BASE2 = 6,
-    parameter BIAS_BASE3 = 11,
     parameter ROM_AW     = 12,
     parameter BIAS_AW    = 4,
     parameter IN_AW      = 9
@@ -28,8 +24,9 @@ module fc_ctrl #(
     output wire [       1:0]  layer,      // 1..3, 0 in IDLE
     output wire [       2:0]  group,
     output wire [ IN_AW-1:0]  feature_raddr,
-    output reg  [ROM_AW-1:0]  weight_addr, // prefetch for the next cycle
-    output reg  [BIAS_AW-1:0] bias_addr,
+    output wire [ROM_AW-1:0]  weight_addr, // prefetch for the next cycle
+    output wire               weight_en,   // read only when the row changes, and in IDLE to load row 0
+    output wire [BIAS_AW-1:0] bias_addr,   // row of the current group
     output reg                first,
     output reg                mac_en,
     output reg                last
@@ -45,7 +42,8 @@ module fc_ctrl #(
     reg [       2:0] group_r, group_next;
     reg [ IN_AW-1:0] i, i_next;
     reg [ IN_AW-1:0] fill_cnt, fill_cnt_next;
-    reg [ROM_AW-1:0] grp_base, grp_base_next;
+    reg [ROM_AW-1:0] w_addr, w_addr_next;
+    reg [BIAS_AW-1:0] b_addr, b_addr_next;
 
     localparam [31:0] N_IN1_C = N_IN1, N_IN2_C = N_IN2, N_IN3_C = N_IN3;
     localparam [31:0] GROUPS1_C = GROUPS1, GROUPS2_C = GROUPS2, GROUPS3_C = GROUPS3;
@@ -59,9 +57,11 @@ module fc_ctrl #(
         endcase
     end
 
-    wire lastin = (i == n_in - 1'b1);
-    wire avail  = ~((layer_r == 2'd1) & (group_r == 3'd0)) | (i < fill_cnt);
-    wire can    = (state == S_RUN) & avail & (~lastin | hold_free);
+    wire lastin     = (i == n_in - 1'b1);
+    wire lastgroup  = ({1'b0, group_r} + 1'b1 >= n_groups);
+    wire frame_end  = lastin & lastgroup & (layer_r == 2'd3);
+    wire avail      = ~((layer_r == 2'd1) & (group_r == 3'd0)) | (i < fill_cnt);
+    wire can        = (state == S_RUN) & avail & (~lastin | hold_free);
 
     // ========== input fill (independent of the FSM) ==========
     assign fc_in_ready = (fill_cnt < FILL_FULL[IN_AW-1:0]);
@@ -75,7 +75,8 @@ module fc_ctrl #(
         group_next    = group_r;
         i_next        = i;
         fill_cnt_next = fc1_in_we ? fill_cnt + 1'b1 : fill_cnt;
-        grp_base_next = grp_base;
+        w_addr_next   = w_addr;
+        b_addr_next   = b_addr;
         first         = 1'b0;
         mac_en        = 1'b0;
         last          = 1'b0;
@@ -83,11 +84,10 @@ module fc_ctrl #(
         case (state)
             S_IDLE: begin
                 if (fill_cnt != {IN_AW{1'b0}}) begin
-                    state_next    = S_RUN;
-                    layer_next    = 2'd1;
-                    group_next    = 3'd0;
-                    i_next        = {IN_AW{1'b0}};
-                    grp_base_next = ROM_BASE1;
+                    state_next = S_RUN;
+                    layer_next = 2'd1;
+                    group_next = 3'd0;
+                    i_next     = {IN_AW{1'b0}};
                 end
             end
             S_RUN: begin
@@ -95,29 +95,25 @@ module fc_ctrl #(
                     mac_en = 1'b1;
                     first  = (i == {IN_AW{1'b0}});
                     last   = lastin;
+                    w_addr_next = frame_end ? {ROM_AW{1'b0}} : w_addr + 1'b1;
                     if (!lastin) begin
                         i_next = i + 1'b1;
                     end else begin
-                        i_next = {IN_AW{1'b0}};
-                        if ({1'b0, group_r} + 1'b1 < n_groups) begin
-                            group_next    = group_r + 1'b1;
-                            grp_base_next = grp_base + {{(ROM_AW - IN_AW) {1'b0}}, n_in};
-                            state_next    = S_RUN;
-                        end else begin
-                            state_next = S_FLUSH;
-                        end
+                        i_next      = {IN_AW{1'b0}};
+                        b_addr_next = frame_end ? {BIAS_AW{1'b0}} : b_addr + 1'b1;
+                        if (!lastgroup) group_next = group_r + 1'b1;
+                        else            state_next = S_FLUSH;
                     end
                 end
             end
             default: begin
                 if (!mac_busy & hold_free) begin
-                    if (layer_r == 2'd1) fill_cnt_next = fc1_in_we ? {{(IN_AW - 1) {1'b0}}, 1'b1} : {IN_AW{1'b0}};
+                    if (layer_r == 2'd1) fill_cnt_next = {IN_AW{1'b0}};
                     if (layer_r != 2'd3) begin
-                        layer_next    = layer_r + 1'b1;
-                        group_next    = 3'd0;
-                        i_next        = {IN_AW{1'b0}};
-                        grp_base_next = (layer_r == 2'd1) ? ROM_BASE2 : ROM_BASE3;
-                        state_next    = S_RUN;
+                        layer_next = layer_r + 1'b1;
+                        group_next = 3'd0;
+                        i_next     = {IN_AW{1'b0}};
+                        state_next = S_RUN;
                     end else begin
                         layer_next = 2'd0;
                         state_next = S_IDLE;
@@ -125,20 +121,14 @@ module fc_ctrl #(
                 end
             end
         endcase
-
-        // ========== Output Logic ==========
-        weight_addr = grp_base_next + {{(ROM_AW - IN_AW) {1'b0}}, i_next};
-        case (layer_r)
-            2'd1:    bias_addr = BIAS_BASE1 + group_r;
-            2'd2:    bias_addr = BIAS_BASE2 + group_r;
-            2'd3:    bias_addr = BIAS_BASE3 + group_r;
-            default: bias_addr = {BIAS_AW{1'b0}};
-        endcase
     end
 
-    assign layer   = layer_r;
-    assign group   = group_r;
+    assign layer         = layer_r;
+    assign group         = group_r;
     assign feature_raddr = i;
+    assign weight_addr   = w_addr_next;
+    assign weight_en     = mac_en | (state == S_IDLE);
+    assign bias_addr     = b_addr;
 
     always @(posedge clk) begin
         if (!rst_n) begin
@@ -147,14 +137,16 @@ module fc_ctrl #(
             group_r  <= 3'd0;
             i        <= {IN_AW{1'b0}};
             fill_cnt <= {IN_AW{1'b0}};
-            grp_base <= {ROM_AW{1'b0}};
+            w_addr   <= {ROM_AW{1'b0}};
+            b_addr   <= {BIAS_AW{1'b0}};
         end else begin
             state    <= state_next;
             layer_r  <= layer_next;
             group_r  <= group_next;
             i        <= i_next;
             fill_cnt <= fill_cnt_next;
-            grp_base <= grp_base_next;
+            w_addr   <= w_addr_next;
+            b_addr   <= b_addr_next;
         end
     end
 

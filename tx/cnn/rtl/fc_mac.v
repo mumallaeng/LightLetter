@@ -55,8 +55,8 @@ module fc_mac #(
             s2_layer <= 2'd0; s2_group <= 3'd0;
             sum_valid_r <= 1'b0; sum_layer_r <= 2'd0; sum_group_r <= 3'd0;
         end else begin
-            s1_first <= first & mac_en;
-            s1_last  <= last & mac_en;
+            s1_first <= first;
+            s1_last  <= last;
             s1_valid <= mac_en;
             s1_layer <= layer;
             s1_group <= group;

@@ -8,7 +8,8 @@ module fc_quant_out #(
     parameter N_OUT3     = 26,
     parameter SCALE_EXP1 = 16,
     parameter SCALE_EXP2 = 14,
-    parameter SCALE_EXP3 = 14
+    parameter SCALE_EXP3 = 14,
+    parameter WADDR_AW   = 7            // feature buffer address width
 ) (
     input  wire               clk,
     input  wire               rst_n,
@@ -20,7 +21,7 @@ module fc_quant_out #(
     output wire               hold_free,
     output wire               feature_we,
     output wire [        1:0] feature_layer,
-    output wire [        6:0] feature_waddr,
+    output wire [WADDR_AW-1:0] feature_waddr,
     output wire [       15:0] feature_wdata,
     output wire signed [15:0] logit_data,
     output wire               logit_valid
@@ -29,6 +30,7 @@ module fc_quant_out #(
     localparam LANE_AW = $clog2(P + 1);
 
     localparam [31:0] P32 = P;
+    localparam [WADDR_AW-1:0] P_W = P;
 
     reg [ACC_W*P-1:0] hold, hold_next;
     reg               valid, valid_next;
@@ -40,11 +42,11 @@ module fc_quant_out #(
     reg signed [ACC_W-1:0] s1_cur;
     reg                    s1_valid;
     reg [             1:0] s1_layer;
-    reg [             6:0] s1_waddr;
+    reg [WADDR_AW-1:0]     s1_waddr;
     reg [            15:0] s2_y;
     reg                    s2_valid;
     reg [             1:0] s2_layer;
-    reg [             6:0] s2_waddr;
+    reg [WADDR_AW-1:0]     s2_waddr;
 
     // ========== the lane being output ==========
     wire signed [ACC_W-1:0] cur = $signed(hold[ACC_W*idx+:ACC_W]);
@@ -126,7 +128,7 @@ module fc_quant_out #(
         if (adv) begin
             s1_cur   <= cur;
             s1_layer <= layer;
-            s1_waddr <= {4'd0, group} * 7'd20 + {2'd0, idx};
+            s1_waddr <= group * P_W + idx;
             s2_y     <= y;
             s2_layer <= s1_layer;
             s2_waddr <= s1_waddr;
