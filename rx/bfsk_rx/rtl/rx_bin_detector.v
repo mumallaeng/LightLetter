@@ -23,9 +23,10 @@ module rx_bin_detector #(
     reg [6:0] fft_counter;
     reg       fft_block_done_reg;
 
+    // ê¸°ì¡´ í¬íŠ¸ ì´ë¦„ ìœ ì§€: BIT0=Bin8, BIT1=Bin13, SYNC=Bin16.
     assign bin8_power     = fft_power_mem[8];
-    assign bin16_power    = fft_power_mem[16];
-    assign bin20_power    = fft_power_mem[20];
+    assign bin16_power    = fft_power_mem[13];
+    assign bin20_power    = fft_power_mem[16];
     assign fft_block_done = fft_block_done_reg;
 
     always @(posedge clk or negedge rst_n) begin
@@ -35,8 +36,8 @@ module rx_bin_detector #(
 
             // ì¶œë ¥?œ¼ë¡? ?‚¬?š©?•˜?Š” ?œ„ì¹˜ë§Œ ì´ˆê¸°?™”?•œ?‹¤.
             fft_power_mem[8]   <= {MAG_W{1'b0}};
+            fft_power_mem[13]  <= {MAG_W{1'b0}};
             fft_power_mem[16]  <= {MAG_W{1'b0}};
-            fft_power_mem[20]  <= {MAG_W{1'b0}};
         end
         else begin
             // 128ë²ˆì§¸ ?œ ?š¨ Powerë¥? ë°›ì? ?´?Ÿ­?—ë§? ?•œ ?´?Ÿ­ ë°œìƒ?•œ?‹¤.

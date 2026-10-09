@@ -15,6 +15,8 @@ module fft_top #(
 
     );
 
+    // 고속 수신 중 샘플 누락을 ILA에서 확인할 수 있도록 보존한다.
+    (* mark_debug = "true", keep = "true" *) wire sample_overflow;
     wire [15:0] xadc_do;
     wire [4:0]  xadc_channel;
     wire        xadc_eoc;
@@ -65,7 +67,7 @@ module fft_top #(
 	    .i_buf_data_ready(w_buf_data_ready),
 	    .o_buf_data0(w_buf_data0),
 	    .o_buf_data1(w_buf_data1),
-	    .o_overflow()
+	    .o_overflow(sample_overflow)
     );
 
     fft_core #(

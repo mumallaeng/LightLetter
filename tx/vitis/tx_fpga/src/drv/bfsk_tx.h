@@ -18,7 +18,7 @@ extern "C"
 /* 기본 프레임: (4 + 32) symbols * 1.6 ms = 약 57.6 ms */
 #define BFSK_TX_DEFAULT_TIMEOUT_US 250000U
 /* RX 처리 여유: 각 바이트 송신 완료 후 대기한다. */
-#define BFSK_TX_INTER_BYTE_DELAY_US 10000U
+#define BFSK_TX_INTER_BYTE_DELAY_US 400U
 
     typedef enum
     {
@@ -43,7 +43,7 @@ extern "C"
     /* HAL이 제공하는 BSP 주소와 기본 timeout으로 초기화한다. */
     bfsk_tx_result bfsk_tx_init_default(bfsk_tx *tx);
     bfsk_tx_result bfsk_tx_get_status(bfsk_tx *tx, uint32_t *status);
-    /* Blocking API. 성공 시 완료 확인 후 10ms 대기하고 반환한다.
+    /* Blocking API. 성공 시 완료 확인 후 0.4ms 대기하고 반환한다.
      * 마지막 바이트에도 적용되어 연속 API 호출 사이의 간격을 보장한다.
      * timeout_us는 READY/START/DONE 각 단계에 적용되며 이 대기는 별도다.
      * 같은 IP에 대한 호출은 하나의 실행 문맥에서 직렬화해야 한다.

@@ -37,12 +37,12 @@
 module optical_tx_top #(
     //Clock Param
     parameter integer       CLK_FREQ_HZ      = 100_000_000,
-    parameter integer       FS_HZ            = 160_000,
+    parameter integer       FS_HZ            = 961_538,
     parameter integer       SYMBOL_SAMPLES   = 256,
     //BIT Param
-    parameter integer       F0_HZ            = 10_000,
-    parameter integer       F1_HZ            = 20_000,
-    parameter integer       FSYNC_HZ         = 25_000,
+    parameter integer       F0_HZ            = 60_096,
+    parameter integer       F1_HZ            = 97_656,
+    parameter integer       FSYNC_HZ         = 120_192,
     //Tranmission param
     parameter integer       PREAMBLE_SYMBOLS = 4,
     parameter         [7:0] SFD              = 8'hD5
