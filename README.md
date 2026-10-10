@@ -14,8 +14,9 @@ Requires Vivado and Vitis 2020.2 on Windows. Run each board from its own folder.
 ### TX board
 
 1. `tx\CREATE_VIVADO.cmd` creates `tx\vivado\project\tx_top.xpr`. Generate the bitstream, and export the XSA to `tx\vivado\export\` when the hardware changes.
-2. Open `tx\vitis` as the Vitis workspace (File > Switch Workspace). If the projects do not show up, use File > Import > Existing Projects into Workspace and select `tx\vitis`. Build `tx_fpga` and run it on the board.
-3. `tx\START_UI.cmd` starts the capture-board viewer. Install its packages once with `pip install -r tx\ui\requirements.txt`.
+2. Export the hardware (including bitstream) to `tx\vivado\export\tx_top_wrapper.xsa`, then run `tx\CREATE_VITIS.cmd`. It creates `tx\vitis\workspace`, generates the platform/BSP and builds `tx_fpga`. Running it again updates the platform from the same XSA and rebuilds. Close Vitis if it is using this workspace before running the script.
+3. Open `tx\vitis\workspace` in Vitis and run `tx_fpga` on the board. The app links the original `tx\vitis\tx_fpga\src` sources, so subsequent source edits are included when rebuilt. The launcher uses `C:\Xilinx\Vitis\2020.2\bin\xsct.bat`; adjust `BFSK_XSCT` if Vitis is installed elsewhere.
+4. `tx\START_UI.cmd` starts the capture-board viewer. Install its packages once with `pip install -r tx\ui\requirements.txt`.
 
 ## BFSK transmitter
 
@@ -66,7 +67,7 @@ docs/               project-wide notes (progress.md)
 legacy/             unused or superseded sources, kept under their old paths
 ```
 
-Each board tree has `CREATE_VIVADO.cmd` (and `CREATE_VITIS.cmd` on RX) to rebuild the
+Each board tree has `CREATE_VIVADO.cmd` and `CREATE_VITIS.cmd` to rebuild the
 project from scripts with paths relative to the script, so a fresh clone works on any PC.
 
 ## Development rules

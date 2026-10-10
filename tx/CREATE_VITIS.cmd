@@ -8,7 +8,7 @@ if not exist "%BFSK_XSCT%" (
  exit /b 1
 )
 echo Close Vitis using this workspace before building.
-set "BFSK_VITIS_SUCCESS_FILE=%TEMP%\lightletter-rx-%RANDOM%-%RANDOM%.ok"
+set "BFSK_VITIS_SUCCESS_FILE=%TEMP%\lightletter-tx-%RANDOM%-%RANDOM%.ok"
 if exist "%BFSK_VITIS_SUCCESS_FILE%" del "%BFSK_VITIS_SUCCESS_FILE%"
 call "%BFSK_XSCT%" "%~dp0vitis\create_workspace.tcl"
 set "BFSK_BUILD_RESULT=%ERRORLEVEL%"

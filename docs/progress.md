@@ -1,5 +1,73 @@
 # FPGA BFSK TX Project — Progress
 
+## 2026-10-10 Vitis 생성·실행 스크립트 보완
+
+- 사용자 승인 범위인 TX/RX CREATE_VITIS.cmd, create_workspace.tcl 및 신규 OPEN_VITIS.cmd만 기능 수정했다. 팀 RTL·C·카메라·CNN·XSA는 변경하지 않았다.
+- 플랫폼 갱신 후 디버거 bit/ps7_init 복사본을 동기화하고, XSCT 종료 코드에 더해 실행 완료 표식을 검사한다.
+- 기존 앱 소스는 덮어쓰지 않는다. 신규 앱만 원본에 링크한다. 기존 복사형 앱의 원본 수정 자동 반영은 보장하지 않는다.
+- 분리된 임시 워크스페이스에서 TX 생성/갱신 및 RX 생성/재실행 ARM 빌드를 확인하고, 하드웨어 복사본 해시가 일치함을 확인했다.
+- 발견·수정한 경로 및 성공 오표시 문제, 현재 로컬 TX XSA를 사용한 검증 범위와 사용 순서는 VITIS_WORKFLOW.md에 기록했다. 보드 다운로드 및 통합 TX 실물 검증은 수행하지 않았다.
+
+## 2026-10-10 고속 프로파일 비교 및 실물 검증 범위 정리
+
+- 고속화는 codex/light-transaction의 45100eb 및 5971e59에 이미 반영되어 있다. 확인 시점 origin/main에는 미병합 상태이다.
+- 독립 BFSK_Tx 2afc0bf와 LightLetter TX RTL 8개가 바이트 단위로 동일하다. Driver/HAL 동작도 같으며 구형 57.6ms 주석만 고속 규격으로 정정했다.
+- FS_HZ=961538, F0/F1/FSYNC=60096/97656/120192, 256샘플/심볼이다. LightLetter 생성 IP와 원격 TX XSA 하드웨어 설명에서도 같은 값을 확인했다.
+- 패킷 완료 후 400us 대기는 동일하다. 독립 TX는 문자열 반복 예제, LightLetter는 CNN 결과 문자 송신으로 애플리케이션은 다르다.
+- 2026-10-09 독립 TX Vivado IP의 잔존 저속 파라미터를 수정하고 비트스트림/XSA를 재생성한 뒤 사용자가 독립 BFSK_Tx → LightLetter RX 수신 성공을 보고했다. CNN 포함 LightLetter TX 전체의 실물 검증으로 확대하지 않는다.
+- 같은 날 실제 TX RTL → 104클록 샘플링 → FFT → RX/CRC XSim에서 3프레임(41/00/FF), 230 FFT 블록, overflow=0을 확인했다. 이상적 입력 모델이며 광회로 계측 결과는 아니다.
+- RX UI 녹색 강조를 8/16/20에서 8/13/16으로 수정했다. RTL 판정은 이미 8/13/16이며 UI 변경으로 수신 로직은 바뀌지 않는다.
+- RX 로컬 Vitis 생성 프로젝트 3개는 Git 제외 대상으로 추가했다. 원본은 rx/vitis/src, 생성기는 rx/CREATE_VITIS.cmd와 rx/vitis/create_workspace.tcl이다.
+- 로컬 TX XSA는 하드웨어 설명 변경과 동일한 비트스트림 설정 데이터가 함께 확인되어 정합성 검토 전 업로드에서 제외했다. Legacy XPR의 PC 절대경로 변경과 중복 twiddle 파일도 제외했다.
+- 과거 절의 미수행/미반영 표기는 당시 이력이다. 현재 검증 범위는 이 절을 기준으로 한다.
+
+## 2026-10-08 TX Vitis 생성 및 로컬 ARM 빌드 검증
+
+- 추가: tx/CREATE_VITIS.cmd, tx/vitis/create_workspace.tcl.
+- 입력: tx/vivado/export/tx_top_wrapper.xsa. 출력 작업 공간: tx/vitis/workspace.
+- 기존 tx/vitis/tx_fpga/src를 연결하여 플랫폼/BSP 및 Debug 앱을 생성한다. 패킷 후 대기 400 us 설정 포함.
+- 재실행 시 동일 XSA로 플랫폼을 갱신하고 앱을 재빌드한다. 해당 작업 공간을 연 Vitis는 먼저 닫는다.
+- Vitis 2020.2 XSCT 실제 첫 생성 및 재실행 모두 종료 코드 0, TX_BUILD_SUCCESS 확인.
+- 산출물: tx/vitis/workspace/tx_fpga/Debug/tx_fpga.elf.
+- BSP 드라이버 경고는 존재한다. 보드 다운로드 및 실물 광링크 검증은 미수행. 원격 반영 및 공식 완료 처리 전 로컬 결과이다.
+
+## 2026-10-08 패킷 후 대기 400 us 시험 설정
+
+- BFSK_TX_INTER_BYTE_DELAY_US: 10000U → 400U (0.4 ms).
+- 적용: LightLetter/tx/vitis/tx_fpga/src/drv/bfsk_tx.h, BFSK_Tx/vitis/BFSK_TX_Test/src/drv/bfsk_tx.h, BFSK_Tx/firmware/BFSK_Tx/drv/bfsk_tx.h.
+- 정상 송신 완료 확인 후 대기하며, 마지막 바이트에도 적용한다. 오류 처리와 타임아웃은 유지한다.
+- 새 고속 RTL 기준 최소 송신 시작 간격: 약 9.58464 + 0.4 = 9.98464 ms + 제어 지연. 로그/CPU 비교 시간은 별도.
+- 기존 호스트 회귀 검사 통과: 정상/지연 핸드셰이크, 타임아웃, 버퍼/부분 전송, timer wrap, TX 간격.
+- 이 검사는 C 드라이버의 모의 레지스터/타이머 검증이며, 실제 광링크나 RX UART 대역폭 검증은 아니다.
+- LightLetter 통합 TX ARM ELF는 위 Vitis 생성 작업에서 재빌드 확인. 독립 BFSK_Tx 앱 재빌드와 보드 실행은 미수행. 고속 RTL BIT와 재빌드한 펌웨어를 함께 적용한 후 실물 검증 필요.
+
+
+## 2026-10-08 로컬 고속 프로파일 적용
+
+이 절은 아래 과거 160 kS/s 규격보다 우선한다. 기존 PASS 기록은 구형 프로파일의 이력이다.
+- 적용: TX 100 MHz, XADC DCLK 100 MHz / divider 4 / 기본 26 ADCCLK 변환.
+- 실제 Fs = 100000000 / 104 = 961538.4615384615 Sample/s. RTL FS_HZ=961538은 정수 근삿값.
+- FFT 128 point, 2 FFT/심볼, 256샘플/심볼 유지.
+- BIT0: Bin 8, 60096.153846 Hz, 반주기 832클록; F0_HZ=60096.
+- BIT1: Bin 13, 97656.25 Hz, 반주기 512클록; F1_HZ=97656.
+- SYNC: Bin 16, 120192.307692 Hz, 반주기 416클록; FSYNC_HZ=120192.
+- 심볼 Carrier 출력: 26624클록 = 266.24 us. 실제 프레임 시간에는 기존 모듈 간 제어 공백이 더해진다.
+- TX 심볼 계산: 중간 정수 심볼률 나눗셈 대신 64비트 곱셈 후 클록 수 반올림.
+- RX 기존 포트명 유지: bin8_power=BIT0(Bin8), bin16_power=BIT1(Bin13), bin20_power=SYNC(Bin16).
+- 심볼 판정, SFD D5, CRC, AXI 외부 포트, 4심볼 Preamble은 유지. 외부 인터페이스 변경 없음.
+- XADC 재생성용 두 XCI에도 사용자의 GUI 변경 설정을 동기화.
+- fft_top.sample_overflow를 디버그 관측용으로 연결. 자동 오류 복구 기능 추가는 하지 않음.
+
+### 로컬 검증 결과 (원격 미반영, 공식 완료 처리 전)
+- Vivado XSim 2020.2: 실제 TX 파형을 104클록마다 샘플링한 모델 → 실제 fft_buffer/fft_core/fft_power → rx_top 검증 성공.
+- Carrier 반주기 832/512/416, 심볼 26624클록, 심볼당 에지 32/52/64 확인.
+- Frame ID/DATA/CRC: 00/41/C0, 01/00/15, 02/FF/D9 수신 일치. 230 FFT 블록, overflow=0, RX 오류=0.
+- 테스트: LightLetter/rx/bfsk_rx/tb/tb_highspeed_link.v, 실행: run_highspeed.ps1.
+- 기존 저속 Carrier 회귀: XSim PASS 27 / FAIL 0.
+- 아날로그 광링크, 독립 보드 클록 편차, 합성/구현 타이밍 및 새 BIT/XSA는 아직 검증 전.
+- Git commit/push 및 보드 다운로드는 수행하지 않음.
+
+
 > **Single Source of Truth**
 >
 > 이 문서는 `Critical-mankind/BFSK_Tx` 저장소의 **TX 구현 상태, 인터페이스, 공통 통신 규격, PASS/FAIL 이력**을 관리한다.

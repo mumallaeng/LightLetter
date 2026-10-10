@@ -9,15 +9,15 @@
 //
 // Symbol Encoding:
 //   2'b00 : IDLE  -> Carrier OFF
-//   2'b01 : BIT0  -> 10 kHz
-//   2'b10 : BIT1  -> 20 kHz
-//   2'b11 : SYNC  -> 25 kHz
+//   2'b01 : BIT0  -> 60.096 kHz
+//   2'b10 : BIT1  -> 97.656 kHz
+//   2'b11 : SYNC  -> 120.192 kHz
 //
 //
 // 현재 프로젝트 기준:
-//   Fs              = 160 kSample/s
+//   Fs              = 961.538461 kSample/s
 //   SYMBOL_SAMPLES  = 256
-//   Symbol Time     = 1.6 ms
+//   Symbol Time     = 266.24 us
 //
 // 동작:
 //   1. symbol_valid=1인 상태에서 symbol_start=1을 확인하면 Symbol을 시작한다.
@@ -35,12 +35,12 @@
 module bfsk_carrier_gen #(
     //global param
     parameter integer       CLK_FREQ_HZ    = 100_000_000,
-    parameter integer       FS_HZ          = 160_000,
+    parameter integer       FS_HZ          = 961_538,
     parameter integer       SYMBOL_SAMPLES = 256,
     //bit freq param
-    parameter integer       F0_HZ          = 10_000,
-    parameter integer       F1_HZ          = 20_000,
-    parameter integer       FSYNC_HZ       = 25_000,
+    parameter integer       F0_HZ          = 60_096,
+    parameter integer       F1_HZ          = 97_656,
+    parameter integer       FSYNC_HZ       = 120_192,
     //fsm param
     parameter         [1:0] SYMBOL_IDLE    = 2'b00,
     parameter         [1:0] SYMBOL_BIT0    = 2'b01,
@@ -60,13 +60,11 @@ module bfsk_carrier_gen #(
     output reg        optical_tx,
     output reg        tx_enable
 );
-    //===========================================
-    //  Symbol Rate
-    //  160_000 / 256 = 625 Symbol/s
-    //  1 Symbol = 1 / 625s = 1.6ms
-    //===========================================
-    localparam integer SYMBOL_RATE_HZ = FS_HZ / SYMBOL_SAMPLES;
-    localparam integer SYMBOL_CYCLES = CLK_FREQ_HZ / SYMBOL_RATE_HZ;
+    // 실제 Fs는 100 MHz / 104이며 FS_HZ는 정수 표기용 근삿값이다.
+    // 중간 심볼 전송률을 정수로 자르지 않고 64비트 곱셈 후 반올림한다.
+    // 기본 설정: 심볼 26624클록, 반주기 832 / 512 / 416클록.
+    localparam [63:0] SYMBOL_CLOCK_NUM = 64'd1 * CLK_FREQ_HZ * SYMBOL_SAMPLES;
+    localparam integer SYMBOL_CYCLES = (SYMBOL_CLOCK_NUM + FS_HZ / 2) / FS_HZ;
 
     localparam integer F0_HALF_CYCLES = CLK_FREQ_HZ / (2 * F0_HZ);
     localparam integer F1_HALF_CYCLES = CLK_FREQ_HZ / (2 * F1_HZ);

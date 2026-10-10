@@ -10,7 +10,12 @@ if {[llength $boards]} { set_property board_part [lindex $boards end] [current_p
 set_property target_language Verilog [current_project]
 set_property simulator_language Mixed [current_project]
 foreach block {fft bfsk_rx snapshot} {
-    add_files -norecurse [glob [file join $root $block rtl *.v]]
+    foreach rtl_file [glob [file join $root $block rtl *.v]] {
+        # 최상위 래퍼는 아래 make_wrapper에서 생성하므로 보관본은 등록하지 않는다.
+        if {[file tail $rtl_file] ne "design_1_wrapper.v"} {
+            add_files -norecurse $rtl_file
+        }
+    }
 }
 add_files -norecurse [file join $root fft rtl twiddle_128_q14.mem]
 import_ip -files [file join $here ip xadc_wiz_0 xadc_wiz_0.xci]
