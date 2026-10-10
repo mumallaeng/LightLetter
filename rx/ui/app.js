@@ -18,7 +18,7 @@ function drawBins(){
   c.strokeStyle='#b8c0c6';c.beginPath();c.moveTo(left,top);c.lineTo(left,top+h);c.lineTo(left+w,top+h);c.stroke();
   plotted.forEach((v,i)=>{
     if(excludeDC&&i===0)return;
-    c.fillStyle=i===selected?'#1465a0':[8,16,20].includes(i)?'#268779':'#8f9aa4';
+    c.fillStyle=i===selected?'#1465a0':[8,13,16].includes(i)?'#268779':'#8f9aa4';
     const height=h*map(v)/maximum;
     c.fillRect(left+i*w/128,top+h-height,Math.max(1,w/128-1),height);
   });
