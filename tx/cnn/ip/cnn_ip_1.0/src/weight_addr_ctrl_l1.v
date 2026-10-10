@@ -11,7 +11,8 @@ module weight_addr_ctrl_l1 #(
     // weight rom
     output reg [$clog2(OCH)-1:0] out_ch_sel,
     // mac array
-    output                       cal_valid
+    output                       cal_valid,
+    output reg                   cal_valid_rt
 );
     // ========== FSM ==========
     localparam IDLE = 0;
@@ -26,13 +27,15 @@ module weight_addr_ctrl_l1 #(
     // ----- State Update Logic -----
     always @(posedge clk or negedge rst_n) begin
         if (~rst_n) begin
-            c_state <= IDLE;
-            mac_done <= 0;
-            out_ch_sel <= 0;
+            c_state      <= IDLE;
+            mac_done     <= 0;
+            out_ch_sel   <= 0;
+            cal_valid_rt <= 0;
         end else begin
-            c_state <= n_state;
-            mac_done <= mac_done_next;
-            out_ch_sel <= out_ch_sel_next;
+            c_state      <= n_state;
+            mac_done     <= mac_done_next;
+            out_ch_sel   <= out_ch_sel_next;
+            cal_valid_rt <= cal_valid;
         end
     end
 
@@ -62,5 +65,6 @@ module weight_addr_ctrl_l1 #(
     end
 
     // ----- Moore output logic -----
+    // weight_rom_l1 registers its output, so cal_valid_rt (1 clk late) lines up with weight_out
     assign cal_valid = c_state;  // equal to c_state = WEIGHT_CAL
 endmodule
