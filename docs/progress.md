@@ -1,5 +1,18 @@
 # FPGA BFSK TX Project — Progress
 
+## 2026-10-10 고속 프로파일 비교 및 실물 검증 범위 정리
+
+- 고속화는 codex/light-transaction의 45100eb 및 5971e59에 이미 반영되어 있다. 확인 시점 origin/main에는 미병합 상태이다.
+- 독립 BFSK_Tx 2afc0bf와 LightLetter TX RTL 8개가 바이트 단위로 동일하다. Driver/HAL 동작도 같으며 구형 57.6ms 주석만 고속 규격으로 정정했다.
+- FS_HZ=961538, F0/F1/FSYNC=60096/97656/120192, 256샘플/심볼이다. LightLetter 생성 IP와 원격 TX XSA 하드웨어 설명에서도 같은 값을 확인했다.
+- 패킷 완료 후 400us 대기는 동일하다. 독립 TX는 문자열 반복 예제, LightLetter는 CNN 결과 문자 송신으로 애플리케이션은 다르다.
+- 2026-10-09 독립 TX Vivado IP의 잔존 저속 파라미터를 수정하고 비트스트림/XSA를 재생성한 뒤 사용자가 독립 BFSK_Tx → LightLetter RX 수신 성공을 보고했다. CNN 포함 LightLetter TX 전체의 실물 검증으로 확대하지 않는다.
+- 같은 날 실제 TX RTL → 104클록 샘플링 → FFT → RX/CRC XSim에서 3프레임(41/00/FF), 230 FFT 블록, overflow=0을 확인했다. 이상적 입력 모델이며 광회로 계측 결과는 아니다.
+- RX UI 녹색 강조를 8/16/20에서 8/13/16으로 수정했다. RTL 판정은 이미 8/13/16이며 UI 변경으로 수신 로직은 바뀌지 않는다.
+- RX 로컬 Vitis 생성 프로젝트 3개는 Git 제외 대상으로 추가했다. 원본은 rx/vitis/src, 생성기는 rx/CREATE_VITIS.cmd와 rx/vitis/create_workspace.tcl이다.
+- 로컬 TX XSA는 하드웨어 설명 변경과 동일한 비트스트림 설정 데이터가 함께 확인되어 정합성 검토 전 업로드에서 제외했다. Legacy XPR의 PC 절대경로 변경과 중복 twiddle 파일도 제외했다.
+- 과거 절의 미수행/미반영 표기는 당시 이력이다. 현재 검증 범위는 이 절을 기준으로 한다.
+
 ## 2026-10-08 TX Vitis 생성 및 로컬 ARM 빌드 검증
 
 - 추가: tx/CREATE_VITIS.cmd, tx/vitis/create_workspace.tcl.

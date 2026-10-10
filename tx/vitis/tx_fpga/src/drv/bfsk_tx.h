@@ -15,7 +15,7 @@ extern "C"
 #define BFSK_TX_READY 0x01U
 #define BFSK_TX_BUSY 0x02U
 #define BFSK_TX_START 0x01U
-/* 기본 프레임: (4 + 32) symbols * 1.6 ms = 약 57.6 ms */
+/* 고속 프레임: (4 + 32) symbols * 266.24 us = 약 9.58464 ms + 제어 지연 */
 #define BFSK_TX_DEFAULT_TIMEOUT_US 250000U
 /* RX 처리 여유: 각 바이트 송신 완료 후 대기한다. */
 #define BFSK_TX_INTER_BYTE_DELAY_US 400U
