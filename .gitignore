@@ -196,3 +196,8 @@ legacy/vitis/BFSK_TX_Test_system/_ide/scripts/systemdebugger_*.tcl
 
 # TX UI captures
 tx/ui/captures/
+
+# RX 로컬 Vitis 생성 프로젝트. 원본은 rx/vitis/src에서 관리한다.
+/rx/vitis/BFSK_RX_UART/
+/rx/vitis/BFSK_RX_UART_system/
+/rx/vitis/FFT_RX_PLATFORM/
