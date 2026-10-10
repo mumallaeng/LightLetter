@@ -13,6 +13,9 @@
 
 미리보기는 보드의 버튼 캡처 경로를 그대로 흉내 낸다.
     ArUco (aruco_c.py = src/aruco/*.c) : 마커 6개 검출 -> homography -> 칸 5개 112x112
+        칸 창은 5단계를 보여 준다: 원본 crop -> 왜곡 보정 -> homography 112x112
+        -> threshold + bbox -> CNN 28x28. 앞의 두 단계는 PC 시각화용이다. 보드는
+        보정된 영상을 따로 만들지 않고 원본 프레임에서 112x112 를 바로 샘플한다.
     중앙 ROI (roi_dma.c)               : 정중앙 224x224 -> 112x112 nearest 다운스케일
     PL  (img_preprocess.v)   : luma -> 반전 -> threshold -> bbox -> 22x22 맞춤
                                -> 28x28 가운데 배치 -> x64.25 (2^-14 스케일)
@@ -22,6 +25,7 @@
 """
 import argparse
 import threading
+import traceback
 import time
 from pathlib import Path
 
@@ -47,7 +51,11 @@ SAVE_DIR = Path(__file__).resolve().parent / "captures"
 WIN_CAP = "FPGA Capture"
 WIN_ROI = "ROI 112x112: RGB | threshold (x3)"
 WIN_CNN = "CNN input 28x28 (x10)"
-WIN_CELLS = "ArUco cells: RGB | threshold | CNN input"
+WIN_CELLS = "ArUco cells: raw | undistorted | homography | threshold | CNN input"
+
+# 칸 창: 타일 한 변 (px), 단계 이름
+TILE = 160
+STAGES = ("raw", "undistorted", "homography", "threshold", "CNN 28x28")
 
 MARKER_COLOR = (0, 255, 0)
 CELL_COLOR = (0, 220, 255)
@@ -101,7 +109,7 @@ def rtl_threshold(roi):
 
 
 def rtl_fit(proc):
-    """img_preprocess.v 출력단: bbox -> 22x22 맞춤 -> 28x28 배치 (스케일 전 8비트).
+    """img_preprocess.v 출력단: bbox -> 22x22 맞춤(줄이는 축은 구간 최댓값) -> 28x28 배치 (스케일 전 8비트).
 
     반환: (28x28 uint8, info dict 또는 전경이 없으면 None)
     """
@@ -126,10 +134,20 @@ def rtl_fit(proc):
         gw, gh = fit, GLYPH_LIMIT
         ox, oy = (OUT_W - fit) >> 1, (OUT_H - GLYPH_LIMIT) // 2
 
-    # ST_X/Y_STORE: map[i] = min + floor(i * bbox / glyph)
-    xm = min_x + (np.arange(gw) * bw) // gw
-    ym = min_y + (np.arange(gh) * bh) // gh
-    out[oy:oy + gh, ox:ox + gw] = proc[ym[:, None], xm[None, :]]
+    # ST_X/Y_STORE: start[i] = min + floor(i * bbox / glyph)
+    # ST_X/Y_ADV:   end[i]   = min + ceil((i + 1) * bbox / glyph) - 1 on a shrinking axis, else start[i]
+    # 출력 한 픽셀은 [start, end] 구간의 최댓값이다 (adaptive max downsampling).
+    def axis(lo, n, g):
+        i = np.arange(g)
+        start = lo + (i * n) // g
+        end = lo + -(-((i + 1) * n) // g) - 1 if n > g else start
+        return start, end
+
+    xs, xe = axis(min_x, bw, gw)
+    ys, ye = axis(min_y, bh, gh)
+    for j in range(gh):
+        for i in range(gw):
+            out[oy + j, ox + i] = proc[ys[j]:ye[j] + 1, xs[i]:xe[i] + 1].max()
 
     info = dict(bbox=(min_x, min_y, bw, bh), glyph=(gw, gh), offset=(ox, oy))
     return out, info
@@ -184,6 +202,7 @@ class ArucoWorker:
         self._wake = threading.Event()
         self._frame = None
         self._result = None
+        self._last_error = None
         self._stop = False
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -213,7 +232,14 @@ class ArucoWorker:
                 frame, self._frame = self._frame, None
             if frame is None:
                 continue
-            result = run_aruco(frame)
+            try:
+                result = run_aruco(frame)
+            except Exception as e:      # 한 프레임이 실패해도 워커가 죽지 않게 한다
+                msg = f"{type(e).__name__}: {e}"
+                if msg != self._last_error:
+                    self._last_error = msg
+                    traceback.print_exc()
+                continue
             with self._lock:
                 self._result = result
 
@@ -222,10 +248,66 @@ def run_aruco(frame):
     """프레임 하나에 보드와 같은 ArUco 크롭 + img_preprocess 를 돌린다."""
     t0 = time.perf_counter()
     dbg = {}
-    rc, cells, res, markers = aruco_c.crop_run(to_board_frame(frame), dbg)
+    board = to_board_frame(frame)
+    rc, cells, res, markers = aruco_c.crop_run(board, dbg)
     cnn = [cell_cnn(c) for c in cells] if rc == aruco_c.OK else None
+    views = None
+    if rc == aruco_c.OK:
+        # 원본 crop / 왜곡 보정은 PC 시각화용이다. 실패해도 인식(cnn)은 계속 낸다.
+        blank = np.full((TILE, TILE, 3), 40, np.uint8)
+        views = []
+        for k in range(aruco_c.NUM_CELLS):
+            try:
+                views.append((view_raw(board, aruco_c.cell_outline(res, k)),
+                              view_undistorted(board, aruco_c.cell_outline_ideal(res, k))))
+            except Exception:
+                views.append((blank, blank))
     return dict(rc=rc, cells=cells, res=res, markers=markers, debug=dbg, cnn=cnn,
-                ms=(time.perf_counter() - t0) * 1000)
+                views=views, ms=(time.perf_counter() - t0) * 1000)
+
+
+def fit_tile(img, size=TILE):
+    """비율을 유지해 size x size 타일 가운데에 넣는다. (tile, scale, ox, oy)."""
+    h, w = img.shape[:2]
+    s = size / max(h, w)
+    nw, nh = max(1, round(w * s)), max(1, round(h * s))
+    tile = np.full((size, size, 3), 40, np.uint8)
+    ox, oy = (size - nw) // 2, (size - nh) // 2
+    tile[oy:oy + nh, ox:ox + nw] = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_AREA)
+    return tile, s, ox, oy
+
+
+def view_raw(board, poly, pad=8):
+    """1단계: 칸이 차지하는 원본 프레임 영역. 렌즈 왜곡으로 휜 테두리를 함께 그린다."""
+    h, w = board.shape[:2]
+    x0, y0 = np.maximum(np.floor(poly.min(axis=0)).astype(int) - pad, 0)
+    x1, y1 = np.minimum(np.ceil(poly.max(axis=0)).astype(int) + pad, (w, h))
+    if x1 <= x0 or y1 <= y0:        # 칸이 프레임 밖으로 나가 크롭이 비면 빈 타일
+        return np.full((TILE, TILE, 3), 40, np.uint8)
+    tile, s, ox, oy = fit_tile(board[y0:y1, x0:x1])
+    pts = np.round((poly - (x0, y0)) * s + (ox, oy)).astype(np.int32)
+    cv2.polylines(tile, [pts], True, CELL_COLOR, 1)
+    return tile
+
+
+def view_undistorted(board, poly, pad=8):
+    """2단계: 같은 영역의 왜곡을 편 영상 (homography 전). 테두리는 곧은 사각형이 된다."""
+    x0, y0 = poly.min(axis=0) - pad
+    x1, y1 = poly.max(axis=0) + pad
+    s = TILE / max(x1 - x0, y1 - y0)
+    nw, nh = max(1, round((x1 - x0) * s)), max(1, round((y1 - y0) * s))
+    u = x0 + (np.arange(nw) + 0.5) / s
+    v = y0 + (np.arange(nh) + 0.5) / s
+    ideal = np.stack(np.broadcast_arrays(u[None, :], v[:, None]), axis=-1)
+    raw = aruco_c.distort_points(ideal).astype(np.float32)
+    img = cv2.remap(board, raw[..., 0], raw[..., 1], cv2.INTER_LINEAR,
+                    borderMode=cv2.BORDER_REPLICATE)
+    tile = np.full((TILE, TILE, 3), 40, np.uint8)
+    ox, oy = (TILE - nw) // 2, (TILE - nh) // 2
+    tile[oy:oy + nh, ox:ox + nw] = img
+    pts = np.round((poly - (x0, y0)) * s + (ox, oy)).astype(np.int32)
+    cv2.polylines(tile, [pts], True, CELL_COLOR, 1)
+    return tile
 
 
 def to_board_frame(frame):
@@ -286,32 +368,61 @@ def draw_aruco(frame, ar):
     cv2.putText(frame, status, (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
 
 
-def show_cells(ar):
-    """칸 5개를 열로: 위 RGB 112 (x2), 가운데 threshold + bbox (x2), 아래 CNN 28x28 (x8)."""
-    T, GAP, HEAD = 224, 6, 26
-    canvas = np.full((HEAD + 3 * T + 2 * GAP, 5 * T + 4 * GAP, 3), 40, np.uint8)
-    for k in range(aruco_c.NUM_CELLS):
+def cell_tiles(ar, k):
+    """칸 k의 단계별 타일 5개 (STAGES 순서). threshold 타일에는 bbox를 그린다."""
+    T = TILE
+    proc, out8, _, info = ar["cnn"][k]
+    raw, undist = ar["views"][k]
+    rgb = cv2.resize(ar["cells"][k], (T, T), interpolation=cv2.INTER_NEAREST)
+    thr = cv2.resize(cv2.cvtColor(proc, cv2.COLOR_GRAY2BGR), (T, T),
+                     interpolation=cv2.INTER_NEAREST)
+    if info is not None:
+        s = T / proc.shape[1]
+        bx, by, bw, bh = info["bbox"]
+        cv2.rectangle(thr, (int(bx * s), int(by * s)),
+                      (int((bx + bw) * s) - 1, int((by + bh) * s) - 1), (0, 0, 255), 1)
+    cnn = cv2.resize(cv2.cvtColor(out8, cv2.COLOR_GRAY2BGR), (T, T),
+                     interpolation=cv2.INTER_NEAREST)
+    return [raw, undist, rgb, thr, cnn]
+
+
+def put_label(canvas, text, x, y):
+    cv2.putText(canvas, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 3)
+    cv2.putText(canvas, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, CELL_COLOR, 1)
+
+
+def show_cells(ar, strip=None):
+    """칸 5개를 열로, 위에서 아래로 STAGES 순서: 원본 crop, 왜곡 보정, homography 112,
+    threshold + bbox, CNN 28x28. strip이 칸 번호면 그 칸의 5단계를 첫 행에 가로로 놓고
+    아래에는 homography, threshold, CNN 3행만 남긴다 (4x5)."""
+    T, GAP, HEAD = TILE, 6, 26
+    n = aruco_c.NUM_CELLS
+    first = 2 if strip is not None else 0       # 아래 격자에서 건너뛸 앞쪽 단계 수
+    rows = len(STAGES) - first
+    top = (HEAD + T + GAP) if strip is not None else 0
+    canvas = np.full((top + HEAD + rows * T + (rows - 1) * GAP, n * T + (n - 1) * GAP, 3),
+                     40, np.uint8)
+    ok = ar["cnn"] is not None
+    if strip is not None:
+        cv2.putText(canvas, f"cell {strip}: " + " > ".join(STAGES), (4, 19),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, CELL_COLOR, 1)
+        if ok:
+            for j, img in enumerate(cell_tiles(ar, strip)):
+                canvas[HEAD:HEAD + T, j * (T + GAP):j * (T + GAP) + T] = img
+    for k in range(n):
         x = k * (T + GAP)
-        cv2.putText(canvas, f"cell {k}", (x + 4, 19), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+        cv2.putText(canvas, f"cell {k}", (x + 4, top + 19), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                     CELL_COLOR, 1)
-        if ar["cnn"] is None:
+        if not ok:
             continue
-        proc, out8, _, info = ar["cnn"][k]
-        rgb = cv2.resize(ar["cells"][k], (T, T), interpolation=cv2.INTER_NEAREST)
-        thr = cv2.resize(cv2.cvtColor(proc, cv2.COLOR_GRAY2BGR), (T, T),
-                         interpolation=cv2.INTER_NEAREST)
-        if info is not None:
-            bx, by, bw, bh = info["bbox"]
-            cv2.rectangle(thr, (bx * 2, by * 2), ((bx + bw) * 2 - 1, (by + bh) * 2 - 1),
-                          (0, 0, 255), 1)
-        cnn = cv2.resize(cv2.cvtColor(out8, cv2.COLOR_GRAY2BGR), (T, T),
-                         interpolation=cv2.INTER_NEAREST)
-        y = HEAD
-        for img in (rgb, thr, cnn):
+        y = top + HEAD
+        for img, name in zip(cell_tiles(ar, k)[first:], STAGES[first:]):
             canvas[y:y + T, x:x + T] = img
+            if k == 0:
+                put_label(canvas, name, x + 4, y + T - 6)
             y += T + GAP
-    if ar["cnn"] is None:
-        cv2.putText(canvas, f"crop failed: {aruco_c.ERR_NAME[ar['rc']]}", (20, HEAD + 60),
+    if not ok:
+        cv2.putText(canvas, f"crop failed: {aruco_c.ERR_NAME[ar['rc']]}", (20, top + HEAD + 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, MISSING_COLOR, 2)
     cv2.imshow(WIN_CELLS, canvas)
 
@@ -335,6 +446,9 @@ def format_aruco(ar):
 def save_aruco(stem, ar):
     if ar["cnn"] is not None:
         for k, (_, _, cnn, _) in enumerate(ar["cnn"]):
+            raw, undist = ar["views"][k]
+            cv2.imwrite(f"{stem}_cell{k}_raw.png", raw)
+            cv2.imwrite(f"{stem}_cell{k}_undistorted.png", undist)
             cv2.imwrite(f"{stem}_cell{k}.png", ar["cells"][k])
             np.save(f"{stem}_cell{k}_cnn28.npy", cnn)
     Path(f"{stem}_aruco.txt").write_text(format_aruco(ar) + "\n", encoding="utf-8")
@@ -360,6 +474,8 @@ def main():
     ap.add_argument("--no-mjpg", action="store_true", help="MJPG 요청을 끈다 (화면이 안 나오면 시도)")
     ap.add_argument("--list", action="store_true", help="장치 목록만 출력")
     ap.add_argument("--image", help="캡처보드 대신 저장한 프레임(PNG 등)을 계속 보여준다")
+    ap.add_argument("--strip", choices=("none", "first", "last"), default="none",
+                    help="칸 창 첫 행에 첫(first)/마지막(last) 칸의 5단계를 가로로 놓는다")
     args = ap.parse_args()
 
     if args.list:
@@ -382,6 +498,7 @@ def main():
               f"{int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}")
     cv2.namedWindow(WIN_CAP, cv2.WINDOW_NORMAL)
 
+    strip = {"none": None, "first": 0, "last": aruco_c.NUM_CELLS - 1}[args.strip]
     guide = True
     mode = "aruco"                              # "aruco" | "center"
     worker = ArucoWorker()
@@ -412,7 +529,7 @@ def main():
             ar = worker.latest()
             if guide and ar is not None:
                 draw_aruco(frame, ar)
-                show_cells(ar)
+                show_cells(ar, strip)
         else:
             roi, proc, out8, cnn, info = cnn_pipeline(raw)
             if guide:

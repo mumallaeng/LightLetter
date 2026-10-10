@@ -105,6 +105,10 @@ module img_preprocess #(
     // Destination-to-source maps avoid a variable hardware divider.
     reg [6:0] x_map [0:GLYPH_LIMIT-1];
     reg [6:0] y_map [0:GLYPH_LIMIT-1];
+    // Inclusive region ends: ceil((i+1)*N/M)-1 for shrinking axes.
+    // Enlarging axes keep one nearest-neighbor source sample.
+    reg [6:0] x_end_map [0:GLYPH_LIMIT-1];
+    reg [6:0] y_end_map [0:GLYPH_LIMIT-1];
     reg [5:0] map_index;
     reg [7:0] map_source;
     reg [15:0] map_accum;
@@ -113,6 +117,10 @@ module img_preprocess #(
     reg [OUT_Y_W-1:0] out_y;
     reg [IN_ADDR_W-1:0] read_addr;
     reg [7:0] read_data;
+    reg [6:0] scan_x, scan_y;
+    reg [6:0] region_x_start, region_x_end, region_y_end;
+    reg [7:0] pool_max;
+    wire [7:0] pool_next = (read_data > pool_max) ? read_data : pool_max;
 
     // Internal diagnostic flag: asserted if TLAST does not coincide with the
     // fixed 112x112 packet boundary. Processing still completes by count.
@@ -129,7 +137,7 @@ module img_preprocess #(
     // cnn_ip input scale is 2^-14: pixel_in = round(p / 255 * 2^14).
     // p * 64.25 = (p << 6) + (p >> 2), at most 1 LSB off (255 -> 16383).
     wire [15:0] cnn_pixel =
-        {2'b00, read_data, 6'd0} + {10'd0, read_data[7:2]};
+        {2'b00, pool_next, 6'd0} + {10'd0, pool_next[7:2]};
 
     // Centering pad; offset = pad / 2 is taken as pad[5:1].
     wire [5:0] fit_pad_x = OUT_WIDTH  - fit_final_size;
@@ -229,6 +237,12 @@ module img_preprocess #(
             out_x                <= 0;
             out_y                <= 0;
             read_addr            <= 0;
+            scan_x               <= 0;
+            scan_y               <= 0;
+            region_x_start       <= 0;
+            region_x_end         <= 0;
+            region_y_end         <= 0;
+            pool_max             <= 0;
             input_protocol_error <= 1'b0;
             m_axis_tdata         <= 16'd0;
             m_axis_tvalid        <= 1'b0;
@@ -351,15 +365,8 @@ module img_preprocess #(
 
                 ST_X_STORE: begin
                     x_map[map_index] <= bbox_min_x + map_source;
-                    if (map_index == glyph_width - 1'b1) begin
-                        map_index  <= 0;
-                        map_source <= 0;
-                        map_accum  <= 0;
-                        state      <= ST_Y_STORE;
-                    end else begin
-                        map_accum <= map_accum + bbox_width;
-                        state     <= ST_X_ADV;
-                    end
+                    map_accum <= map_accum + bbox_width;
+                    state     <= ST_X_ADV;
                 end
 
                 ST_X_ADV: begin
@@ -367,19 +374,26 @@ module img_preprocess #(
                         map_accum  <= map_accum - glyph_width;
                         map_source <= map_source + 1'b1;
                     end else begin
-                        map_index <= map_index + 1'b1;
-                        state     <= ST_X_STORE;
+                        // Quotient and remainder now describe (i+1)*N/M.
+                        x_end_map[map_index] <= (bbox_width > glyph_width) ?
+                            bbox_min_x + map_source - ((map_accum == 0) ? 1'b1 : 1'b0) :
+                            x_map[map_index];
+                        if (map_index == glyph_width - 1'b1) begin
+                            map_index  <= 0;
+                            map_source <= 0;
+                            map_accum  <= 0;
+                            state      <= ST_Y_STORE;
+                        end else begin
+                            map_index <= map_index + 1'b1;
+                            state     <= ST_X_STORE;
+                        end
                     end
                 end
 
                 ST_Y_STORE: begin
                     y_map[map_index] <= bbox_min_y + map_source;
-                    if (map_index == glyph_height - 1'b1) begin
-                        state <= ST_OUT_PREP;
-                    end else begin
-                        map_accum <= map_accum + bbox_height;
-                        state     <= ST_Y_ADV;
-                    end
+                    map_accum <= map_accum + bbox_height;
+                    state     <= ST_Y_ADV;
                 end
 
                 ST_Y_ADV: begin
@@ -387,8 +401,15 @@ module img_preprocess #(
                         map_accum  <= map_accum - glyph_height;
                         map_source <= map_source + 1'b1;
                     end else begin
-                        map_index <= map_index + 1'b1;
-                        state     <= ST_Y_STORE;
+                        y_end_map[map_index] <= (bbox_height > glyph_height) ?
+                            bbox_min_y + map_source - ((map_accum == 0) ? 1'b1 : 1'b0) :
+                            y_map[map_index];
+                        if (map_index == glyph_height - 1'b1) begin
+                            state <= ST_OUT_PREP;
+                        end else begin
+                            map_index <= map_index + 1'b1;
+                            state     <= ST_Y_STORE;
+                        end
                     end
                 end
 
@@ -405,6 +426,12 @@ module img_preprocess #(
                         m_axis_tvalid <= 1'b1;
                         state         <= ST_OUT_WAIT;
                     end else begin
+                        scan_x <= x_map[out_x - offset_x];
+                        scan_y <= y_map[out_y - offset_y];
+                        region_x_start <= x_map[out_x - offset_x];
+                        region_x_end <= x_end_map[out_x - offset_x];
+                        region_y_end <= y_end_map[out_y - offset_y];
+                        pool_max <= 0;
                         read_addr <=
                             (y_map[out_y - offset_y] * IN_WIDTH) +
                              x_map[out_x - offset_x];
@@ -417,12 +444,27 @@ module img_preprocess #(
                 end
 
                 ST_OUT_LOAD: begin
+                    // Synchronous RAM data is valid here. Include the last
+                    // sample in the scaled result before publishing TVALID.
+                    pool_max <= pool_next;
+                    if ((scan_x == region_x_end) && (scan_y == region_y_end)) begin
                     m_axis_tdata  <= cnn_pixel;
                     m_axis_tuser  <= (out_x == 0) && (out_y == 0);
                     m_axis_tlast  <= (out_x == OUT_WIDTH - 1) &&
                                      (out_y == OUT_HEIGHT - 1);
                     m_axis_tvalid <= 1'b1;
                     state         <= ST_OUT_WAIT;
+                    end else begin
+                        if (scan_x == region_x_end) begin
+                            scan_x <= region_x_start;
+                            scan_y <= scan_y + 1'b1;
+                            read_addr <= ((scan_y + 1'b1) * IN_WIDTH) + region_x_start;
+                        end else begin
+                            scan_x <= scan_x + 1'b1;
+                            read_addr <= read_addr + 1'b1;
+                        end
+                        state <= ST_MEM_READ;
+                    end
                 end
 
                 ST_OUT_WAIT: begin
