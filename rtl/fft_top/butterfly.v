@@ -22,33 +22,20 @@ module butterfly #(
     output reg signed [DATA_WIDTH-1:0] y1_im,
     output wire o_bf_out_valid
 );
+    // Pipeline stage 0: register input and twiddle together.
+    reg signed [DATA_WIDTH-1:0] a_re_s0, a_im_s0, b_re_s0, b_im_s0;
+    reg [2*COEFF_WIDTH-1:0] twiddle_s0;
+    reg valid_s0;
 
-    /******************** Input registers ********************/
+    // Pipeline stage 1: complex multiplication and delay A by one cycle.
+    wire signed [T_WIDTH-1:0] t_re_comb, t_im_comb;
+    reg signed [T_WIDTH-1:0] t_re_s1, t_im_s1;
+    reg signed [DATA_WIDTH-1:0] a_re_s1, a_im_s1;
+    reg valid_s1;
 
-    reg signed [DATA_WIDTH-1:0] a_re_reg;
-    reg signed [DATA_WIDTH-1:0] a_im_reg;
-    reg signed [DATA_WIDTH-1:0] b_re_reg;
-    reg signed [DATA_WIDTH-1:0] b_im_reg;
-    reg [2*COEFF_WIDTH-1:0] twiddle_factor_reg;
-
-    /******************** Multiplier results ********************/
-
-    wire signed [T_WIDTH-1:0] t_re;
-    wire signed [T_WIDTH-1:0] t_im;
-
-    reg signed [T_WIDTH-1:0] t_re_reg;
-    reg signed [T_WIDTH-1:0] t_im_reg;
-
-    /******************** FSM states ********************/
-
-    localparam [2:0] IDLE    = 3'd0,
-                     WAIT_T  = 3'd2,
-                     ADD_SUB = 3'd3,
-                     DONE    = 3'd4;
-
-    reg [2:0] state;
-
-    /******************** Combinational multiplier ********************/
+    // Pipeline stage 2: add / subtract, register results and valid.
+    reg valid_s2;
+    assign o_bf_out_valid = valid_s2;
 
     multiplier #(
         .DATA_WIDTH (DATA_WIDTH),
@@ -56,81 +43,53 @@ module butterfly #(
         .FRAC_BITS  (FRAC_BITS),
         .T_WIDTH    (T_WIDTH)
     ) u_multiplier (
-        .b_re          (b_re_reg),
-        .b_im          (b_im_reg),
-        .twiddle_factor(twiddle_factor_reg),
-        .t_re          (t_re),
-        .t_im          (t_im)
+        .b_re          (b_re_s0),
+        .b_im          (b_im_s0),
+        .twiddle_factor(twiddle_s0),
+        .t_re          (t_re_comb),
+        .t_im          (t_im_comb)
     );
-
-    /******************** Output valid ********************/
-
-    assign o_bf_out_valid = (state == DONE);
-
-    /******************** FSM and storage ********************/
 
     always @(posedge clk) begin
         if (rst) begin
-            state <= IDLE;
+            valid_s0 <= 1'b0;
+            valid_s1 <= 1'b0;
+            valid_s2 <= 1'b0;
 
-            a_re_reg <= {DATA_WIDTH{1'b0}};
-            a_im_reg <= {DATA_WIDTH{1'b0}};
-            b_re_reg <= {DATA_WIDTH{1'b0}};
-            b_im_reg <= {DATA_WIDTH{1'b0}};
-            twiddle_factor_reg <= {(2*COEFF_WIDTH){1'b0}};
+            a_re_s0 <= 0; 
+            a_im_s0 <= 0;
+            b_re_s0 <= 0; 
+            b_im_s0 <= 0;
+            twiddle_s0 <= 0;
 
-            t_re_reg <= {T_WIDTH{1'b0}};
-            t_im_reg <= {T_WIDTH{1'b0}};
+            a_re_s1 <= 0; 
+            a_im_s1 <= 0;
+            t_re_s1 <= 0; 
+            t_im_s1 <= 0;
 
-            y0_re <= {DATA_WIDTH{1'b0}};
-            y0_im <= {DATA_WIDTH{1'b0}};
-            y1_re <= {DATA_WIDTH{1'b0}};
-            y1_im <= {DATA_WIDTH{1'b0}};
-        end
-        else begin
-            case (state)
-                IDLE: begin
-                    if (i_read_data_valid) begin
-                        // E0: A/B와 계수를 함께 저장
-                        a_re_reg <= a_re;
-                        a_im_reg <= a_im;
-                        b_re_reg <= b_re;
-                        b_im_reg <= b_im;
-                        twiddle_factor_reg <= twiddle_factor;
+            y0_re <= 0; 
+            y0_im <= 0;
+            y1_re <= 0; 
+            y1_im <= 0;
+        end else begin
+            valid_s0 <= i_read_data_valid;
+            a_re_s0 <= a_re;
+            a_im_s0 <= a_im;
+            b_re_s0 <= b_re;
+            b_im_s0 <= b_im;
+            twiddle_s0 <= twiddle_factor;
 
-                        state <= WAIT_T;
-                    end
-                end
+            valid_s1 <= valid_s0;
+            a_re_s1 <= a_re_s0;
+            a_im_s1 <= a_im_s0;
+            t_re_s1 <= t_re_comb;
+            t_im_s1 <= t_im_comb;
 
-                WAIT_T: begin
-                    // E1: 한 클럭 동안 계산된 T를 저장
-                    // 조합형 Multiplier이므로 mul_done은 없음
-                    t_re_reg <= t_re;
-                    t_im_reg <= t_im;
-
-                    state <= ADD_SUB;
-                end
-
-                ADD_SUB: begin
-                    // E2: A ± T를 저장하고 출력 valid 발생
-                    y0_re <= a_re_reg + t_re_reg;
-                    y0_im <= a_im_reg + t_im_reg;
-                    y1_re <= a_re_reg - t_re_reg;
-                    y1_im <= a_im_reg - t_im_reg;
-
-                    state <= DONE;
-                end
-
-                DONE: begin
-                    // E3: 출력 valid 해제, IDLE 복귀
-                    state <= IDLE;
-                end
-
-                default: begin
-                    state <= IDLE;
-                end
-            endcase
+            valid_s2 <= valid_s1;
+            y0_re <= a_re_s1 + t_re_s1;
+            y0_im <= a_im_s1 + t_im_s1;
+            y1_re <= a_re_s1 - t_re_s1;
+            y1_im <= a_im_s1 - t_im_s1;
         end
     end
-
 endmodule

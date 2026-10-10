@@ -104,6 +104,29 @@ module fft_core #(
     wire [6:0] w_addr_a;
     wire [6:0] w_addr_b;
     wire [5:0] w_tw_addr;
+    
+    // READ와 WRITE는 서로 다른 메모리에서 동시에 수행
+    // LOAD 단계에서는 기존 버퍼 데이터 저장 주소를 그대로 사용
+    // Butterfly 연산 결과를 저장할 때는 READ 당시의 주소를 지연시켜 사용
+    // Butterfly, Write Path, Memory의 처리 지연을 고려하여 WRITE 시점에 주소를 맞춤
+    reg [13:0] bf_write_addr_d0, bf_write_addr_d1;
+    reg [13:0] bf_write_addr_d2, bf_write_addr_d3;
+    reg [13:0] bf_write_addr_d4, bf_write_addr_d5;
+    always @(posedge clk or posedge rst) begin
+        if (rst) begin
+            bf_write_addr_d0 <= 0; bf_write_addr_d1 <= 0;
+            bf_write_addr_d2 <= 0; bf_write_addr_d3 <= 0;
+            bf_write_addr_d4 <= 0; bf_write_addr_d5 <= 0;
+        end else begin
+            bf_write_addr_d0 <= {w_addr_a, w_addr_b};
+            bf_write_addr_d1 <= bf_write_addr_d0;
+            bf_write_addr_d2 <= bf_write_addr_d1;
+            bf_write_addr_d3 <= bf_write_addr_d2;
+            bf_write_addr_d4 <= bf_write_addr_d3;
+            bf_write_addr_d5 <= bf_write_addr_d4;
+        end
+    end
+    wire [13:0] w_mem_write_addr = (w_sys_state == 3'd1) ? {w_addr_a, w_addr_b} : bf_write_addr_d5;
 
     address_generator U_ADDR_GEN (
         .i_bf_stage (w_bf_stage),
@@ -113,7 +136,6 @@ module fft_core #(
         .o_addr_b   (w_addr_b),
         .o_tw_addr  (w_tw_addr)
     );
-
 
     wire [FFT_DATA_BIT - 1:0] w_mem0_adata;
     wire [FFT_DATA_BIT - 1:0] w_mem1_adata;
@@ -128,7 +150,7 @@ module fft_core #(
         .w_en     (w_wdata_valid_0),
         .i_wdata_0(w_mem0_wdata_0),
         .i_wdata_1(w_mem0_wdata_1),
-        .i_waddr  ({w_addr_a, w_addr_b}),
+        .i_waddr  (w_mem_write_addr),
         .i_raddr  ({w_addr_a, w_addr_b}),
         .rdata_a  (w_mem0_adata),
         .rdata_b  (w_mem0_bdata)
@@ -142,7 +164,7 @@ module fft_core #(
         .w_en     (w_wdata_valid_1),
         .i_wdata_0(w_mem1_wdata_0),
         .i_wdata_1(w_mem1_wdata_1),
-        .i_waddr  ({w_addr_a, w_addr_b}),
+        .i_waddr  (w_mem_write_addr),
         .i_raddr  ({w_addr_a, w_addr_b}),
         .rdata_a  (w_mem1_adata),
         .rdata_b  (w_mem1_bdata)
@@ -171,6 +193,14 @@ module fft_core #(
     parameter COEFF_WIDTH = 16;
     wire [2*COEFF_WIDTH-1:0] twiddle_factor;
 
+    // RAM에서 읽은 데이터는 mem_read_path를 거쳐 Butterfly에 전달
+    // Twiddle ROM은 읽기 지연이 1클럭이므로 추가 레지스터로 데이터 입력 시점을 맞춤
+    reg [2*COEFF_WIDTH-1:0] twiddle_factor_aligned;
+    always @(posedge clk or posedge rst) begin
+        if (rst) twiddle_factor_aligned <= 0;
+        else     twiddle_factor_aligned <= twiddle_factor;
+    end 
+
     twiddle_rom U_TWIDDLE_ROM(
         .clk(clk),
         .twiddle_addr(w_tw_addr),
@@ -195,7 +225,7 @@ module fft_core #(
         .a_im(a_im),
         .b_re(b_re),
         .b_im(b_im),
-        .twiddle_factor(twiddle_factor),
+        .twiddle_factor(twiddle_factor_aligned),
 
         .y0_re(y0_re),
         .y0_im(y0_im),

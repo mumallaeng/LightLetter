@@ -16,13 +16,18 @@ module data_memory #(
 
     reg [FFT_W - 1:0] data_ram[0:127];
 
+    // 변경: 각 RAM 포트에 READ/WRITE 공통 주소 사용
+    // w_en = 1일 때 WRITE 주소, 0일 때 READ 주소 선택
+    wire [6:0] mem_addr_a = w_en ? i_waddr[13:7] : i_raddr[13:7];
+    wire [6:0] mem_addr_b = w_en ? i_waddr[6:0]  : i_raddr[6:0];
+
     always @(posedge clk) begin
         if (rst) begin
             rdata_a <= 0;
         end else if (w_en) begin
-            data_ram[i_waddr[13:7]] <= i_wdata_0;
+            data_ram[mem_addr_a] <= i_wdata_0;
         end else begin
-            rdata_a <= data_ram[i_raddr[13:7]];
+            rdata_a <= data_ram[mem_addr_a];
         end
     end
 
@@ -30,10 +35,11 @@ module data_memory #(
         if (rst) begin
             rdata_b <= 0;
         end else if (w_en) begin
-            data_ram[i_waddr[6:0]] <= i_wdata_1;
+            data_ram[mem_addr_b] <= i_wdata_1;
         end else begin
-            rdata_b <= data_ram[i_raddr[6:0]];
+            rdata_b <= data_ram[mem_addr_b];
         end
     end
+
 
 endmodule
