@@ -24,27 +24,20 @@ module relu_quant #(
     localparam ENTRY_W = 16 * PACK;
     localparam GROUPS  = C_OUT / PACK;
 
-    wire [ACC_W-1:0]   relu_y;
-    wire [15:0]        quant_y;
+    wire signed [15:0] quant_y;
     wire [ENTRY_W-1:0] pack_data;
     wire               pack_valid;
     wire [ENTRY_W-1:0] rb_dout;
     wire               rb_avail;
     wire               rb_last_pixel;
 
-    // ========== ReLU -> Quantizer ==========
-    relu #(
-        .ACC_W(ACC_W)
-    ) u_relu (
-        .x_in (sum_data),
-        .y_out(relu_y)
-    );
-
+    // ========== ReLU & Quantizer ==========
     quantizer #(
         .ACC_W    (ACC_W),
-        .SCALE_EXP(SCALE_EXP)
+        .SCALE_EXP(SCALE_EXP),
+        .RELU     (1)
     ) u_quantizer (
-        .x_in (relu_y),
+        .x_in (sum_data),
         .y_out(quant_y)
     );
 

@@ -42,27 +42,27 @@ module conv_l2 #(
     // Weight Address controller
     // ----------------------------------
     wire [$clog2(OCH)-1:0] out_ch_sel;
-    wire rom_is_ch35, cal_valid_next, cal_valid;
+    wire rom_is_ch35, cal_valid, cal_valid_rt;
 
     weight_addr_ctrl_l2 #(
         .OCH(OCH)
     ) U_WEIGHT_ADDR_CONTROLLER_L2 (
-        .clk        (clk),
-        .rst_n      (rst_n),
-        .mac_start  (mac_start),
-        .mac_done   (mac_done),
-        .is_ch35    (is_ch35),
-        .rom_is_ch35(rom_is_ch35),
-        .out_ch_sel (out_ch_sel),
-        .cal_valid_next(cal_valid_next),
-        .cal_valid  (cal_valid)
+        .clk         (clk),
+        .rst_n       (rst_n),
+        .mac_start   (mac_start),
+        .mac_done    (mac_done),
+        .is_ch35     (is_ch35),
+        .rom_is_ch35 (rom_is_ch35),
+        .out_ch_sel  (out_ch_sel),
+        .cal_valid   (cal_valid),
+        .cal_valid_rt(cal_valid_rt)
     );
 
     // Weight ROM
     // ----------------------------------
     wire [431:0] weight_out;
-    wire [  2:0] win_zero;  // 입력채널별 3x3 window 가 전부 0
-    wire [  2:0] rom_en = {3{cal_valid_next}} & ~win_zero;
+    wire [  2:0] win_zero;  // per input channel: whole 3x3 window is zero
+    wire [  2:0] rom_en = {3{cal_valid}} & ~win_zero;  // zero window: that bank holds its row
 
     weight_rom_l2 #(
         .OCH(16)
@@ -95,9 +95,10 @@ module conv_l2 #(
 
     // Zero Gating Array
     // ----------------------------------
+    // registers the window and the ROM row; cal_valid_rt (aligned with weight_out) -> cal_valid_zg
     wire [431:0] zg_win, zg_weight;
     wire [ 26:0] is_zero;
-    wire         cal_valid_rt;
+    wire         cal_valid_zg;
 
     zero_gating_array #(
         .N(27)
@@ -106,11 +107,11 @@ module conv_l2 #(
         .rst_n       (rst_n),
         .win_next    (win_out),
         .weight_next (weight_out),
-        .cal_valid   (cal_valid),
+        .cal_valid   (cal_valid_rt),
         .win_in      (zg_win),
         .weight_in   (zg_weight),
         .is_zero     (is_zero),
-        .cal_valid_rt(cal_valid_rt)
+        .cal_valid_rt(cal_valid_zg)
     );
 
     assign win_zero[0] = &is_zero[ 8: 0];
@@ -128,9 +129,9 @@ module conv_l2 #(
         .clk       (clk),
         .rst_n     (rst_n),
         .win_in    (zg_win),
-        .win_valid ({3{cal_valid_rt}}),
+        .win_valid ({3{cal_valid_zg}}),
         .weight_in (zg_weight),
-        .mul_en    ({27{cal_valid_rt}} & ~is_zero),
+        .mul_en    ({27{cal_valid_zg}} & ~is_zero),
         .ch_result0(ch_result0),
         .ch_result1(ch_result1),
         .ch_result2(ch_result2),

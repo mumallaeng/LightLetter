@@ -152,7 +152,7 @@ module tb_conv_l2;
     wire [431:0] rom_mask   = {{144{rom_en_d[2]}}, {144{rom_en_d[1]}}, {144{rom_en_d[0]}}};
 
     always @(posedge clk) begin
-        if (rst_n && dut.cal_valid) begin
+        if (rst_n && dut.cal_valid_rt) begin
             rom_checks = rom_checks + 1;
             if ((dut.weight_out & rom_mask) !== (rom_expect & rom_mask)) begin
                 rom_errs = rom_errs + 1;

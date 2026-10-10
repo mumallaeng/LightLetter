@@ -337,7 +337,7 @@
         <spirit:parameters>
           <spirit:parameter>
             <spirit:name>viewChecksum</spirit:name>
-            <spirit:value>e31ee14c</spirit:value>
+            <spirit:value>3b5f5468</spirit:value>
           </spirit:parameter>
         </spirit:parameters>
       </spirit:view>
@@ -353,7 +353,7 @@
         <spirit:parameters>
           <spirit:parameter>
             <spirit:name>viewChecksum</spirit:name>
-            <spirit:value>e31ee14c</spirit:value>
+            <spirit:value>3b5f5468</spirit:value>
           </spirit:parameter>
         </spirit:parameters>
       </spirit:view>
@@ -975,14 +975,6 @@
         <spirit:fileType>verilogSource</spirit:fileType>
       </spirit:file>
       <spirit:file>
-        <spirit:name>src/quantizer_signed.v</spirit:name>
-        <spirit:fileType>verilogSource</spirit:fileType>
-      </spirit:file>
-      <spirit:file>
-        <spirit:name>src/relu.v</spirit:name>
-        <spirit:fileType>verilogSource</spirit:fileType>
-      </spirit:file>
-      <spirit:file>
         <spirit:name>src/relu_quant.v</spirit:name>
         <spirit:fileType>verilogSource</spirit:fileType>
       </spirit:file>
@@ -1032,6 +1024,10 @@
       </spirit:file>
       <spirit:file>
         <spirit:name>src/fc_bias.mem</spirit:name>
+        <spirit:userFileType>mem</spirit:userFileType>
+      </spirit:file>
+      <spirit:file>
+        <spirit:name>src/l1_weight.mem</spirit:name>
         <spirit:userFileType>mem</spirit:userFileType>
       </spirit:file>
       <spirit:file>
@@ -1183,14 +1179,6 @@
         <spirit:fileType>verilogSource</spirit:fileType>
       </spirit:file>
       <spirit:file>
-        <spirit:name>src/quantizer_signed.v</spirit:name>
-        <spirit:fileType>verilogSource</spirit:fileType>
-      </spirit:file>
-      <spirit:file>
-        <spirit:name>src/relu.v</spirit:name>
-        <spirit:fileType>verilogSource</spirit:fileType>
-      </spirit:file>
-      <spirit:file>
         <spirit:name>src/relu_quant.v</spirit:name>
         <spirit:fileType>verilogSource</spirit:fileType>
       </spirit:file>
@@ -1240,6 +1228,10 @@
       </spirit:file>
       <spirit:file>
         <spirit:name>src/fc_bias.mem</spirit:name>
+        <spirit:userFileType>mem</spirit:userFileType>
+      </spirit:file>
+      <spirit:file>
+        <spirit:name>src/l1_weight.mem</spirit:name>
         <spirit:userFileType>mem</spirit:userFileType>
       </spirit:file>
       <spirit:file>
@@ -1362,8 +1354,8 @@
         <xilinx:taxonomy>AXI_Peripheral</xilinx:taxonomy>
       </xilinx:taxonomies>
       <xilinx:displayName>cnn_ip_v1.0</xilinx:displayName>
-      <xilinx:coreRevision>8</xilinx:coreRevision>
-      <xilinx:coreCreationDateTime>2026-10-09T04:26:56Z</xilinx:coreCreationDateTime>
+      <xilinx:coreRevision>11</xilinx:coreRevision>
+      <xilinx:coreCreationDateTime>2026-10-10T08:42:07Z</xilinx:coreCreationDateTime>
       <xilinx:tags>
         <xilinx:tag xilinx:name="ui.data.coregen.dd@1cba916_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/ip_repo/cnn_ip_1.0</xilinx:tag>
         <xilinx:tag xilinx:name="ui.data.coregen.dd@fb3a890_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/ip_repo/cnn_ip_1.0</xilinx:tag>
@@ -1523,13 +1515,48 @@
         <xilinx:tag xilinx:name="ui.data.coregen.dd@59212cf0_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
         <xilinx:tag xilinx:name="ui.data.coregen.dd@5a903444_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
         <xilinx:tag xilinx:name="ui.data.coregen.dd@7e88e469_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@35eb73d3_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@6cb817f0_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@56e9760a_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@49b5f34c_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@5f1f65a1_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@29b751f0_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@5b93195d_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@34ab8062_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@6cca7e01_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@157ddd3a_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@7c976aa9_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@70c145da_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@3a32f0a5_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@b1955ad_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@61fd2f16_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@5f782ead_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@6583baee_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@26a84318_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@33e485bc_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@11fc42dd_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@498373f8_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@3f2921eb_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@5b8da27_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@4488dd4_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@284da7ae_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@2e3e3556_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@7da3bc13_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@12874e2e_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@1609f4ee_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@378376ae_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@2f44c209_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@f090347_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@27654fcb_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@48837bd3_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
+        <xilinx:tag xilinx:name="ui.data.coregen.dd@43d94c39_ARCHIVE_LOCATION">d:/Working/OndeviceAI2/01_project/LightLetter/tx/cnn/ip/cnn_ip_1.0</xilinx:tag>
       </xilinx:tags>
     </xilinx:coreExtensions>
     <xilinx:packagingInfo>
       <xilinx:xilinxVersion>2020.2</xilinx:xilinxVersion>
       <xilinx:checksum xilinx:scope="busInterfaces" xilinx:value="d2035da2"/>
       <xilinx:checksum xilinx:scope="memoryMaps" xilinx:value="ed1368d5"/>
-      <xilinx:checksum xilinx:scope="fileGroups" xilinx:value="939635a6"/>
+      <xilinx:checksum xilinx:scope="fileGroups" xilinx:value="836aae45"/>
       <xilinx:checksum xilinx:scope="ports" xilinx:value="d4e39980"/>
       <xilinx:checksum xilinx:scope="hdlParameters" xilinx:value="6992ea72"/>
       <xilinx:checksum xilinx:scope="parameters" xilinx:value="8d9b434a"/>

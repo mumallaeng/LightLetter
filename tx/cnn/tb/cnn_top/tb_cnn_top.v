@@ -16,10 +16,10 @@
 //     pool1_out.mem     49bit x  676  pool_l1 출력 {ch_done, d2, d1, d0}
 //     ce2_out.mem       17bit x 3872  conv_l2 출력 {ch_done, data}
 //     pool2_out.mem     17bit x  800  pool_l2 출력 {ch_done, data} = FC1 입력
-//     conv1_weight.mem 432bit x   12  conv_l1 weight 기대값 ([och][grp], grp0 lane0 = weight_rom_l1 case 상수)
+//     conv1_weight.mem 432bit x   12  conv_l1 weight 기대값 ([och][grp], grp0 lane0 = l1_weight.mem)
 //     conv2_weight.mem 432bit x   32  conv_l2 weight ROM 기대값 ([och][is_ch35])
 //     conv1_bias_ce.mem / conv2_bias_ce.mem  INT32 bias 기대값
-//   RTL 은 tx/cnn/rtl/mem/ (conv{1,2}_bias, l2_weight_ch*, fc*) 과 weight_rom_l1.v 의 case 상수를 쓴다. TB 는 ROM 을
+//   RTL 은 tx/cnn/rtl/mem/ (conv{1,2}_bias, l1_weight, l2_weight_ic*, fc*)를 쓴다. TB 는 ROM 을
 //   덮어쓰지 않는다 - mem/ 이 rtl_ref/ 와 다르면 [ROM1] [ROM] [BIAS] 와 그 뒤 단계에서 드러난다.
 //   tx/cnn/tb/cnn_top/vectors/ (gen_fc_golden.py : pool2_out.mem 에서 FC 골든 규칙으로 계산)
 //     fc1_out.mem       16bit x  240  FC1 출력 (neuron 0..119)
@@ -30,8 +30,9 @@
 // 확인하는 것 (단계 경계마다 handshake 순서대로 골든 스트림과 비교)
 //   [C1]  conv_l1 출력  (l1_out_valid & l1_out_ready)          vs ce1_out.mem
 //   [P1]  pool_l1 출력  (l1_pool_valid & l1_pool_ready)        vs pool1_out.mem
-//   [ROM1] conv_l1 weight ROM - cal_valid 마다 weight_out == conv1_weight[out_ch_sel*2][143:0]
-//   [ROM] conv_l2 weight ROM - cal_valid 마다 weight_out == conv2_weight[out_ch_sel*2 + is_ch35]
+//   [ROM1] conv_l1 weight ROM - cal_valid_rt 마다 weight_out == conv1_weight[out_ch_sel(-1clk)*2][143:0]
+//   [ROM] conv_l2 weight ROM - cal_valid_rt 마다 weight_out == conv2_weight[out_ch_sel(-1clk)*2 + is_ch35(-1clk)]
+//         (zero gating 으로 rom_en 이 꺼진 사이클/bank 는 이전 row 를 유지하므로 제외)
 //   [BIAS] conv_l1 / conv_l2 bias ROM 내용 (시작할 때 한 번) == conv{1,2}_bias_ce.mem
 //   [C2]  conv_l2 출력  (l2_out_valid & l2_out_ready)          vs ce2_out.mem
 //   [P2]  pool_l2 출력  (l2_pool_valid & l2_pool_ready)        vs pool2_out.mem
@@ -293,18 +294,27 @@ module tb_cnn_top;
         end
     end
 
-    // ---------------- [ROM1] conv_l1 weight ROM (weight_rom_l1 case 상수) ----------------
-    wire [143:0] rom1_expect = wref1[dut.U_CONV_L1.out_ch_sel*2][143:0];
+    // ---------------- [ROM1] conv_l1 weight ROM (l1_weight.mem) ----------------
+    // weight_rom_l1 은 출력 레지스터가 있어 주소를 받은 다음 clk 에 weight_out 이 나온다.
+    //   -> 한 clk 전의 out_ch_sel 로 기대값을 만들고 cal_valid_rt 에서 비교한다.
+    // zero gating 으로 rom_en 이 꺼진 사이클은 ROM 이 이전 row 를 유지하므로 비교에서 제외한다.
+    reg [2:0] rom1_sel_d;
+    reg       rom1_en_d;
+    always @(posedge clk) begin
+        rom1_sel_d <= dut.U_CONV_L1.out_ch_sel;
+        rom1_en_d  <= dut.U_CONV_L1.rom_en;
+    end
+    wire [143:0] rom1_expect = wref1[rom1_sel_d*2][143:0];
 
     always @(posedge clk) begin
-        if (rst_n && dut.U_CONV_L1.cal_valid) begin
+        if (rst_n && dut.U_CONV_L1.cal_valid_rt && rom1_en_d) begin
             rom1_checks = rom1_checks + 1;
             if (dut.U_CONV_L1.weight_out !== rom1_expect) begin
                 rom1_errs = rom1_errs + 1;
                 if (rom1_shown < MAX_REPORT) begin
                     rom1_shown = rom1_shown + 1;
-                    $display("[FAIL][ROM1] %t cyc %0d: out_ch_sel=%0d, weight_out.tap0=%0d exp %0d",
-                             $realtime, cyc, dut.U_CONV_L1.out_ch_sel,
+                    $display("[FAIL][ROM1] %t cyc %0d: out_ch_sel(-1clk)=%0d, weight_out.tap0=%0d exp %0d",
+                             $realtime, cyc, rom1_sel_d,
                              $signed(dut.U_CONV_L1.weight_out[15:0]), $signed(rom1_expect[15:0]));
                 end
             end
@@ -313,7 +323,7 @@ module tb_cnn_top;
 
     // ---------------- [ROM] conv_l2 weight ROM ----------------
     // weight ROM 이 BRAM (동기 읽기) 이라 주소를 받은 다음 clk 에 weight_out 이 나온다.
-    //   -> 한 clk 전의 out_ch_sel / is_ch35 로 기대값을 만든다 (cal_valid 도 RTL 에서 1clk 지연됨)
+    //   -> 한 clk 전의 out_ch_sel / is_ch35 로 기대값을 만든다 (cal_valid_rt 가 RTL 에서 1clk 지연된 valid)
     // zero gating 으로 rom_en[k] 가 꺼진 입력채널 bank 는 이전 값을 유지하므로 비교에서 제외한다.
     reg [3:0] rom_sel_d;
     reg       rom_ph_d;
@@ -327,7 +337,7 @@ module tb_cnn_top;
     wire [431:0] rom_expect = wref[rom_sel_d*2 + rom_ph_d] & rom_mask;
 
     always @(posedge clk) begin
-        if (rst_n && dut.U_CONV_L2.cal_valid) begin
+        if (rst_n && dut.U_CONV_L2.cal_valid_rt) begin
             rom_checks = rom_checks + 1;
             if ((dut.U_CONV_L2.weight_out & rom_mask) !== rom_expect) begin
                 rom_errs = rom_errs + 1;

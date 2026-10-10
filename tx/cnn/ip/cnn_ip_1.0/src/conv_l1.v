@@ -40,25 +40,29 @@ module conv_l1 #(
     // Weight Address controller
     // ----------------------------------
     wire [$clog2(OCH)-1:0] out_ch_sel;
-    wire cal_valid;
-    wire win_zero;  // 3x3 window 가 전부 0
+    wire cal_valid, cal_valid_rt;
 
     weight_addr_ctrl_l1 U_WEIGHT_ADDR_CONTROLLER_L1 (
-        .clk       (clk),
-        .rst_n     (rst_n),
-        .mac_start (mac_start),
-        .mac_done  (mac_done),
-        .win_zero  (win_zero),
-        .out_ch_sel(out_ch_sel),
-        .cal_valid (cal_valid)
+        .clk         (clk),
+        .rst_n       (rst_n),
+        .mac_start   (mac_start),
+        .mac_done    (mac_done),
+        .out_ch_sel  (out_ch_sel),
+        .cal_valid   (cal_valid),
+        .cal_valid_rt(cal_valid_rt)
     );
 
     // Weight ROM
     // ----------------------------------
     wire [143:0] weight_out;
+    wire         win_zero;  // whole 3x3 window is zero
+    wire         rom_en = cal_valid & ~win_zero;  // zero window: ROM holds its row
 
     weight_rom_l1 U_WEIGHT_ROM_L1 (
+        .clk       (clk),
+        .rst_n     (rst_n),
         .out_ch_sel(out_ch_sel),
+        .rom_en    (rom_en),
         .weight_out(weight_out)
     );
 
@@ -80,9 +84,10 @@ module conv_l1 #(
 
     // Zero Gating Array
     // ----------------------------------
+    // registers the window and the ROM row; cal_valid_rt (aligned with weight_out) -> cal_valid_zg
     wire [143:0] zg_win, zg_weight;
     wire [  8:0] is_zero;
-    wire         cal_valid_rt;
+    wire         cal_valid_zg;
 
     zero_gating_array #(
         .N(9)
@@ -91,11 +96,11 @@ module conv_l1 #(
         .rst_n       (rst_n),
         .win_next    (win_out),
         .weight_next (weight_out),
-        .cal_valid   (cal_valid),
+        .cal_valid   (cal_valid_rt),
         .win_in      (zg_win),
         .weight_in   (zg_weight),
         .is_zero     (is_zero),
-        .cal_valid_rt(cal_valid_rt)
+        .cal_valid_rt(cal_valid_zg)
     );
 
     assign win_zero = &is_zero;
@@ -109,9 +114,9 @@ module conv_l1 #(
         .clk       (clk),
         .rst_n     (rst_n),
         .win_in    (zg_win),
-        .win_valid (cal_valid_rt),
+        .win_valid (cal_valid_zg),
         .weight_in (zg_weight),
-        .mul_en    ({9{cal_valid_rt}} & ~is_zero),
+        .mul_en    ({9{cal_valid_zg}} & ~is_zero),
         .ch_result0(ch_result),
         .mac_valid (mac_valid)
     );

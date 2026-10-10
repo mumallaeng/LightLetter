@@ -1,286 +1,164 @@
 `timescale 1ns / 1ps
-// Controller of the shared engine: layer / group / input counters (IDLE -> RUN -> FLUSH).
+// Controller of the shared engine: runs the loop "for layer, for group, for i" one MAC per clock.
+// IDLE waits for the first input, RUN issues MACs, FLUSH waits until the layer's results are written.
+// The weight and bias ROMs hold their rows in processing order (layer, group, input): a group's
+// weight rows start right after the previous group's, and the bias row counts groups.
+// Zero skipping: except FC1 group 0 (still streaming in), i jumps to the next non-zero input
+// (skip_nxt from fc_top's zero buffers) and the group ends at skip_last.
 module fc_ctrl #(
-    parameter N_IN1      = 400,
-    parameter N_IN2      = 120,
-    parameter N_IN3      = 84,
-    parameter GROUPS1    = 6,
-    parameter GROUPS2    = 5,
-    parameter GROUPS3    = 2,
-    parameter ROM_BASE1  = 0,
-    parameter ROM_BASE2  = 2400,
-    parameter ROM_BASE3  = 3000,
-    parameter BIAS_BASE1 = 0,
-    parameter BIAS_BASE2 = 6,
-    parameter BIAS_BASE3 = 11,
-    parameter ROM_AW     = 12,
-    parameter BIAS_AW    = 4,
-    parameter IN_AW      = 9
+    parameter N_IN1   = 400,
+    parameter N_IN2   = 120,
+    parameter N_IN3   = 84,
+    parameter GROUPS1 = 6,
+    parameter GROUPS2 = 5,
+    parameter GROUPS3 = 2,
+    parameter ROM_AW  = 12,
+    parameter BIAS_AW = 4,
+    parameter IN_AW   = 9
 ) (
     input  wire               clk,
     input  wire               rst_n,
     input  wire               fc_in_valid,
-    input  wire [      15:0]  feature,     // zero gating 판정용 (fc_top 의 feature mux)
     input  wire               mac_busy,
+    input  wire               last_inflight,  // a group's last input is still inside fc_mac
     input  wire               hold_free,
+    input  wire [  IN_AW-1:0] skip_nxt,       // next non-zero input after i (current layer)
+    input  wire [  IN_AW-1:0] skip_last,      // last non-zero input, 0 if none (current layer)
     output wire               fc_in_ready,
     output wire               fc1_in_we,
-    output wire [ IN_AW-1:0]  fc1_in_waddr,
-    output wire [       1:0]  layer,      // 1..3, 0 in IDLE
-    output wire [       2:0]  group,
-    output wire [ IN_AW-1:0]  feature_raddr, // registered
-    output wire [ROM_AW-1:0]  weight_addr,   // registered; ROM data lines up with fc_top's delayed MAC inputs
-    output reg  [BIAS_AW-1:0] bias_addr,
-    output reg                first,
-    output reg                mac_en,
-    output reg                last
+    output wire [  IN_AW-1:0] fc1_in_waddr,
+    output wire [        1:0] layer,          // 1..3, 0 in IDLE
+    output wire [        2:0] group,
+    output wire [  IN_AW-1:0] feature_raddr,
+    output wire [ ROM_AW-1:0] weight_addr,    // row of the current input; the row arrives one clock later
+    output wire               weight_en,
+    output reg  [BIAS_AW-1:0] bias_addr,      // 1 clk late: row of the group fc_mac loads the bias for
+    output wire               first,
+    output wire               mac_en,
+    output wire               last
 );
 
     localparam [1:0] S_IDLE = 2'd0, S_RUN = 2'd1, S_FLUSH = 2'd2;
+    localparam RPAD = ROM_AW - IN_AW;
 
     // 32-bit constants, sliced at the use sites so the compares keep the counter width
     localparam [31:0] FILL_FULL = N_IN1;
-
-    reg [       1:0] state, state_next;
-    reg [       1:0] layer_r, layer_next;
-    reg [       2:0] group_r, group_next;
-    reg [ IN_AW-1:0] i, i_next;
-    reg [ IN_AW-1:0] fill_cnt, fill_cnt_next;
-    reg [ROM_AW-1:0] grp_base, grp_base_next;
-
     localparam [31:0] N_IN1_C = N_IN1, N_IN2_C = N_IN2, N_IN3_C = N_IN3;
     localparam [31:0] GROUPS1_C = GROUPS1, GROUPS2_C = GROUPS2, GROUPS3_C = GROUPS3;
-    reg [ IN_AW-1:0] n_in;
-    reg [       3:0] n_groups;
+
+    reg [        1:0] state;
+    reg [        1:0] layer_r;
+    reg [        2:0] group_r;
+    reg [  IN_AW-1:0] i;
+    reg [  IN_AW-1:0] fill_cnt;
+    reg [ ROM_AW-1:0] group_row;  // weight row of the group's input 0
+    reg [BIAS_AW-1:0] b_addr;
+
+    // ========== layer table ==========
+    reg [  IN_AW-1:0] n_in;
+    reg [        3:0] n_groups;
     always @(*) begin
         case (layer_r)
-            2'd1:    begin n_in = N_IN1_C[IN_AW-1:0]; n_groups = GROUPS1_C[3:0]; end
-            2'd2:    begin n_in = N_IN2_C[IN_AW-1:0]; n_groups = GROUPS2_C[3:0]; end
-            default: begin n_in = N_IN3_C[IN_AW-1:0]; n_groups = GROUPS3_C[3:0]; end
-        endcase
-    end
-
-    // ========== zero gating ==========
-    // group 0 : 전수 스캔(learn) 하며 비영 인덱스를 적재
-    // group 1~: 적재된 리스트만 순회 -> MAC 사이클이 비영 개수로 줄어든다
-    wire comp      = (group_r  != 3'd0);
-    wire comp_next = (group_next != 3'd0);
-
-    wire [ IN_AW-1:0] zg_idx_nxt, zg_zero_idx;
-    wire [ IN_AW:0]   zg_nz;
-
-    localparam [IN_AW:0] MIN_ELEM = 2;
-
-    // can 은 아래에서 assign 한다 (lastin_q 가 can 을 읽으므로 선언을 먼저 둔다)
-    wire can;
-
-    // 그룹 / 레이어 전환 직후 2 clk 쉰다.
-    //   (1) 압축 그룹 첫 원소의 weight prefetch : can=0 이면 i_next == i 라
-    //       weight_addr 가 "현재 원소"의 주소가 된다
-    //   (2) fc_zero_gating 의 적재가 1 clk 늦으므로 zg_nz 가 확정될 시간
-    reg [1:0] bub;
-    wire grp_adv = (group_next != group_r) | (layer_next != layer_r);
-    always @(posedge clk) begin
-        if (!rst_n)       bub <= 2'd0;
-        else if (grp_adv) bub <= 2'd2;
-        else if (|bub)    bub <= bub - 1'b1;
-    end
-    wire bubble = |bub;
-
-    // 압축 모드의 원소 개수.
-    //   fc_mac 은 bias 를 1 단만 거쳐 stage2 에 쓰는데 first 는 2 단이라,
-    //   first 다음 clk 까지 group_r 이 유지돼야 bias 가 맞는다 -> 그룹 길이 최소 2.
-    //   비영이 0~1 개면 길이를 2 로 늘리고, 남는 사이클은 0 인 원소를 읽어 0 을 곱한다.
-    wire pad = (zg_nz < MIN_ELEM);
-
-    reg [IN_AW-1:0] n_elem;
-    always @(*) begin
-        if (!comp)    n_elem = n_in;
-        else if (pad) n_elem = MIN_ELEM[IN_AW-1:0];
-        else          n_elem = zg_nz[IN_AW-1:0];
-    end
-
-    // ---- weight ROM 주소용 offset 을 레지스터로 미리 읽어 둔다 ----
-    // rp 로 idx_mem 을 한 발 앞서 읽어 wofs_q 에 담는다.
-    //   읽기 경로 : rp(FF) -> idx_mem -> wofs_q(FF)      (FF 사이라 여유 있음)
-    //   주소 경로 : wofs_q(FF) -> mux -> 덧셈 -> addr_q(FF) -> ROM
-    // 불변식: 어떤 사이클이든 wofs_q = "다음 사이클에 쓸 원소"의 offset
-    // wcur_q holds the current element's offset: a stall on the last element repeats it
-    reg [IN_AW-1:0] rp, wofs_q, wcur_q;
-
-    wire [IN_AW-1:0] raw_rp = ({1'b0, rp} >= zg_nz) ? zg_zero_idx : zg_idx_nxt;
-
-    always @(posedge clk) begin
-        if (!rst_n) begin
-            rp     <= {IN_AW{1'b0}};
-            wofs_q <= {IN_AW{1'b0}};
-            wcur_q <= {IN_AW{1'b0}};
-        end else if (grp_adv) begin
-            rp     <= {IN_AW{1'b0}};          // 그룹 전환: 읽기 포인터 초기화
-        end else if (bubble | can) begin
-            wcur_q <= wofs_q;
-            wofs_q <= raw_rp;
-            rp     <= rp + 1'b1;
-        end
-    end
-
-    // 직전 그룹의 결과가 MAC 파이프라인에 떠 있는 동안에는 hold_free 가 아직 1 이다.
-    // 이때 다음 그룹의 last 를 내보내면 fc_quant_out 의 hold 가 덮여 출력이 사라진다.
-    // 원래는 그룹 길이가 n_in(>=84) 이라 문제가 없었지만, 압축하면 그룹이 짧아져 드러난다.
-    // 4 = MAC input align stage in fc_top + 3 fc_mac stages
-    reg [2:0] res_pend;
-    always @(posedge clk) begin
-        if (!rst_n)              res_pend <= 3'd0;
-        else if (mac_en & last)  res_pend <= 3'd4;
-        else if (|res_pend)      res_pend <= res_pend - 1'b1;
-    end
-    wire result_pending = |res_pend;
-
-    // lastin 을 레지스터로 둔다
-    //   zg_nz -> n_elem -> can -> FSM -> i_next -> idx_mem -> weight ROM 주소
-    //   로 이어지는 긴 조합 경로를 끊기 위함
-    reg lastin_q;
-    always @(posedge clk) begin
-        if (!rst_n)           lastin_q <= 1'b0;
-        else if (bub == 2'd1) lastin_q <= (n_elem == {{(IN_AW - 1) {1'b0}}, 1'b1});
-        else if (can)         lastin_q <= (i_next == n_elem - 1'b1);
-    end
-
-    wire lastin = lastin_q;
-    wire avail  = ~((layer_r == 2'd1) & (group_r == 3'd0)) | (i < fill_cnt);
-    assign can  = (state == S_RUN) & avail & ~bubble & (~lastin | (hold_free & ~result_pending));
-
-    fc_zero_gating #(
-        .DEPTH(N_IN1),
-        .AW   (IN_AW)
-    ) u_zero_gating (
-        .clk       (clk),
-        .rst_n     (rst_n),
-        .clear     ((state != S_RUN) & (state_next == S_RUN)),  // 레이어 시작
-        .learn     (~comp),
-        .valid     (mac_en),
-        .feature   (feature),
-        .src_idx   (i),
-        .k_cur     (i),
-        .k_nxt     (rp),
-        .idx_cur   (),
-        .idx_nxt   (zg_idx_nxt),
-        .nz_cnt    (zg_nz),
-        .zero_idx  (zg_zero_idx)
-    );
-
-    // ========== input fill (independent of the FSM) ==========
-    assign fc_in_ready = (fill_cnt < FILL_FULL[IN_AW-1:0]);
-    assign fc1_in_we    = fc_in_valid & fc_in_ready;
-    assign fc1_in_waddr = fill_cnt;
-
-    // ========== Next State Logic ==========
-    always @(*) begin : fc_ctrl_comb
-        state_next    = state;
-        layer_next    = layer_r;
-        group_next    = group_r;
-        i_next        = i;
-        fill_cnt_next = fc1_in_we ? fill_cnt + 1'b1 : fill_cnt;
-        grp_base_next = grp_base;
-        first         = 1'b0;
-        mac_en        = 1'b0;
-        last          = 1'b0;
-
-        case (state)
-            S_IDLE: begin
-                if (fill_cnt != {IN_AW{1'b0}}) begin
-                    state_next    = S_RUN;
-                    layer_next    = 2'd1;
-                    group_next    = 3'd0;
-                    i_next        = {IN_AW{1'b0}};
-                    grp_base_next = ROM_BASE1;
-                end
+            2'd1: begin
+                n_in     = N_IN1_C[IN_AW-1:0];
+                n_groups = GROUPS1_C[3:0];
             end
-            S_RUN: begin
-                if (can) begin
-                    mac_en = 1'b1;
-                    first  = (i == {IN_AW{1'b0}});
-                    last   = lastin;
-                    if (!lastin) begin
-                        i_next = i + 1'b1;
-                    end else begin
-                        i_next = {IN_AW{1'b0}};
-                        if ({1'b0, group_r} + 1'b1 < n_groups) begin
-                            group_next    = group_r + 1'b1;
-                            grp_base_next = grp_base + {{(ROM_AW - IN_AW) {1'b0}}, n_in};
-                            state_next    = S_RUN;
-                        end else begin
-                            state_next = S_FLUSH;
-                        end
-                    end
-                end
+            2'd2: begin
+                n_in     = N_IN2_C[IN_AW-1:0];
+                n_groups = GROUPS2_C[3:0];
             end
             default: begin
-                if (!mac_busy & hold_free) begin
-                    if (layer_r == 2'd1) fill_cnt_next = fc1_in_we ? {{(IN_AW - 1) {1'b0}}, 1'b1} : {IN_AW{1'b0}};
-                    if (layer_r != 2'd3) begin
-                        layer_next    = layer_r + 1'b1;
-                        group_next    = 3'd0;
-                        i_next        = {IN_AW{1'b0}};
-                        grp_base_next = (layer_r == 2'd1) ? ROM_BASE2 : ROM_BASE3;
-                        state_next    = S_RUN;
-                    end else begin
-                        layer_next = 2'd0;
-                        state_next = S_IDLE;
-                    end
-                end
+                n_in     = N_IN3_C[IN_AW-1:0];
+                n_groups = GROUPS3_C[3:0];
             end
         endcase
-
-        // ========== Output Logic ==========
-        case (layer_r)
-            2'd1:    bias_addr = BIAS_BASE1 + group_r;
-            2'd2:    bias_addr = BIAS_BASE2 + group_r;
-            2'd3:    bias_addr = BIAS_BASE3 + group_r;
-            default: bias_addr = {BIAS_AW{1'b0}};
-        endcase
     end
 
-    // weight ROM row = grp_base(layer, group) + 원본 입력 인덱스
-    wire [IN_AW-1:0] rom_ofs = comp_next ? ((bubble | can) ? wofs_q : wcur_q) : i_next;
-    wire [ROM_AW-1:0] weight_addr_c = grp_base_next + {{(ROM_AW - IN_AW) {1'b0}}, rom_ofs};
+    // ========== loop conditions ==========
+    wire             jump = ~((layer_r == 2'd1) & (group_r == 3'd0));  // the zero buffer is complete
+    wire [IN_AW-1:0] i_adv = jump ? skip_nxt : i + 1'b1;  // next input of the group
+    wire [IN_AW-1:0] i_start = {IN_AW{1'b0}};  // first input of a group, visited even if 0 (bias)
+    wire             lastin = jump ? (i == skip_last) : (i == n_in - 1'b1);
+    wire             lastgroup = ({1'b0, group_r} + 1'b1 >= n_groups);
+    wire             avail = ~((layer_r == 2'd1) & (group_r == 3'd0)) | (i < fill_cnt);  // FC1 group 0 follows the input
 
-    // rom_ofs is the next element's input index.
-    // addr_q : weight ROM address (fc_top delays the MAC inputs by 1 clk to match)
-    // fidx_q : feature buffer read address, keeps idx_mem out of the feature path
-    reg [ROM_AW-1:0] addr_q;
-    reg [ IN_AW-1:0] fidx_q;
+    wire             start = (state == S_IDLE) & (fill_cnt != {IN_AW{1'b0}});
+    // skipped groups can be a few clks long: also wait for the previous group's sum still in fc_mac
+    wire             step = (state == S_RUN) & avail & (~lastin | (hold_free & ~last_inflight));  // one MAC this clock
+    wire             group_end = step & lastin;
+    wire             layer_end = group_end & lastgroup;
+    wire             frame_end = layer_end & (layer_r == 2'd3);
+    wire             drained = (state == S_FLUSH) & ~mac_busy & hold_free;
+    wire             next_layer = drained & (layer_r != 2'd3);
+    wire             frame_done = drained & (layer_r == 2'd3);
+
+    // ========== FSM ==========
+    always @(posedge clk) begin
+        if (!rst_n) state <= S_IDLE;
+        else if (start) state <= S_RUN;
+        else if (layer_end) state <= S_FLUSH;
+        else if (next_layer) state <= S_RUN;
+        else if (frame_done) state <= S_IDLE;
+    end
+
+    // ========== loop counters: layer -> group -> i ==========
     always @(posedge clk) begin
         if (!rst_n) begin
-            addr_q <= {ROM_AW{1'b0}};
-            fidx_q <= {IN_AW{1'b0}};
-        end else begin
-            addr_q <= weight_addr_c;
-            fidx_q <= rom_ofs;
+            layer_r <= 2'd0;
+            group_r <= 3'd0;
+            i       <= {IN_AW{1'b0}};
+        end else if (start | next_layer) begin
+            layer_r <= layer_r + 1'b1;
+            group_r <= 3'd0;
+            i       <= i_start;
+        end else if (frame_done) begin
+            layer_r <= 2'd0;
+        end else if (step) begin
+            if (!lastin) begin
+                i <= i_adv;
+            end else begin
+                i <= i_start;
+                if (!lastgroup) group_r <= group_r + 1'b1;
+            end
         end
     end
-    assign weight_addr   = addr_q;
-    assign feature_raddr = fidx_q;
 
-    assign layer   = layer_r;
-    assign group   = group_r;
-
+    // ========== ROM rows: weight row = group's row 0 + i, bias row counts groups ==========
     always @(posedge clk) begin
         if (!rst_n) begin
-            state    <= S_IDLE;
-            layer_r  <= 2'd0;
-            group_r  <= 3'd0;
-            i        <= {IN_AW{1'b0}};
-            fill_cnt <= {IN_AW{1'b0}};
-            grp_base <= {ROM_AW{1'b0}};
-        end else begin
-            state    <= state_next;
-            layer_r  <= layer_next;
-            group_r  <= group_next;
-            i        <= i_next;
-            fill_cnt <= fill_cnt_next;
-            grp_base <= grp_base_next;
+            group_row <= {ROM_AW{1'b0}};
+            b_addr    <= {BIAS_AW{1'b0}};
+        end else if (group_end) begin
+            group_row <= frame_end ? {ROM_AW{1'b0}} : group_row + {{RPAD{1'b0}}, n_in};
+            b_addr    <= frame_end ? {BIAS_AW{1'b0}} : b_addr + 1'b1;
         end
+    end
+
+    // ========== input fill: next frame is accepted once FC1 is done ==========
+    always @(posedge clk) begin
+        if (!rst_n) fill_cnt <= {IN_AW{1'b0}};
+        else if (next_layer & (layer_r == 2'd1)) fill_cnt <= {IN_AW{1'b0}};
+        else if (fc1_in_we) fill_cnt <= fill_cnt + 1'b1;
+    end
+
+    // ========== Output Logic ==========
+    assign fc_in_ready   = (fill_cnt < FILL_FULL[IN_AW-1:0]);
+    assign fc1_in_we     = fc_in_valid & fc_in_ready;
+    assign fc1_in_waddr  = fill_cnt;
+
+    assign layer         = layer_r;
+    assign group         = group_r;
+    assign feature_raddr = i;
+    assign mac_en        = step;
+    assign first         = step & (i == {IN_AW{1'b0}});
+    assign last          = group_end;
+    assign weight_addr   = group_row + {{RPAD{1'b0}}, i};
+    assign weight_en     = step;
+
+    // fc_mac loads the bias 1 clk after `first`; b_addr may already count the next group by then
+    always @(posedge clk) begin
+        if (!rst_n) bias_addr <= {BIAS_AW{1'b0}};
+        else        bias_addr <= b_addr;
     end
 
 endmodule

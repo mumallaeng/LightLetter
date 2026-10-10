@@ -7,7 +7,7 @@
 //         ../rtl/weight_rom_l1.v ../rtl/line_buffer.v ../rtl/mac_array_l1.v \
 //         ../rtl/MAC_unit.v ../rtl/conv_out_stage.v ../rtl/output_buffer.v \
 //         ../rtl/partial_sum.v ../rtl/buffer_ctrl.v ../rtl/bias_rom.v \
-//         ../rtl/relu_quant.v ../rtl/quantizer.v ../rtl/relu.v \
+//         ../rtl/relu_quant.v ../rtl/quantizer.v \
 //         ../rtl/lane_packer.v ../rtl/out_reorder.v tb_conv_l1.v
 //   xelab tb_conv_l1 -s tb_conv_l1_sim
 //   xsim tb_conv_l1_sim -runall
@@ -16,11 +16,10 @@
 //   iverilog -g2005 -o tb_conv_l1.vvp tb_conv_l1.v ../rtl/*.v && vvp -n tb_conv_l1.vvp
 //
 // ---------------------------------------------------------------------------
-// weight_rom_l1 이 $readmemh 배열에서 하드코딩 case 문으로 바뀌면서 TB 도 같이 바뀌었다.
+// weight_rom_l1 은 l1_weight.mem 을 $readmemh 로 읽는다(실행 폴더에 l1_weight.mem 이 있어야 한다).
 //
-//   - ROM 에 rom[] 배열이 없으므로 TB 가 내용을 주입하거나 계층참조할 수 없다.
-//     대신 TB 가 골든 weight 파일을 rom_ref[] 로 직접 읽어서 기대값으로 쓴다.
-//     덕분에 "RTL 에 박아넣은 상수가 골든과 같은가" 까지 검사 범위에 들어온다.
+//   - TB 는 골든 weight 파일(conv1_weight_144.mem)을 rom_ref[] 로 직접 읽어서 기대값으로 쓴다.
+//     덕분에 "RTL ROM 이 읽은 내용이 골든과 같은가" 까지 검사 범위에 들어온다.
 //   - conv_l1 의 out_ready / ch_result1,2 배선이 정리돼서 예전 force 우회는 삭제했다.
 //
 // 남은 우회는 하나뿐이다. RTL 이 고쳐지면 지우면 된다.
@@ -30,12 +29,14 @@
 //
 // 확인하는 것:
 //   [A0] weight ROM 내용 - weight_rom_l1 을 따로 하나 물려서 out_ch_sel 0..5 를
-//        훑고, 하드코딩된 상수가 골든 conv1_weight_144.mem 과 같은지 본다.
-//        case 문에 오타가 났으면 여기서 잡힌다.
+//        훑고, ROM 이 읽은 내용이 골든 conv1_weight_144.mem 과 같은지 본다.
+//        .mem 이 어긋났으면 여기서 잡힌다.
 //   [A1] weight ROM 타이밍 - cal_valid 인 매 사이클마다 weight_out 이
 //        rom_ref[out_ch_sel] 과 같은지. ROM 이 sync read 로 되돌아가 한 박자
 //        밀리면 여기서 잡힌다. ROM entry 별 사용 횟수도 히스토그램으로 보여준다.
 //        (정상이면 6채널이 676번씩 고르게, 밀리면 och0 두 배 / och5 0 번)
+//        zero gating: window 가 전부 0 이면 rom_en 이 꺼져 ROM 이 이전 row 를 유지하므로
+//        그 사이클은 비교하지 않고 gated 로 센다 (entry 별 used + gated == 676).
 //   [B]  최종 출력 - out_data0..2 / out_ch_done 을 C 골든모델 ce1_out.mem 과 비교.
 // ---------------------------------------------------------------------------
 
@@ -100,6 +101,7 @@ module tb_conv_l1;
     integer slip_checks, slip_errs, slip_shown;
     integer rom_content_errs;
     integer rom_used[0:OCH-1];
+    integer rom_gated[0:OCH-1];
     integer burst_logged;
     integer cyc;
     integer i;
@@ -122,23 +124,33 @@ module tb_conv_l1;
 
     // ---------------- [A0] weight ROM 내용 ----------------
     // DUT 와 별개로 ROM 을 하나 더 물려서 out_ch_sel 을 훑는다.
-    // 하드코딩 case 문에는 계층참조로 들여다볼 배열이 없으므로 이게 유일한 방법.
+    // 모든 채널을 훑는 가장 단순한 방법이다.
     reg  [$clog2(OCH)-1:0] rom_chk_sel;
     wire [          143:0] rom_chk_out;
 
     weight_rom_l1 #(
         .OCH(OCH)
     ) U_ROM_CHK (
+        .clk       (clk),
+        .rst_n     (1'b1),
+        .rom_en    (1'b1),
         .out_ch_sel(rom_chk_sel),
         .weight_out(rom_chk_out)
     );
 
     // ---------------- [A1] weight ROM 타이밍 ----------------
     // cal_valid 인 사이클의 weight_out 은 그 사이클의 rom_ref[out_ch_sel] 이어야 한다.
-    wire [143:0] rom_expect = rom_ref[dut.out_ch_sel];
+    reg [$clog2(OCH)-1:0] sel_d;
+    reg                   rom_en_d;
+    always @(posedge clk) begin
+        sel_d    <= dut.out_ch_sel;
+        rom_en_d <= dut.rom_en;
+    end
+    wire [143:0] rom_expect = rom_ref[sel_d];
 
     always @(posedge clk) begin
-        if (rst_n && dut.cal_valid) begin
+        if (rst_n && dut.cal_valid_rt && !rom_en_d) rom_gated[sel_d] = rom_gated[sel_d] + 1;
+        if (rst_n && dut.cal_valid_rt && rom_en_d) begin
             slip_checks = slip_checks + 1;
 
             // 이번 사이클에 실제로 나온 weight 가 몇 번 ROM entry 인지 역추적
@@ -208,7 +220,10 @@ module tb_conv_l1;
         slip_shown       = 0;
         burst_logged     = 0;
         rom_content_errs = 0;
-        for (i = 0; i < OCH; i = i + 1) rom_used[i] = 0;
+        for (i = 0; i < OCH; i = i + 1) begin
+            rom_used[i]  = 0;
+            rom_gated[i] = 0;
+        end
 
         $readmemh(STIM_FILE, stim);
         $readmemh(GOLD_FILE, gold);
@@ -223,7 +238,7 @@ module tb_conv_l1;
         $display("[A0] weight ROM contents vs %s:", WEIGHT_FILE);
         for (i = 0; i < OCH; i = i + 1) begin
             rom_chk_sel = i[$clog2(OCH)-1:0];
-            #1;
+            @(posedge clk); #1;
             if (rom_chk_out !== rom_ref[i]) begin
                 rom_content_errs = rom_content_errs + 1;
                 $display("    [FAIL] rom[%0d]", i);
@@ -266,10 +281,11 @@ module tb_conv_l1;
             N_WIN, OCH, N_WIN);
         for (i = 0; i < OCH; i = i + 1)
         $display(
-            "      rom[%0d] used %0d time(s)%0s",
+            "      rom[%0d] used %0d + gated %0d time(s)%0s",
             i,
             rom_used[i],
-            (rom_used[i] == N_WIN) ? "" : "   <-- expected 676"
+            rom_gated[i],
+            (rom_used[i] + rom_gated[i] == N_WIN) ? "" : "   <-- expected 676"
         );
         if (slip_errs == 0)
             $display(
