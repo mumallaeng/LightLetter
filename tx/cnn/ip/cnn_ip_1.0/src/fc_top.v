@@ -16,20 +16,21 @@ module fc_top #(
     output wire        logit_valid
 );
 
-    localparam N_IN1 = 400, N_OUT1 = 120, GROUPS1 = 6, ROM_BASE1 = 0,    BIAS_BASE1 = 0,  SCALE_EXP1 = 16;
-    localparam N_IN2 = 120, N_OUT2 = 84,  GROUPS2 = 5, ROM_BASE2 = 2400, BIAS_BASE2 = 6,  SCALE_EXP2 = 15;
-    localparam N_IN3 = 84,  N_OUT3 = 26,  GROUPS3 = 2, ROM_BASE3 = 3000, BIAS_BASE3 = 11, SCALE_EXP3 = 14;
-    localparam ROM_ROWS = 3168, BIAS_ROWS = 13;
-    localparam ROM_AW = $clog2(ROM_ROWS), BIAS_AW = $clog2(BIAS_ROWS), IN_AW = $clog2(N_IN1);
+    localparam N_IN1 = 400, N_OUT1 = 120, GROUPS1 = 6, SCALE_EXP1 = 16;
+    localparam N_IN2 = 120, N_OUT2 = 84,  GROUPS2 = 5, SCALE_EXP2 = 14;
+    localparam N_IN3 = 84,  N_OUT3 = 26,  GROUPS3 = 2, SCALE_EXP3 = 14;
+    localparam ROM_ROWS = N_IN1 * GROUPS1 + N_IN2 * GROUPS2 + N_IN3 * GROUPS3, BIAS_ROWS = GROUPS1 + GROUPS2 + GROUPS3;
+    localparam ROM_AW = $clog2(ROM_ROWS), BIAS_AW = $clog2(BIAS_ROWS), IN_AW = $clog2(N_IN1), FEAT_AW = $clog2(N_OUT1);
 
-    wire              ctrl_fc1_in_we, ctrl_first, ctrl_mac_en, ctrl_last;
+    wire              ctrl_fc1_in_we, ctrl_first, ctrl_mac_en, ctrl_last, ctrl_weight_en;
     wire [ IN_AW-1:0] ctrl_fc1_in_waddr, ctrl_feature_raddr;
     wire [       1:0] ctrl_layer;
     wire [       2:0] ctrl_group;
     wire [ROM_AW-1:0] ctrl_weight_addr;
     wire [BIAS_AW-1:0] ctrl_bias_addr;
 
-    wire [15:0] x_fc1, x_fc2, x_fc3, feature;
+    wire [15:0] x_fc1, x_fc2, x_fc3;
+    reg  [15:0] feature;
     wire [16*P-1:0]    rom_weight;
     wire [32*P-1:0]    rom_bias;
     wire               mac_sum_valid, mac_busy;
@@ -38,7 +39,7 @@ module fc_top #(
     wire [        2:0] mac_group;
     wire               qout_hold_free, qout_feature_we;
     wire [        1:0] qout_feature_layer;
-    wire [        6:0] qout_feature_waddr;
+    wire [FEAT_AW-1:0] qout_feature_waddr;
     wire [       15:0] qout_feature_wdata;
     wire signed [15:0] qout_logit;
 
@@ -46,8 +47,6 @@ module fc_top #(
     fc_ctrl #(
         .N_IN1(N_IN1), .N_IN2(N_IN2), .N_IN3(N_IN3),
         .GROUPS1(GROUPS1), .GROUPS2(GROUPS2), .GROUPS3(GROUPS3),
-        .ROM_BASE1(ROM_BASE1), .ROM_BASE2(ROM_BASE2), .ROM_BASE3(ROM_BASE3),
-        .BIAS_BASE1(BIAS_BASE1), .BIAS_BASE2(BIAS_BASE2), .BIAS_BASE3(BIAS_BASE3),
         .ROM_AW(ROM_AW), .BIAS_AW(BIAS_AW), .IN_AW(IN_AW)
     ) u_ctrl (
         .clk        (clk),
@@ -62,6 +61,7 @@ module fc_top #(
         .group      (ctrl_group),
         .feature_raddr (ctrl_feature_raddr),
         .weight_addr  (ctrl_weight_addr),
+        .weight_en    (ctrl_weight_en),
         .bias_addr    (ctrl_bias_addr),
         .first      (ctrl_first),
         .mac_en     (ctrl_mac_en),
@@ -71,18 +71,24 @@ module fc_top #(
     // ========== feature buffers ==========
     fc_feature_buf #(.DEPTH(N_IN1)) u_fc1_in (
         .clk(clk), .we(ctrl_fc1_in_we), .waddr(ctrl_fc1_in_waddr), .wdata(fc_in_data), .raddr(ctrl_feature_raddr), .rdata(x_fc1));
-    fc_feature_buf #(.DEPTH(N_OUT1)) u_fc2_in (
+    fc_feature_buf #(.DEPTH(N_OUT1), .AW(FEAT_AW)) u_fc2_in (
         .clk(clk), .we(qout_feature_we & (qout_feature_layer == 2'd1)), .waddr(qout_feature_waddr), .wdata(qout_feature_wdata),
-        .raddr(ctrl_feature_raddr[6:0]), .rdata(x_fc2));
-    fc_feature_buf #(.DEPTH(N_OUT2)) u_fc3_in (
+        .raddr(ctrl_feature_raddr[FEAT_AW-1:0]), .rdata(x_fc2));
+    fc_feature_buf #(.DEPTH(N_OUT2), .AW(FEAT_AW)) u_fc3_in (
         .clk(clk), .we(qout_feature_we & (qout_feature_layer == 2'd2)), .waddr(qout_feature_waddr), .wdata(qout_feature_wdata),
-        .raddr(ctrl_feature_raddr[6:0]), .rdata(x_fc3));
+        .raddr(ctrl_feature_raddr[FEAT_AW-1:0]), .rdata(x_fc3));
 
-    assign feature = (ctrl_layer == 2'd1) ? x_fc1 : (ctrl_layer == 2'd2) ? x_fc2 : x_fc3;
+    always @(*) begin
+        case (ctrl_layer)
+            2'd1:    feature = x_fc1;
+            2'd2:    feature = x_fc2;
+            default: feature = x_fc3;
+        endcase
+    end
 
     // ========== ROMs ==========
     fc_weight_rom #(.P(P), .ROWS(ROM_ROWS), .ROM_FILE(WEIGHT_FILE), .AW(ROM_AW)) u_wrom (
-        .clk(clk), .addr(ctrl_weight_addr), .w_out(rom_weight));
+        .clk(clk), .en(ctrl_weight_en), .addr(ctrl_weight_addr), .w_out(rom_weight));
     fc_bias_rom #(.P(P), .ROWS(BIAS_ROWS), .ROM_FILE(BIAS_FILE), .AW(BIAS_AW)) u_brom (
         .addr(ctrl_bias_addr), .b_out(rom_bias));
 
@@ -107,7 +113,7 @@ module fc_top #(
 
     // ========== quantize and output ==========
     fc_quant_out #(
-        .P(P), .ACC_W(ACC_W), .N_OUT1(N_OUT1), .N_OUT2(N_OUT2), .N_OUT3(N_OUT3),
+        .P(P), .ACC_W(ACC_W), .N_OUT1(N_OUT1), .N_OUT2(N_OUT2), .N_OUT3(N_OUT3), .WADDR_AW(FEAT_AW),
         .SCALE_EXP1(SCALE_EXP1), .SCALE_EXP2(SCALE_EXP2), .SCALE_EXP3(SCALE_EXP3)
     ) u_quant_out (
         .clk        (clk),

@@ -13,7 +13,8 @@ module weight_addr_ctrl_l2 #(
     output                       rom_is_ch35,
     output reg [$clog2(OCH)-1:0] out_ch_sel,
     // mac array
-    output                       cal_valid
+    output                       cal_valid,
+    output reg                   cal_valid_rt
 );
     // ========== FSM ==========
     localparam IDLE = 0;
@@ -28,13 +29,15 @@ module weight_addr_ctrl_l2 #(
     // ----- State Update Logic -----
     always @(posedge clk or negedge rst_n) begin
         if (~rst_n) begin
-            c_state <= IDLE;
-            mac_done <= 0;
-            out_ch_sel <= 0;
+            c_state      <= IDLE;
+            mac_done     <= 0;
+            out_ch_sel   <= 0;
+            cal_valid_rt <= 0;
         end else begin
-            c_state <= n_state;
-            mac_done <= mac_done_next;
-            out_ch_sel <= out_ch_sel_next;
+            c_state      <= n_state;
+            mac_done     <= mac_done_next;
+            out_ch_sel   <= out_ch_sel_next;
+            cal_valid_rt <= cal_valid;
         end
     end
 
@@ -64,7 +67,7 @@ module weight_addr_ctrl_l2 #(
     end
 
     // ----- Moore output logic -----
-    assign cal_valid = c_state;  // equal to c_state = WEIGHT_CAL
+    assign cal_valid   = c_state;  // equal to c_state = WEIGHT_CAL
 
     // ----- is_ch35 pass-through (ce_ctrl -> weight rom) -----
     assign rom_is_ch35 = is_ch35;

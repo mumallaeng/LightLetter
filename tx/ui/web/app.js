@@ -139,6 +139,16 @@ async function poll() {
     ? '서버가 --device 로 캡처보드를 직접 열고 있어서 브라우저로 켜는 버튼은 없습니다. 브라우저에서 켜려면 서버를 --device 없이 다시 실행하세요.'
     : '저장한 프레임(--image)을 보여 주는 중이라 캡처보드를 켜는 버튼은 없습니다.';
   if (first) {
+    // 저장해 둔 선택에 없던 새 단계는 자동으로 켠다 (단계가 추가돼도 예전 브라우저에서 보이게)
+    const known = store.get('knownStages', {});
+    for (const [m, list] of Object.entries(status.stages)) {
+      const fresh = list.map(x => x.id).filter(id => !(known[m] ?? []).includes(id));
+      if (chosen[m] && known[m] && fresh.length) chosen[m] = [...chosen[m], ...fresh];
+      else if (chosen[m] && !known[m]) chosen[m] = [...chosen[m], ...list.map(x => x.id).filter(id => id === 'predict')];
+      known[m] = list.map(x => x.id);
+    }
+    store.set('stages', chosen);
+    store.set('knownStages', known);
     if (status.kind === 'browser') listCameras();
     $('cell').innerHTML = Array.from({ length: status.cells }, (_, k) => `<option value="${k}">${k}</option>`).join('');
     buildStages();
@@ -152,6 +162,25 @@ async function poll() {
   $('markers').textContent = a ? `${a.markers.length}/6 (${a.markers.join(', ') || '—'})` : '—';
   $('fit').textContent = a ? `${a.fit_px}px / ${a.ms}ms` : '—';
   $('health').textContent = status.error ?? '';
+  const c = status.cnn;
+  $('cnnSrc').textContent = `${c.weights} · ${c.sha} · ${c.classes}클래스` + (c.accuracy ? ` · test ${(c.accuracy * 100).toFixed(1)}%` : '');
+}
+
+async function showPredict() {
+  const p = await (await fetch('/api/predict')).json();
+  const box = $('pred');
+  if (p.msg || !p.cells.length) { box.innerHTML = ''; box.textContent = p.msg ?? '인식할 칸이 없습니다.'; return; }
+  box.innerHTML = '';
+  p.cells.forEach((top, k) => {
+    const d = document.createElement('div');
+    d.className = 'predcell';
+    const name = status.mode === 'aruco' ? `cell ${k}` : 'ROI';
+    d.innerHTML = '<small></small><b></b><span></span>';
+    d.querySelector('small').textContent = name;
+    d.querySelector('b').textContent = top ? top[0].letter : '—';
+    d.querySelector('span').textContent = top ? top.map(t => `${t.letter} ${t.logit}`).join(' · ') : '글자 없음';
+    box.append(d);
+  });
 }
 
 function tick() {
@@ -162,4 +191,4 @@ function tick() {
   for (const row of $('panel').children) refresh(row.querySelector('img'), `/api/stage/${row.dataset.id}.png`);
 }
 
-poll().then(() => { setInterval(poll, 700); setInterval(tick, 250); });
+poll().then(() => { setInterval(poll, 700); setInterval(tick, 250); setInterval(showPredict, 500); });

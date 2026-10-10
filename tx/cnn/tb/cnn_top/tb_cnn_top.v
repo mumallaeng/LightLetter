@@ -16,10 +16,10 @@
 //     pool1_out.mem     49bit x  676  pool_l1 출력 {ch_done, d2, d1, d0}
 //     ce2_out.mem       17bit x 3872  conv_l2 출력 {ch_done, data}
 //     pool2_out.mem     17bit x  800  pool_l2 출력 {ch_done, data} = FC1 입력
-//     conv1_weight.mem 432bit x   12  conv_l1 weight 기대값 ([och][grp], grp0 lane0 = weight_rom_l1 case 상수)
+//     conv1_weight.mem 432bit x   12  conv_l1 weight 기대값 ([och][grp], grp0 lane0 = l1_weight.mem)
 //     conv2_weight.mem 432bit x   32  conv_l2 weight ROM 기대값 ([och][is_ch35])
 //     conv1_bias_ce.mem / conv2_bias_ce.mem  INT32 bias 기대값
-//   RTL 은 tx/cnn/rtl/mem/ (conv{1,2}_bias, l2_weight_ch*, fc*) 과 weight_rom_l1.v 의 case 상수를 쓴다. TB 는 ROM 을
+//   RTL 은 tx/cnn/rtl/mem/ (conv{1,2}_bias, l1_weight, l2_weight_ch*, fc*)를 쓴다. TB 는 ROM 을
 //   덮어쓰지 않는다 - mem/ 이 rtl_ref/ 와 다르면 [ROM1] [ROM] [BIAS] 와 그 뒤 단계에서 드러난다.
 //   tx/cnn/tb/cnn_top/vectors/ (gen_fc_golden.py : pool2_out.mem 에서 FC 골든 규칙으로 계산)
 //     fc1_out.mem       16bit x  240  FC1 출력 (neuron 0..119)
@@ -291,7 +291,7 @@ module tb_cnn_top;
         end
     end
 
-    // ---------------- [ROM1] conv_l1 weight ROM (weight_rom_l1 case 상수) ----------------
+    // ---------------- [ROM1] conv_l1 weight ROM (l1_weight.mem) ----------------
     wire [143:0] rom1_expect = wref1[dut.U_CONV_L1.out_ch_sel*2][143:0];
 
     always @(posedge clk) begin

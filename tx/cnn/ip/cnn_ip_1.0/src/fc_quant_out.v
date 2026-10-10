@@ -7,8 +7,9 @@ module fc_quant_out #(
     parameter N_OUT2     = 84,
     parameter N_OUT3     = 26,
     parameter SCALE_EXP1 = 16,
-    parameter SCALE_EXP2 = 15,
-    parameter SCALE_EXP3 = 14
+    parameter SCALE_EXP2 = 14,
+    parameter SCALE_EXP3 = 14,
+    parameter WADDR_AW   = 7            // feature buffer address width
 ) (
     input  wire               clk,
     input  wire               rst_n,
@@ -20,7 +21,7 @@ module fc_quant_out #(
     output wire               hold_free,
     output wire               feature_we,
     output wire [        1:0] feature_layer,
-    output wire [        6:0] feature_waddr,
+    output wire [WADDR_AW-1:0] feature_waddr,
     output wire [       15:0] feature_wdata,
     output wire signed [15:0] logit_data,
     output wire               logit_valid
@@ -29,38 +30,9 @@ module fc_quant_out #(
     localparam LANE_AW = $clog2(P + 1);
 
     localparam [31:0] P32 = P;
+    localparam [WADDR_AW-1:0] P_W = P;
 
-    reg [ACC_W*P-1:0] hold, hold_next;
-    reg               valid, valid_next;
-    reg [LANE_AW-1:0] idx, idx_next;
-    reg [LANE_AW-1:0] len, len_next;
-    reg [        1:0] layer, layer_next;
-    reg [        2:0] group, group_next;
-
-    reg signed [ACC_W-1:0] s1_cur;
-    reg                    s1_valid;
-    reg [             1:0] s1_layer;
-    reg [             6:0] s1_waddr;
-    reg [            15:0] s2_y;
-    reg                    s2_valid;
-    reg [             1:0] s2_layer;
-    reg [             6:0] s2_waddr;
-
-    // ========== the lane being output ==========
-    wire signed [ACC_W-1:0] cur = $signed(hold[ACC_W*idx+:ACC_W]);
-
-    wire [ACC_W-1:0] relu_out;
-    wire [     15:0] q1, q2;
-    wire signed [15:0] q3;
-
-    relu #(.ACC_W(ACC_W)) u_relu (.x_in(s1_cur), .y_out(relu_out));
-    quantizer #(.ACC_W(ACC_W), .SCALE_EXP(SCALE_EXP1)) u_q1 (.x_in(relu_out), .y_out(q1));
-    quantizer #(.ACC_W(ACC_W), .SCALE_EXP(SCALE_EXP2)) u_q2 (.x_in(relu_out), .y_out(q2));
-    quantizer_signed #(.ACC_W(ACC_W), .SCALE_EXP(SCALE_EXP3)) u_q3 (.x_in(s1_cur), .y_out(q3));
-
-    wire [15:0] y = (s1_layer == 2'd1) ? q1 : (s1_layer == 2'd2) ? q2 : q3;
-
-    // neurons in the group that just finished: the layer's last group can be short
+    // neurons in a group: the layer's last group can be short
     function [LANE_AW-1:0] group_len;
         input [1:0] l;
         input [2:0] g;
@@ -71,11 +43,104 @@ module fc_quant_out #(
         end
     endfunction
 
-    // ========== Output Logic ==========
-    wire s2_logit = s2_valid & (s2_layer == 2'd3);
-    wire adv      = ~s2_logit | logit_ready;
-    wire pop      = valid & adv;
+    reg [ACC_W*P-1:0] hold;
+    reg               valid;
+    reg [LANE_AW-1:0] idx;
+    reg [LANE_AW-1:0] len;
+    reg [        1:0] layer;
+    reg [        2:0] group;
 
+    reg                    s1_valid;
+    reg signed [ACC_W-1:0] s1_cur;
+    reg [             1:0] s1_layer;
+    reg [WADDR_AW-1:0]     s1_waddr;
+    reg                    s2_valid;
+    reg [            15:0] s2_y;
+    reg [             1:0] s2_layer;
+    reg [WADDR_AW-1:0]     s2_waddr;
+
+    // ========== events ==========
+    wire s2_logit = s2_valid & (s2_layer == 2'd3);
+    wire adv      = ~s2_logit | logit_ready;       // only the logit stream can stall
+    wire pop      = valid & adv;                   // one lane leaves the hold
+    wire pop_last = pop & (idx + 1'b1 >= len);
+
+    // ========== hold: one group's sums ==========
+    // fc_ctrl only issues a group's last input while hold_free, so a new group never lands on a full hold
+    always @(posedge clk) if (sum_valid) hold <= sum;
+
+    always @(posedge clk) begin
+        if (!rst_n) begin
+            valid <= 1'b0;
+            idx   <= {LANE_AW{1'b0}};
+        end else if (sum_valid) begin
+            valid <= 1'b1;
+            idx   <= {LANE_AW{1'b0}};
+        end else if (pop_last) begin
+            valid <= 1'b0;
+            idx   <= {LANE_AW{1'b0}};
+        end else if (pop) begin
+            idx   <= idx + 1'b1;
+        end
+    end
+
+    always @(posedge clk) begin
+        if (sum_valid) begin
+            len   <= group_len(sum_layer, sum_group);
+            layer <= sum_layer;
+            group <= sum_group;
+        end
+    end
+
+    // ========== stage 1: the lane being output ==========
+    always @(posedge clk) begin
+        if (!rst_n)   s1_valid <= 1'b0;
+        else if (adv) s1_valid <= pop;
+    end
+
+    always @(posedge clk) begin
+        if (pop) begin
+            s1_cur   <= $signed(hold[ACC_W*idx+:ACC_W]);
+            s1_layer <= layer;
+            s1_waddr <= group * P_W + {{(WADDR_AW - LANE_AW) {1'b0}}, idx};
+        end
+    end
+
+    // ========== stage 2: quantize ==========
+    wire signed [15:0] q1, q2, q3;
+
+    quantizer #(.ACC_W(ACC_W), .SCALE_EXP(SCALE_EXP1), .RELU(1)) u_q1 (.x_in(s1_cur), .y_out(q1));
+
+    // FC2 and FC3 share one quantizer when their shifts match; FC2 zeroes a negative sum in front of it
+    generate
+        if (SCALE_EXP2 == SCALE_EXP3) begin : GEN_SHARED_Q
+            wire signed [ACC_W-1:0] x23 = (s1_layer == 2'd2 && s1_cur[ACC_W-1]) ? {ACC_W{1'b0}} : s1_cur;
+            wire signed [15:0] q23;
+            quantizer #(.ACC_W(ACC_W), .SCALE_EXP(SCALE_EXP3), .RELU(0)) u_q23 (.x_in(x23), .y_out(q23));
+            assign q2 = q23;
+            assign q3 = q23;
+        end else begin : GEN_SPLIT_Q
+            quantizer #(.ACC_W(ACC_W), .SCALE_EXP(SCALE_EXP2), .RELU(1)) u_q2 (.x_in(s1_cur), .y_out(q2));
+            quantizer #(.ACC_W(ACC_W), .SCALE_EXP(SCALE_EXP3), .RELU(0)) u_q3 (.x_in(s1_cur), .y_out(q3));
+        end
+    endgenerate
+
+    wire [15:0] y = (s1_layer == 2'd1) ? q1 : (s1_layer == 2'd2) ? q2 : q3;
+
+    always @(posedge clk) begin
+        if (!rst_n)   s2_valid <= 1'b0;
+        else if (adv) s2_valid <= s1_valid;
+    end
+
+    always @(posedge clk) begin
+        if (adv & s1_valid) begin
+            s2_y     <= y;
+            s2_layer <= s1_layer;
+            s2_waddr <= s1_waddr;
+        end
+    end
+
+    // ========== Output Logic ==========
     assign hold_free     = ~(valid | s1_valid | s2_valid);
     assign feature_we    = s2_valid & ~s2_logit;
     assign feature_layer = s2_layer;
@@ -83,73 +148,5 @@ module fc_quant_out #(
     assign feature_wdata = s2_y;
     assign logit_data    = $signed(s2_y);
     assign logit_valid   = s2_logit;
-
-    // ========== Next State Logic ==========
-    always @(*) begin : fc_quant_out_comb
-        hold_next  = hold;
-        valid_next = valid;
-        idx_next   = idx;
-        len_next   = len;
-        layer_next = layer;
-        group_next = group;
-
-        if (pop) begin
-            if (idx + 1'b1 >= len) begin
-                valid_next = 1'b0;
-                idx_next   = {LANE_AW{1'b0}};
-            end else begin
-                idx_next = idx + 1'b1;
-            end
-        end
-
-        // a finished group lands here; fc_ctrl guarantees the register is free by then
-        if (sum_valid) begin
-            hold_next  = sum;
-            valid_next = 1'b1;
-            idx_next   = {LANE_AW{1'b0}};
-            len_next   = group_len(sum_layer, sum_group);
-            layer_next = sum_layer;
-            group_next = sum_group;
-        end
-    end
-
-    always @(posedge clk) begin
-        if (adv) begin
-            s1_cur   <= cur;
-            s1_layer <= layer;
-            s1_waddr <= {4'd0, group} * 7'd20 + {2'd0, idx};
-            s2_y     <= y;
-            s2_layer <= s1_layer;
-            s2_waddr <= s1_waddr;
-        end
-    end
-
-    always @(posedge clk) begin
-        if (!rst_n) begin
-            s1_valid <= 1'b0;
-            s2_valid <= 1'b0;
-        end else if (adv) begin
-            s1_valid <= pop;
-            s2_valid <= s1_valid;
-        end
-    end
-
-    always @(posedge clk) begin
-        if (!rst_n) begin
-            hold  <= {(ACC_W * P) {1'b0}};
-            valid <= 1'b0;
-            idx   <= {LANE_AW{1'b0}};
-            len   <= {LANE_AW{1'b0}};
-            layer <= 2'd0;
-            group <= 3'd0;
-        end else begin
-            hold  <= hold_next;
-            valid <= valid_next;
-            idx   <= idx_next;
-            len   <= len_next;
-            layer <= layer_next;
-            group <= group_next;
-        end
-    end
 
 endmodule

@@ -3,9 +3,8 @@
 Reads tx/cnn/model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json and writes, per layer,
 integer stimulus / expected values for test_fc.c plus the weight/bias ROM contents:
 
-The project is uppercase-only (26 classes, 0='A'). The dump still comes from the 36-class
-(digits + uppercase) training run, so FC3 keeps only rows 10..35 of the weight, bias and
-logits. The weight/output scales are taken from the full 36-row tensors first, because that
+The project is uppercase-only (26 classes, 0='A'). A 26-class dump is used as it is. An older
+36-class (digits + uppercase) dump keeps only rows 10..35 of the FC3 weight, bias and logits. The weight/output scales are taken from the full 36-row tensors first, because that
 is what the trained observers saw - the letter logits stay bit-identical to the trained model.
 
     python export_fc_vectors.py [dump.json] [out_dir] [mem_dir]
@@ -29,11 +28,12 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-DUMP = HERE.parents[1] / "model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json"
+DUMP = HERE.parent / "model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json"
 
 # fc<K>.txt keeps the step 1 chunk layout (test/vector readers parse it); the RTL ROM is the shared P-lane one
 FC_LANES = {1: 25, 2: 10, 3: 5}
 P = 20  # shared engine lanes (fc_common.h FC_P)
+ACC_W = 40  # fc_top ACC_W: accumulator width
 # 36-class dump rows that are the uppercase letters A..Z
 UPPERCASE = slice(10, 36)
 
@@ -96,8 +96,14 @@ def export(layer, x_int, in_exp, w, bias, y_q, out_dir):
         f.writelines(f"{int(e)}\n" for e in expected)
 
     acc_peak = int(np.abs(np.asarray(x_int, dtype=np.int64) @ w_int.T).max())
+    # every input at 32767 against |w|: no frame can push a neuron's sum past this
+    acc_bound = int((np.abs(w_int).sum(axis=1) * 32767 + np.abs(bias_int)).max())
+    bound_bits = acc_bound.bit_length() + 1
     print(f"fc{layer}: {n_in}->{n_out}, groups={math.ceil(n_out / P)}, w=2^{w_exp}, acc=2^{acc_exp}, "
-          f"out=2^{out_exp}, scale_exp={scale_exp}, |acc| max={acc_peak} ({acc_peak.bit_length() + 1} bits signed)")
+          f"out=2^{out_exp}, scale_exp={scale_exp}, |acc| max={acc_peak} ({acc_peak.bit_length() + 1} bits signed), "
+          f"worst case {bound_bits} bits")
+    if bound_bits > ACC_W:
+        sys.exit(f"fc{layer}: worst-case sum needs {bound_bits} bits, more than ACC_W = {ACC_W}")
     return out_exp, dict(n_in=n_in, n_out=n_out, w=w_int, bias=bias_int, scale_exp=scale_exp, relu=relu)
 
 
@@ -123,7 +129,7 @@ def write_shared_rom(layers, mem_dir):
 def main():
     dump = Path(sys.argv[1]) if len(sys.argv) > 1 else DUMP
     out_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else HERE / "vectors"
-    mem_dir = Path(sys.argv[3]) if len(sys.argv) > 3 else HERE.parents[1] / "rtl/mem"
+    mem_dir = Path(sys.argv[3]) if len(sys.argv) > 3 else HERE.parent / "rtl/mem"
     out_dir.mkdir(parents=True, exist_ok=True)
     mem_dir.mkdir(parents=True, exist_ok=True)
 
