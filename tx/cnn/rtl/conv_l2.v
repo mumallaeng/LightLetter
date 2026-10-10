@@ -42,24 +42,26 @@ module conv_l2 #(
     // Weight Address controller
     // ----------------------------------
     wire [$clog2(OCH)-1:0] out_ch_sel;
-    wire rom_is_ch35, cal_valid;
+    wire rom_is_ch35, cal_valid, cal_valid_rt;
 
     weight_addr_ctrl_l2 #(
         .OCH(OCH)
     ) U_WEIGHT_ADDR_CONTROLLER_L2 (
-        .clk        (clk),
-        .rst_n      (rst_n),
-        .mac_start  (mac_start),
-        .mac_done   (mac_done),
-        .is_ch35    (is_ch35),
-        .rom_is_ch35(rom_is_ch35),
-        .out_ch_sel (out_ch_sel),
-        .cal_valid  (cal_valid)
+        .clk         (clk),
+        .rst_n       (rst_n),
+        .mac_start   (mac_start),
+        .mac_done    (mac_done),
+        .is_ch35     (is_ch35),
+        .rom_is_ch35 (rom_is_ch35),
+        .out_ch_sel  (out_ch_sel),
+        .cal_valid   (cal_valid),
+        .cal_valid_rt(cal_valid_rt)
     );
 
     // Weight ROM
     // ----------------------------------
     wire [431:0] weight_out;
+    wire [  2:0] rom_en = {3{cal_valid}};
 
     weight_rom_l2 #(
         .OCH(16)
@@ -67,6 +69,7 @@ module conv_l2 #(
         .clk       (clk),
         .is_ch35   (rom_is_ch35),
         .out_ch_sel(out_ch_sel),
+        .rom_en    (rom_en),
         .weight_out(weight_out)
     );
 
@@ -100,7 +103,7 @@ module conv_l2 #(
         .clk       (clk),
         .rst_n     (rst_n),
         .win_in    (win_out),
-        .win_valid ({3{cal_valid}}),
+        .win_valid ({3{cal_valid_rt}}),
         .weight_in (weight_out),
         .ch_result0(ch_result0),
         .ch_result1(ch_result1),
