@@ -7,7 +7,7 @@ module fc_mac #(
     input  wire               clk,
     input  wire               rst_n,
     input  wire [       15:0] feature,
-    input  wire [   16*P-1:0] weight,
+    input  wire [   16*P-1:0] weight,     // one clock after mac_en (weight ROM read register)
     input  wire [   32*P-1:0] bias,
     input  wire               first,
     input  wire               mac_en,
@@ -64,15 +64,10 @@ module fc_mac #(
     end
 
     // ========== stage 1: operands ==========
-    reg [    15:0] s1_feature;
-    reg [16*P-1:0] s1_weight;
+    // the weight ROM read register is the weight half of this stage
+    reg [15:0] s1_feature;
 
-    always @(posedge clk) begin
-        if (mac_en) begin
-            s1_feature <= feature;
-            s1_weight  <= weight;
-        end
-    end
+    always @(posedge clk) if (mac_en) s1_feature <= feature;
 
     // ========== stage 2: products, and the bias row once per group ==========
     reg signed [    31:0] s2_prod [0:P-1];
@@ -87,7 +82,7 @@ module fc_mac #(
     generate
         for (l = 0; l < P; l = l + 1) begin : GEN_LANE
             always @(posedge clk) begin
-                if (s1_valid) s2_prod[l] <= $signed({1'b0, s1_feature}) * $signed(s1_weight[16*l+:16]);
+                if (s1_valid) s2_prod[l] <= $signed({1'b0, s1_feature}) * $signed(weight[16*l+:16]);
             end
 
             wire signed [ACC_W-1:0] bias_ext = $signed({{(ACC_W - 32) {s2_bias[32*l+31]}}, s2_bias[32*l+:32]});

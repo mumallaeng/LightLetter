@@ -25,8 +25,8 @@ module fc_ctrl #(
     output wire [        1:0] layer,          // 1..3, 0 in IDLE
     output wire [        2:0] group,
     output wire [  IN_AW-1:0] feature_raddr,
-    output wire [ ROM_AW-1:0] weight_addr,    // prefetch for the next cycle
-    output wire               weight_en,      // read only when the row changes, and in IDLE to load row 0
+    output wire [ ROM_AW-1:0] weight_addr,    // row of the current input; the row arrives one clock later
+    output wire               weight_en,
     output wire [BIAS_AW-1:0] bias_addr,      // row of the current group
     output wire               first,
     output wire               mac_en,
@@ -117,17 +117,12 @@ module fc_ctrl #(
     end
 
     // ========== ROM rows: weight row = group's row 0 + i, bias row counts groups ==========
-    wire              last_row = lastin & lastgroup & (layer_r == 2'd3);
-    wire [ROM_AW-1:0] row_cur = group_row + {{RPAD{1'b0}}, i};
-    wire [ROM_AW-1:0] row_adv = group_row + {{RPAD{1'b0}}, i_adv};
-    wire [ROM_AW-1:0] next_group_row = last_row ? {ROM_AW{1'b0}} : group_row + {{RPAD{1'b0}}, n_in};
-
     always @(posedge clk) begin
         if (!rst_n) begin
             group_row <= {ROM_AW{1'b0}};
             b_addr    <= {BIAS_AW{1'b0}};
         end else if (group_end) begin
-            group_row <= next_group_row;
+            group_row <= frame_end ? {ROM_AW{1'b0}} : group_row + {{RPAD{1'b0}}, n_in};
             b_addr    <= frame_end ? {BIAS_AW{1'b0}} : b_addr + 1'b1;
         end
     end
@@ -150,8 +145,8 @@ module fc_ctrl #(
     assign mac_en        = step;
     assign first         = step & (i == {IN_AW{1'b0}});
     assign last          = group_end;
-    assign weight_addr   = ~step ? row_cur : lastin ? next_group_row + {{RPAD{1'b0}}, i_start} : row_adv;
-    assign weight_en     = step | (state == S_IDLE);
+    assign weight_addr   = group_row + {{RPAD{1'b0}}, i};
+    assign weight_en     = step;
     assign bias_addr     = b_addr;
 
 endmodule
