@@ -1,5 +1,13 @@
 # FPGA BFSK TX Project — Progress
 
+## 2026-10-10 Vitis 생성·실행 스크립트 보완
+
+- 사용자 승인 범위인 TX/RX CREATE_VITIS.cmd, create_workspace.tcl 및 신규 OPEN_VITIS.cmd만 기능 수정했다. 팀 RTL·C·카메라·CNN·XSA는 변경하지 않았다.
+- 플랫폼 갱신 후 디버거 bit/ps7_init 복사본을 동기화하고, XSCT 종료 코드에 더해 실행 완료 표식을 검사한다.
+- 기존 앱 소스는 덮어쓰지 않는다. 신규 앱만 원본에 링크한다. 기존 복사형 앱의 원본 수정 자동 반영은 보장하지 않는다.
+- 분리된 임시 워크스페이스에서 TX 생성/갱신 및 RX 생성/재실행 ARM 빌드를 확인하고, 하드웨어 복사본 해시가 일치함을 확인했다.
+- 발견·수정한 경로 및 성공 오표시 문제, 현재 로컬 TX XSA를 사용한 검증 범위와 사용 순서는 VITIS_WORKFLOW.md에 기록했다. 보드 다운로드 및 통합 TX 실물 검증은 수행하지 않았다.
+
 ## 2026-10-10 고속 프로파일 비교 및 실물 검증 범위 정리
 
 - 고속화는 codex/light-transaction의 45100eb 및 5971e59에 이미 반영되어 있다. 확인 시점 origin/main에는 미병합 상태이다.
