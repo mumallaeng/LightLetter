@@ -3,9 +3,9 @@
 // Testbench: rx_symbol_detector
 //
 // The DUT classifies one completed FFT block from three selected powers:
-//   bin 8  -> BFSK data bit 0
-//   bin 16 -> BFSK data bit 1
-//   bin 20 -> synchronization tone
+//   physical bin 8  -> BFSK data bit 0
+//   physical bin 13 -> BFSK data bit 1 (legacy bin16_power port)
+//   physical bin 16 -> synchronization tone (legacy bin20_power port)
 // A winner is accepted only when it is more than 20 percent stronger than
 // both alternatives.  Otherwise CODE_INVALID is produced.
 //

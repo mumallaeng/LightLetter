@@ -4,7 +4,7 @@
 //
 // The DUT receives one FFT magnitude at a time.  Because the FFT output is in
 // natural order, an internal 7-bit counter represents bin numbers 0 through
-// 127.  The DUT stores the powers at bins 8, 16, and 20 and asserts
+// 127.  The DUT stores the powers at physical bins 8, 13, and 16 and asserts
 // fft_block_done for one clock after the 128th valid magnitude.
 //
 // Test structure:
@@ -26,12 +26,14 @@ module tb_rx_bin_detector;
 
   // Drive one natural-order FFT frame.  Invalid cycles must not advance the
   // DUT's bin counter, so optional gaps verify the valid-qualified counter.
+  // Legacy signal names are retained by the RTL: v16 carries bin 13 (BIT1)
+  // and v20 carries bin 16 (SYNC).
   task send_frame(input [39:0] v8,input [39:0] v16,input [39:0] v20,input integer gaps);
     begin
       for(i=0;i<128;i=i+1) begin
         if(gaps && (i%17==0)) begin @(negedge clk); fft_mag_valid=0; end
         @(negedge clk); fft_mag_valid=1;
-        if(i==8) fft_mag=v8; else if(i==16) fft_mag=v16; else if(i==20) fft_mag=v20; else fft_mag=i;
+        if(i==8) fft_mag=v8; else if(i==13) fft_mag=v16; else if(i==16) fft_mag=v20; else fft_mag=i;
       end
       @(negedge clk); fft_mag_valid=0; repeat(2) @(negedge clk);
       if(bin8_power!==v8 || bin16_power!==v16 || bin20_power!==v20) begin

@@ -4,7 +4,7 @@
 //
 // This is the complete non-FFT receive path:
 //   128 ordered FFT powers
-//       -> rx_bin_detector (extract bins 8, 16, and 20)
+//       -> rx_bin_detector (extract physical bins 8, 13, and 16)
 //       -> rx_symbol_detector (BIT0, BIT1, SYNC, or INVALID)
 //       -> rx_symbol_sync (two-block boundary selection and D5 validation)
 //       -> rx_frame_decoder (SFD, ID, DATA, and CRC byte assembly)
@@ -26,7 +26,7 @@ module tb_rx_top;
   // Generate one complete natural-order FFT power frame for a requested tone.
   task send_block(input[1:0]code);integer b;begin
     for(b=0;b<128;b=b+1)begin @(negedge clk);fft_mag_valid=1;
-      if(b==8)fft_mag=(code==B0)?1000:10;else if(b==16)fft_mag=(code==B1)?1000:10;else if(b==20)fft_mag=(code==SYNC)?1000:10;else fft_mag=1;
+      if(b==8)fft_mag=(code==B0)?1000:10;else if(b==13)fft_mag=(code==B1)?1000:10;else if(b==16)fft_mag=(code==SYNC)?1000:10;else fft_mag=1;
     end @(negedge clk);fft_mag_valid=0;repeat(3)@(negedge clk);
   end endtask
   // One logical BFSK bit is represented by two equal FFT blocks.

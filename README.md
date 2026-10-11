@@ -31,12 +31,12 @@ FPGA-based optical communication project using BFSK modulation and 128-point FFT
 ## Current baseline
 
 - Modulation: BFSK
-- Bit 0: 10 kHz / FFT Bin 8
-- Bit 1: 20 kHz / FFT Bin 16
-- SYNC: 25 kHz / FFT Bin 20
-- XADC Sampling Rate: 160 kSample/s
+- Bit 0: 60.096 kHz / FFT Bin 8
+- Bit 1: 97.656 kHz / FFT Bin 13
+- SYNC: 120.192 kHz / FFT Bin 16
+- XADC Sampling Rate: 961.538 kSample/s
 - FFT: 128-point
-- Symbol: 256 samples / 1.6 ms
+- Symbol: 256 samples / 266.24 us
 - Preamble: 4 SYNC symbols
 - SFD: 0xD5
 - CRC: CRC-8, polynomial 0x07

@@ -65,10 +65,13 @@ module rx_symbol_sync #(
 
     reg [MAG_W+4:0] c_score_a, n_score_a;
     reg [MAG_W+4:0] c_score_b, n_score_b;
+    reg [MAG_W:0] c_score_term_a, n_score_term_a;
+    reg [MAG_W:0] c_score_term_b, n_score_term_b;
     reg [MAG_W:0] c_check_p8, n_check_p8;
     reg [MAG_W:0] c_check_p16, n_check_p16;
     reg [MAG_W:0] c_check_p20, n_check_p20;
     reg [MAG_W:0] score_term_a, score_term_b;
+    reg [3:0] score_prefetch_count;
     reg [MAG_W:0] check_p8, check_p16, check_p20;
     reg [MAG_W+4:0] check8_x10, check16_x10, check20_x10;
     reg [MAG_W+4:0] check8_x12, check16_x12, check20_x12;
@@ -103,21 +106,27 @@ module rx_symbol_sync #(
     assign frame_start  = c_frame_start;
     assign frame_abort  = c_frame_abort;
 
-    // Select one expected-bin term for each candidate.  ST_SCORE accumulates
-    // one D5 bit per clock, avoiding an eight-adder combinational chain.
+    // Select the next expected-bin term for each candidate.  The selected
+    // pair sum is registered before it reaches the wide score accumulator.
+    // This separates the memory mux/add path from the accumulator carry chain.
     always @(*) begin
+        if (c_score_count < 7)
+            score_prefetch_count = c_score_count + 1'b1;
+        else
+            score_prefetch_count = 7;
+
         score_term_a = 0;
         score_term_b = 0;
-        if (SFD_PATTERN[7-c_score_count]) begin
-            score_term_a = {1'b0, p16_mem[2*c_score_count]} +
-                           {1'b0, p16_mem[2*c_score_count+1]};
-            score_term_b = {1'b0, p16_mem[2*c_score_count+1]} +
-                           {1'b0, p16_mem[2*c_score_count+2]};
+        if (SFD_PATTERN[7-score_prefetch_count]) begin
+            score_term_a = {1'b0, p16_mem[2*score_prefetch_count]} +
+                           {1'b0, p16_mem[2*score_prefetch_count+1]};
+            score_term_b = {1'b0, p16_mem[2*score_prefetch_count+1]} +
+                           {1'b0, p16_mem[2*score_prefetch_count+2]};
         end else begin
-            score_term_a = {1'b0, p8_mem[2*c_score_count]} +
-                           {1'b0, p8_mem[2*c_score_count+1]};
-            score_term_b = {1'b0, p8_mem[2*c_score_count+1]} +
-                           {1'b0, p8_mem[2*c_score_count+2]};
+            score_term_a = {1'b0, p8_mem[2*score_prefetch_count]} +
+                           {1'b0, p8_mem[2*score_prefetch_count+1]};
+            score_term_b = {1'b0, p8_mem[2*score_prefetch_count+1]} +
+                           {1'b0, p8_mem[2*score_prefetch_count+2]};
         end
 
         // Classify one selected SFD pair with ordinary comparisons.
@@ -176,6 +185,8 @@ module rx_symbol_sync #(
             c_score_count   <= 0;
             c_score_a       <= 0;
             c_score_b       <= 0;
+            c_score_term_a  <= 0;
+            c_score_term_b  <= 0;
             c_check_p8      <= 0;
             c_check_p16     <= 0;
             c_check_p20     <= 0;
@@ -197,6 +208,8 @@ module rx_symbol_sync #(
             c_score_count   <= n_score_count;
             c_score_a       <= n_score_a;
             c_score_b       <= n_score_b;
+            c_score_term_a  <= n_score_term_a;
+            c_score_term_b  <= n_score_term_b;
             c_check_p8      <= n_check_p8;
             c_check_p16     <= n_check_p16;
             c_check_p20     <= n_check_p20;
@@ -236,6 +249,8 @@ module rx_symbol_sync #(
         n_score_count   = c_score_count;
         n_score_a       = c_score_a;
         n_score_b       = c_score_b;
+        n_score_term_a  = c_score_term_a;
+        n_score_term_b  = c_score_term_b;
         n_check_p8      = c_check_p8;
         n_check_p16     = c_check_p16;
         n_check_p20     = c_check_p20;
@@ -260,6 +275,8 @@ module rx_symbol_sync #(
             n_score_count   = 0;
             n_score_a       = 0;
             n_score_b       = 0;
+            n_score_term_a  = 0;
+            n_score_term_b  = 0;
             n_check_count   = 0;
             n_replay_count  = 0;
         end else begin
@@ -296,6 +313,13 @@ module rx_symbol_sync #(
                             n_score_count = 0;
                             n_score_a     = 0;
                             n_score_b     = 0;
+                            // D5[7] is one, so candidate pair zero uses BIT1.
+                            // The legacy p16 name now carries physical FFT bin 13.
+                            // Preloading it preserves the original eight-cycle latency.
+                            n_score_term_a = {1'b0, p16_mem[0]} +
+                                             {1'b0, p16_mem[1]};
+                            n_score_term_b = {1'b0, p16_mem[1]} +
+                                             {1'b0, p16_mem[2]};
                             n_state       = ST_SCORE;
                         end
                         else
@@ -306,12 +330,14 @@ module rx_symbol_sync #(
                 // Accumulate one expected D5-bin pair per clock.  Eight
                 // clocks are available well before the next FFT block.
                 ST_SCORE: begin
-                    n_score_a = c_score_a + score_term_a;
-                    n_score_b = c_score_b + score_term_b;
+                    n_score_a = c_score_a + c_score_term_a;
+                    n_score_b = c_score_b + c_score_term_b;
                     if (c_score_count == 7) begin
                         n_state = ST_SELECT;
                     end else begin
                         n_score_count = c_score_count + 1'b1;
+                        n_score_term_a = score_term_a;
+                        n_score_term_b = score_term_b;
                     end
                 end
 

@@ -8,12 +8,13 @@ $files += Get-ChildItem (Join-Path $repo 'rx/fft/rtl/*.v') | Where-Object Name -
 foreach ($name in @('rx_bin_detector','rx_symbol_detector','rx_symbol_sync','rx_frame_decoder','rx_crc8_check','rx_top')) {
     $files += Get-Item (Join-Path $repo "rx/bfsk_rx/rtl/$name.v")
 }
-$lines = $files | ForEach-Object { 'verilog xil_defaultlib "' + $_.FullName.Replace('\','/') + '"' }
-$lines | Set-Content (Join-Path $work 'files.prj') -Encoding ASCII
+$filePaths = $files | ForEach-Object { $_.FullName }
 Copy-Item (Join-Path $repo 'rx/fft/rtl/twiddle_128_q14.mem') $work -Force
 Push-Location $work
 try {
-    & xvlog.bat -prj files.prj
+    # Pass paths directly so a repository path containing Korean characters
+    # is not corrupted by an ASCII .prj file.
+    & xvlog.bat --work xil_defaultlib @filePaths
     if ($LASTEXITCODE) { throw 'xvlog failed' }
     & xelab.bat xil_defaultlib.tb_highspeed_link -s highspeed_link
     if ($LASTEXITCODE) { throw 'xelab failed' }
