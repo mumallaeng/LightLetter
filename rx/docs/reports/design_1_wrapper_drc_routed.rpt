@@ -1,0 +1,331 @@
+Copyright 1986-2020 Xilinx, Inc. All Rights Reserved.
+------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2020.2 (win64) Build 3064766 Wed Nov 18 09:12:45 MST 2020
+| Date         : Tue Sep 29 14:00:34 2026
+| Host         : DESKTOP-7CFQ9ND running 64-bit major release  (build 9200)
+| Command      : report_drc -file design_1_wrapper_drc_routed.rpt -pb design_1_wrapper_drc_routed.pb -rpx design_1_wrapper_drc_routed.rpx
+| Design       : design_1_wrapper
+| Device       : xc7z020clg400-1
+| Speed File   : -1
+| Design State : Fully Routed
+------------------------------------------------------------------------------------------------------------------------------------------
+
+Report DRC
+
+Table of Contents
+-----------------
+1. REPORT SUMMARY
+2. REPORT DETAILS
+
+1. REPORT SUMMARY
+-----------------
+            Netlist: netlist
+          Floorplan: design_1
+      Design limits: <entire design considered>
+           Ruledeck: default
+             Max violations: <unlimited>
+             Violations found: 58
++-----------+----------+----------------------------+------------+
+| Rule      | Severity | Description                | Violations |
++-----------+----------+----------------------------+------------+
+| CHECK-3   | Warning  | Report rule limit reached  | 2          |
+| DPIP-1    | Warning  | Input pipelining           | 6          |
+| DPOP-1    | Warning  | PREG Output pipelining     | 4          |
+| DPOP-2    | Warning  | MREG Output pipelining     | 6          |
+| REQP-1839 | Warning  | RAMB36 async control check | 20         |
+| REQP-1840 | Warning  | RAMB18 async control check | 20         |
++-----------+----------+----------------------------+------------+
+
+2. REPORT DETAILS
+-----------------
+CHECK-3#1 Warning
+Report rule limit reached  
+REQP-1839 rule limit reached: 20 violations have been found.
+Related violations: <none>
+
+CHECK-3#2 Warning
+Report rule limit reached  
+REQP-1840 rule limit reached: 20 violations have been found.
+Related violations: <none>
+
+DPIP-1#1 Warning
+Input pipelining  
+DSP design_1_i/fft_top_0/inst/U_FFT_CORE/U_BUTTERFLY/u_multiplier/raw_im input design_1_i/fft_top_0/inst/U_FFT_CORE/U_BUTTERFLY/u_multiplier/raw_im/C[47:0] is not pipelined. Pipelining DSP48 input will improve performance.
+Related violations: <none>
+
+DPIP-1#2 Warning
+Input pipelining  
+DSP design_1_i/fft_top_0/inst/U_FFT_CORE/U_BUTTERFLY/u_multiplier/raw_re input design_1_i/fft_top_0/inst/U_FFT_CORE/U_BUTTERFLY/u_multiplier/raw_re/C[47:0] is not pipelined. Pipelining DSP48 input will improve performance.
+Related violations: <none>
+
+DPIP-1#3 Warning
+Input pipelining  
+DSP design_1_i/fft_top_0/inst/U_FFT_POWER/im_square input design_1_i/fft_top_0/inst/U_FFT_POWER/im_square/A[29:0] is not pipelined. Pipelining DSP48 input will improve performance.
+Related violations: <none>
+
+DPIP-1#4 Warning
+Input pipelining  
+DSP design_1_i/fft_top_0/inst/U_FFT_POWER/im_square input design_1_i/fft_top_0/inst/U_FFT_POWER/im_square/B[17:0] is not pipelined. Pipelining DSP48 input will improve performance.
+Related violations: <none>
+
+DPIP-1#5 Warning
+Input pipelining  
+DSP design_1_i/fft_top_0/inst/U_FFT_POWER/re_square input design_1_i/fft_top_0/inst/U_FFT_POWER/re_square/A[29:0] is not pipelined. Pipelining DSP48 input will improve performance.
+Related violations: <none>
+
+DPIP-1#6 Warning
+Input pipelining  
+DSP design_1_i/fft_top_0/inst/U_FFT_POWER/re_square input design_1_i/fft_top_0/inst/U_FFT_POWER/re_square/B[17:0] is not pipelined. Pipelining DSP48 input will improve performance.
+Related violations: <none>
+
+DPOP-1#1 Warning
+PREG Output pipelining  
+DSP design_1_i/fft_top_0/inst/U_FFT_CORE/U_BUTTERFLY/u_multiplier/p0 output design_1_i/fft_top_0/inst/U_FFT_CORE/U_BUTTERFLY/u_multiplier/p0/P[47:0] is not pipelined (PREG=0). Pipelining the DSP48 output will improve performance and often saves power so it is suggested whenever possible to fully pipeline this function.  If this DSP48 function was inferred, it is suggested to describe an additional register stage after this function.  If the DSP48 was instantiated in the design, it is suggested to set the PREG attribute to 1.
+Related violations: <none>
+
+DPOP-1#2 Warning
+PREG Output pipelining  
+DSP design_1_i/fft_top_0/inst/U_FFT_CORE/U_BUTTERFLY/u_multiplier/p2 output design_1_i/fft_top_0/inst/U_FFT_CORE/U_BUTTERFLY/u_multiplier/p2/P[47:0] is not pipelined (PREG=0). Pipelining the DSP48 output will improve performance and often saves power so it is suggested whenever possible to fully pipeline this function.  If this DSP48 function was inferred, it is suggested to describe an additional register stage after this function.  If the DSP48 was instantiated in the design, it is suggested to set the PREG attribute to 1.
+Related violations: <none>
+
+DPOP-1#3 Warning
+PREG Output pipelining  
+DSP design_1_i/fft_top_0/inst/U_FFT_POWER/im_square output design_1_i/fft_top_0/inst/U_FFT_POWER/im_square/P[47:0] is not pipelined (PREG=0). Pipelining the DSP48 output will improve performance and often saves power so it is suggested whenever possible to fully pipeline this function.  If this DSP48 function was inferred, it is suggested to describe an additional register stage after this function.  If the DSP48 was instantiated in the design, it is suggested to set the PREG attribute to 1.
+Related violations: <none>
+
+DPOP-1#4 Warning
+PREG Output pipelining  
+DSP design_1_i/fft_top_0/inst/U_FFT_POWER/re_square output design_1_i/fft_top_0/inst/U_FFT_POWER/re_square/P[47:0] is not pipelined (PREG=0). Pipelining the DSP48 output will improve performance and often saves power so it is suggested whenever possible to fully pipeline this function.  If this DSP48 function was inferred, it is suggested to describe an additional register stage after this function.  If the DSP48 was instantiated in the design, it is suggested to set the PREG attribute to 1.
+Related violations: <none>
+
+DPOP-2#1 Warning
+MREG Output pipelining  
+DSP design_1_i/fft_top_0/inst/U_FFT_CORE/U_BUTTERFLY/u_multiplier/p0 multiplier stage design_1_i/fft_top_0/inst/U_FFT_CORE/U_BUTTERFLY/u_multiplier/p0/P[47:0] is not pipelined (MREG=0). Pipelining the multiplier function will improve performance and will save significant power so it is suggested whenever possible to fully pipeline this function.  If this multiplier was inferred, it is suggested to describe an additional register stage after this function.  If there is no registered adder/accumulator following the multiply function, two pipeline stages are suggested to allow both the MREG and PREG registers to be used.  If the DSP48 was instantiated in the design, it is suggested to set both the MREG and PREG attributes to 1 when performing multiply functions.
+Related violations: <none>
+
+DPOP-2#2 Warning
+MREG Output pipelining  
+DSP design_1_i/fft_top_0/inst/U_FFT_CORE/U_BUTTERFLY/u_multiplier/p2 multiplier stage design_1_i/fft_top_0/inst/U_FFT_CORE/U_BUTTERFLY/u_multiplier/p2/P[47:0] is not pipelined (MREG=0). Pipelining the multiplier function will improve performance and will save significant power so it is suggested whenever possible to fully pipeline this function.  If this multiplier was inferred, it is suggested to describe an additional register stage after this function.  If there is no registered adder/accumulator following the multiply function, two pipeline stages are suggested to allow both the MREG and PREG registers to be used.  If the DSP48 was instantiated in the design, it is suggested to set both the MREG and PREG attributes to 1 when performing multiply functions.
+Related violations: <none>
+
+DPOP-2#3 Warning
+MREG Output pipelining  
+DSP design_1_i/fft_top_0/inst/U_FFT_CORE/U_BUTTERFLY/u_multiplier/raw_im multiplier stage design_1_i/fft_top_0/inst/U_FFT_CORE/U_BUTTERFLY/u_multiplier/raw_im/P[47:0] is not pipelined (MREG=0). Pipelining the multiplier function will improve performance and will save significant power so it is suggested whenever possible to fully pipeline this function.  If this multiplier was inferred, it is suggested to describe an additional register stage after this function.  If there is no registered adder/accumulator following the multiply function, two pipeline stages are suggested to allow both the MREG and PREG registers to be used.  If the DSP48 was instantiated in the design, it is suggested to set both the MREG and PREG attributes to 1 when performing multiply functions.
+Related violations: <none>
+
+DPOP-2#4 Warning
+MREG Output pipelining  
+DSP design_1_i/fft_top_0/inst/U_FFT_CORE/U_BUTTERFLY/u_multiplier/raw_re multiplier stage design_1_i/fft_top_0/inst/U_FFT_CORE/U_BUTTERFLY/u_multiplier/raw_re/P[47:0] is not pipelined (MREG=0). Pipelining the multiplier function will improve performance and will save significant power so it is suggested whenever possible to fully pipeline this function.  If this multiplier was inferred, it is suggested to describe an additional register stage after this function.  If there is no registered adder/accumulator following the multiply function, two pipeline stages are suggested to allow both the MREG and PREG registers to be used.  If the DSP48 was instantiated in the design, it is suggested to set both the MREG and PREG attributes to 1 when performing multiply functions.
+Related violations: <none>
+
+DPOP-2#5 Warning
+MREG Output pipelining  
+DSP design_1_i/fft_top_0/inst/U_FFT_POWER/im_square multiplier stage design_1_i/fft_top_0/inst/U_FFT_POWER/im_square/P[47:0] is not pipelined (MREG=0). Pipelining the multiplier function will improve performance and will save significant power so it is suggested whenever possible to fully pipeline this function.  If this multiplier was inferred, it is suggested to describe an additional register stage after this function.  If there is no registered adder/accumulator following the multiply function, two pipeline stages are suggested to allow both the MREG and PREG registers to be used.  If the DSP48 was instantiated in the design, it is suggested to set both the MREG and PREG attributes to 1 when performing multiply functions.
+Related violations: <none>
+
+DPOP-2#6 Warning
+MREG Output pipelining  
+DSP design_1_i/fft_top_0/inst/U_FFT_POWER/re_square multiplier stage design_1_i/fft_top_0/inst/U_FFT_POWER/re_square/P[47:0] is not pipelined (MREG=0). Pipelining the multiplier function will improve performance and will save significant power so it is suggested whenever possible to fully pipeline this function.  If this multiplier was inferred, it is suggested to describe an additional register stage after this function.  If there is no registered adder/accumulator following the multiply function, two pipeline stages are suggested to allow both the MREG and PREG registers to be used.  If the DSP48 was instantiated in the design, it is suggested to set both the MREG and PREG attributes to 1 when performing multiply functions.
+Related violations: <none>
+
+REQP-1839#1 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/ADDRBWRADDR[10] (net: design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[4]) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[4]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#2 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/ADDRBWRADDR[11] (net: design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[5]) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[5]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#3 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/ADDRBWRADDR[12] (net: design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[6]) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[6]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#4 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/ADDRBWRADDR[6] (net: design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[0]) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[0]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#5 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/ADDRBWRADDR[7] (net: design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[1]) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[1]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#6 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/ADDRBWRADDR[8] (net: design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[2]) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[2]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#7 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/ADDRBWRADDR[9] (net: design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[3]) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[3]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#8 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/ENARDEN (net: design_1_i/fft_snapshot_buffer_0/inst/read_accept) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/FSM_sequential_state_reg[0]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#9 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/ENARDEN (net: design_1_i/fft_snapshot_buffer_0/inst/read_accept) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/FSM_sequential_state_reg[1]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#10 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/ENARDEN (net: design_1_i/fft_snapshot_buffer_0/inst/read_accept) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/cmd_prev_reg[2]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#11 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/WEBWE[6] (net: design_1_i/fft_snapshot_buffer_0/inst/p_1_out) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/FSM_sequential_state_reg[0]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#12 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/WEBWE[7] (net: design_1_i/fft_snapshot_buffer_0/inst/p_1_out) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/FSM_sequential_state_reg[0]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#13 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/WEBWE[7] (net: design_1_i/fft_snapshot_buffer_0/inst/p_1_out) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/FSM_sequential_state_reg[1]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#14 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/WEBWE[7] (net: design_1_i/fft_snapshot_buffer_0/inst/p_1_out) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[0]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#15 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/WEBWE[7] (net: design_1_i/fft_snapshot_buffer_0/inst/p_1_out) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[1]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#16 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/WEBWE[7] (net: design_1_i/fft_snapshot_buffer_0/inst/p_1_out) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[2]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#17 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/WEBWE[7] (net: design_1_i/fft_snapshot_buffer_0/inst/p_1_out) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[3]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#18 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/WEBWE[7] (net: design_1_i/fft_snapshot_buffer_0/inst/p_1_out) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[4]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#19 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/WEBWE[7] (net: design_1_i/fft_snapshot_buffer_0/inst/p_1_out) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[5]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1839#20 Warning
+RAMB36 async control check  
+The RAMB36E1 design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg has an input control pin design_1_i/fft_snapshot_buffer_0/inst/power_mem_reg/WEBWE[7] (net: design_1_i/fft_snapshot_buffer_0/inst/p_1_out) which is driven by a register (design_1_i/fft_snapshot_buffer_0/inst/stream_bin_reg[6]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#1 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ADDRARDADDR[10] (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/pair_cnt_reg[5]) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/pair_cnt_reg_reg[5]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#2 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ADDRARDADDR[5] (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/pair_cnt_reg[0]) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/pair_cnt_reg_reg[0]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#3 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ADDRARDADDR[6] (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/pair_cnt_reg[1]) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/pair_cnt_reg_reg[1]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#4 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ADDRARDADDR[7] (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/pair_cnt_reg[2]) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/pair_cnt_reg_reg[2]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#5 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ADDRARDADDR[8] (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/pair_cnt_reg[3]) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/pair_cnt_reg_reg[3]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#6 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ADDRARDADDR[9] (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/pair_cnt_reg[4]) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/pair_cnt_reg_reg[4]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#7 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ADDRBWRADDR[10] (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/p_0_in[5]) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/adc_cnt_reg_reg[6]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#8 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ADDRBWRADDR[5] (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/p_0_in[0]) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/adc_cnt_reg_reg[1]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#9 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ADDRBWRADDR[6] (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/p_0_in[1]) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/adc_cnt_reg_reg[2]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#10 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ADDRBWRADDR[7] (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/p_0_in[2]) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/adc_cnt_reg_reg[3]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#11 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ADDRBWRADDR[8] (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/p_0_in[3]) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/adc_cnt_reg_reg[4]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#12 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ADDRBWRADDR[9] (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/p_0_in[4]) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/adc_cnt_reg_reg[5]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#13 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ENARDEN (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg_i_1_n_0) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/FSM_onehot_c_state_reg[1]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#14 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ENARDEN (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg_i_1_n_0) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/adc_cnt_reg_reg[0]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#15 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ENARDEN (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg_i_1_n_0) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/full0_reg_reg) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#16 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ENARDEN (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg_i_1_n_0) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/rsel_reg_reg) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#17 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/ENARDEN (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg_i_1_n_0) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/wsel_reg_reg) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#18 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/WEBWE[3] (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/w_mem0_wen8_out) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/adc_cnt_reg_reg[0]) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#19 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/WEBWE[3] (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/w_mem0_wen8_out) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/full0_reg_reg) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+REQP-1840#20 Warning
+RAMB18 async control check  
+The RAMB18E1 design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg has an input control pin design_1_i/fft_top_0/inst/U_FFT_BUFFER/buffer0_reg/WEBWE[3] (net: design_1_i/fft_top_0/inst/U_FFT_BUFFER/w_mem0_wen8_out) which is driven by a register (design_1_i/fft_top_0/inst/U_FFT_BUFFER/wsel_reg_reg) that has an active asychronous set or reset. This may cause corruption of the memory contents and/or read values when the set/reset is asserted and is not analyzed by the default static timing analysis. It is suggested to eliminate the use of a set/reset to registers driving this RAMB pin or else use a synchronous reset in which the assertion of the reset is timed by default.
+Related violations: <none>
+
+
