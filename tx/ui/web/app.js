@@ -243,6 +243,7 @@ async function showBoard() {
     box.textContent = b.error ?? (r ? failText(r) : '보드 버튼 또는 위 버튼으로 캡처하세요.');
     return;
   }
+  box.style.gridTemplateColumns = `repeat(${r.cells.length}, minmax(0, 1fr))`;  // 칸 수만큼 한 줄
   for (const c of r.cells) {                     // 칸 번호 + 글자만
     const d = document.createElement('div');
     d.className = 'predcell';

@@ -40,13 +40,13 @@ module optical_tx_axi_top #(
 
     // TX Clock / Symbol Parameter
     parameter integer CLK_FREQ_HZ        = 100_000_000,
-    parameter integer FS_HZ              = 160_000,
+    parameter integer FS_HZ              = 961_538,
     parameter integer SYMBOL_SAMPLES     = 256,
 
     // BFSK Frequency Parameter
-    parameter integer F0_HZ              = 10_000,
-    parameter integer F1_HZ              = 20_000,
-    parameter integer FSYNC_HZ           = 25_000,
+    parameter integer F0_HZ              = 60_096,
+    parameter integer F1_HZ              = 97_656,
+    parameter integer FSYNC_HZ           = 120_192,
 
     // Frame Parameter
     parameter integer PREAMBLE_SYMBOLS   = 4,
