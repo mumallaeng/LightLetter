@@ -117,6 +117,9 @@ tx/cnn/model/results/
 # C golden model build output
 tx/cnn/golden/build/
 tx/cnn/golden/logs/
+tx/cnn/golden/algorithm_test/cnn_trace.csv
+tx/cnn/golden/algorithm_test/cnn_stages.txt
+tx/cnn/golden/algorithm_test/cnn_layer2_log.txt
 # the confirmed model's weight/layer-output dump is the source RTL export and the UI read; keep it tracked
 !tx/cnn/model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json
 # BFSK TX project rules
