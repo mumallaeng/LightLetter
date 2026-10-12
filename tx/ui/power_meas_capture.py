@@ -5,8 +5,9 @@
     python power_meas_capture.py --parse power_xxx.log     # 저장된 로그만 다시 분석
 
 보드 쪽 (src/power_meas/power_meas.c) 은 상태를
-    WFI -> BUSY -> CPU_CNN -> WFI -> PL_CNN -> PL_CNN_WFI -> PL_KICK_WFI -> WFI
+    WFI -> BUSY -> CPU_CNN -> WFI -> PL_CNN -> PL_CNN_WFI -> PL_FLUSH_WFI -> PL_KICK_WFI -> WFI
 PL_CNN / PL_CNN_WFI 는 매회 memcpy + cache flush + DMA (end-to-end),
+PL_FLUSH_WFI 는 매회 그 장의 cache flush + DMA kick 만 (memcpy 없음, zero-copy),
 PL_KICK_WFI 는 flush 한 번 뒤 매회 DMA kick 만 (pure accelerator) 이다.
 순서로 라운드마다 반복하고 RUN / TRC / SUM 줄을 UART 로 보낸다.
 
@@ -23,7 +24,7 @@ import sys
 import time
 from pathlib import Path
 
-STATES = ["WFI", "BUSY", "CPU_CNN", "PL_CNN", "PL_CNN_WFI", "PL_KICK_WFI"]
+STATES = ["WFI", "BUSY", "CPU_CNN", "PL_CNN", "PL_CNN_WFI", "PL_FLUSH_WFI", "PL_KICK_WFI"]
 RUN_COLS = ["round", "state", "t_ms", "samples", "raw16_avg", "raw16_std", "raw16_min",
             "raw16_max", "current_mA", "power_mW", "infer", "time_us", "us_per_infer",
             "cls_err"]
@@ -131,19 +132,19 @@ def report(cfg, summary, vin):
     else:
         print(f"class CPU/PL = {cfg.get('cpu_cls')}/{cfg.get('pl_cls')}")
     print("값은 라운드 간 평균 ± 표준편차. dP / dE 는 인접 WFI 대비 증가분 (board-level).")
-    hdr = f"{'state':<11} {'runs':>4} {'P [mW]':>18} {'dP [mW]':>16} {'t/inf [us]':>18} " \
+    hdr = f"{'state':<12} {'runs':>4} {'P [mW]':>18} {'dP [mW]':>16} {'t/inf [us]':>18} " \
           f"{'E/inf [uJ]':>16} {'dE/inf [uJ]':>16} {'err':>4}"
     print(hdr)
     print("-" * len(hdr))
     for st, s in summary.items():
-        print(f"{st:<11} {s['runs']:>4} {fmt(s['P']):>18} {fmt(s['dP']):>16} {fmt(s['us']):>18} "
+        print(f"{st:<12} {s['runs']:>4} {fmt(s['P']):>18} {fmt(s['dP']):>16} {fmt(s['us']):>18} "
               f"{fmt(s['E'], 1):>16} {fmt(s['dE'], 1):>16} {s['cls_err']:>4}")
 
     cpu = summary.get("CPU_CNN")
     if not cpu or cpu["us"][0] is None:
         return
     print()
-    for st in ("PL_CNN", "PL_CNN_WFI", "PL_KICK_WFI"):
+    for st in ("PL_CNN", "PL_CNN_WFI", "PL_FLUSH_WFI", "PL_KICK_WFI"):
         pl = summary.get(st)
         if not pl or pl["us"][0] is None:
             continue

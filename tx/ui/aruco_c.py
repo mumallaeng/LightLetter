@@ -625,13 +625,22 @@ def crop_run(frame, debug=None):
 
 def cell_outline(res, k, steps=12):
     """칸 k 의 크롭 영역 테두리 (실제 프레임 픽셀 다각형). 경계에 걸친 칸은 두 조각을 잇는다."""
+    return _cell_edges(res, k, steps, board_to_raw)
+
+
+def cell_outline_ideal(res, k, steps=12):
+    """칸 k 의 테두리를 왜곡 보정된 (이상) 픽셀 좌표로. PC 시각화용이며 보드 C 코드에는 없다."""
+    return _cell_edges(res, k, steps, perspective_transform)
+
+
+def _cell_edges(res, k, steps, to_px):
     x0, y0, x1, y1 = cell_rect(k)
 
     def edge(H, xa, xb):
         t = np.linspace(0, 1, steps)
         top = np.stack([xa + (xb - xa) * t, np.full(steps, y0)], axis=1)
         bot = np.stack([xb + (xa - xb) * t, np.full(steps, y1)], axis=1)
-        return board_to_raw(H, top), board_to_raw(H, bot)
+        return to_px(H, top), to_px(H, bot)
 
     if x1 <= SEAM_X or x0 >= SEAM_X:
         H = res["HL"] if x1 <= SEAM_X else res["HR"]

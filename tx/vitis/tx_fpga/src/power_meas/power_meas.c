@@ -72,6 +72,9 @@ typedef enum {
     /* 아래 둘은 매회 memcpy 37 KB + cache flush + DMA kick (roi_dma_send_image) */
     ST_PL_CNN,      /* cnn IRQ 결과를 CPU 가 깨어서 기다림 (busy-wait)              */
     ST_PL_CNN_WFI,  /* cnn IRQ 결과를 WFI 로 잠들어 기다림                          */
+    /* 매회 그 장만 cache flush + DMA kick, memcpy 없음 (roi_dma_start_image)
+     * -> PL_KICK_WFI 와의 차이 = 장당 flush 37 KB 의 시간 / 에너지              */
+    ST_PL_FLUSH_WFI,
     /* flush 는 상태 시작에 한 번만, 매회 같은 버퍼를 DMA kick (roi_dma_start_image)
      * -> 시간 측정의 "PL total (kick)" 과 같은 범위 : DMA + preprocess + CNN    */
     ST_PL_KICK_WFI,
@@ -79,12 +82,13 @@ typedef enum {
 } Meas_state;
 
 static const char *const st_name[ST_NUM] = {
-    "WFI", "BUSY", "CPU_CNN", "PL_CNN", "PL_CNN_WFI", "PL_KICK_WFI"
+    "WFI", "BUSY", "CPU_CNN", "PL_CNN", "PL_CNN_WFI", "PL_FLUSH_WFI", "PL_KICK_WFI"
 };
 
 /* 문서 14절 순서. PL 앞뒤에 WFI 를 끼워 인접 idle 대비 증가분을 볼 수 있게 함 */
 static const Meas_state round_seq[] = {
-    ST_WFI, ST_BUSY, ST_CPU_CNN, ST_WFI, ST_PL_CNN, ST_PL_CNN_WFI, ST_PL_KICK_WFI, ST_WFI
+    ST_WFI, ST_BUSY, ST_CPU_CNN, ST_WFI, ST_PL_CNN, ST_PL_CNN_WFI, ST_PL_FLUSH_WFI,
+    ST_PL_KICK_WFI, ST_WFI
 };
 #define ROUND_LEN   (sizeof(round_seq) / sizeof(round_seq[0]))
 
@@ -406,6 +410,33 @@ static void meas_run_state(Meas_state st, u32 settle_ms, u32 meas_ms, Meas_run *
         }
         break;
 
+    case ST_PL_FLUSH_WFI:
+        /*
+         * PL_KICK_WFI 에 매회 그 장의 flush 만 더한 것 (memcpy 없음, 실제 앱의 zero-copy 경로).
+         * ts_img 는 만들 때 이미 flush 되어 캐시에 dirty 줄이 없으므로, 여기서 재는 flush 는
+         * DDR write-back 이 빠진 하한이다 (CPU 가 셀을 막 쓴 실제 앱은 이보다 조금 더 든다).
+         */
+        while (!meas_done()) {
+            if (!started && meas_in_window()) {
+                XTime_GetTime(&t0);
+                n0 = n;
+                started = 1;
+            }
+            Xil_DCacheFlushRange((INTPTR)ts_img[k], ROI_DMA_FRAME_BYTES);
+            if (roi_dma_start_image(ts_img[k]) != XST_SUCCESS || !pl_wait(&c, 1)) {
+                r->cls_err++;
+                break;
+            }
+            if (c != pl_ref[k]) {
+                r->cls_err++;
+            }
+            k = (k + 1u == TESTSET_N) ? 0u : k + 1u;
+            n++;
+        }
+        while (!meas_done()) {
+        }
+        break;
+
     case ST_PL_KICK_WFI:
         /* 70 장은 측정 중 바뀌지 않으므로 flush 는 여기 한 번 (settle 구간 안) */
         Xil_DCacheFlushRange((INTPTR)ts_img, sizeof(ts_img));
@@ -658,7 +689,7 @@ static int ts_wait_done(u8 *cls, XTime *done)
         pl_mode = PL_DONE_POLL;
         XScuGic_DisableIntr(GIC_DIST_BASEADDR, CNN_IRQ_ID);
         xil_printf("power: WARNING cnn IRQ did not fire, falling back to SR polling "
-                   "(PL_CNN_WFI / PL_KICK_WFI are skipped)\r\n");
+                   "(PL_CNN_WFI / PL_FLUSH_WFI / PL_KICK_WFI are skipped)\r\n");
         return 1;
     }
     if (pl_wait(cls, 0)) {
@@ -807,7 +838,8 @@ void power_meas_run(void)
     for (round = 1u; round <= POWER_MEAS_ROUNDS; round++) {
         for (i = 0; i < ROUND_LEN; i++) {
             st = round_seq[i];
-            if ((st == ST_PL_CNN_WFI || st == ST_PL_KICK_WFI) && pl_mode != PL_DONE_IRQ) {
+            if ((st == ST_PL_CNN_WFI || st == ST_PL_FLUSH_WFI || st == ST_PL_KICK_WFI) &&
+                pl_mode != PL_DONE_IRQ) {
                 continue;
             }
             if (meas_abort_requested()) {
