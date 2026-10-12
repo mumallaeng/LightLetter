@@ -6,7 +6,7 @@
  *
  *   112x112 RGB (roi_dma 의 roi_frame, PL 로 DMA 되는 것과 같은 버퍼)
  *   -> grayscale (77R + 150G + 29B + 128) >> 8 -> 반전 -> THRESHOLD 미만 0
- *   -> 전경 bbox -> 가로세로비 유지하며 긴 변을 22 에 맞춤
+ *   -> 전경 bbox -> 가로세로비 유지하며 긴 변을 22 에 맞춤 (줄이는 축은 구간 최댓값)
  *   -> 28x28 가운데 배치 (MARGIN 3) -> cnn 입력 스케일 (p << 6) + (p >> 2)
  *
  * 픽셀은 3 byte, DMA 스트림 tdata 의 byte 순서 그대로

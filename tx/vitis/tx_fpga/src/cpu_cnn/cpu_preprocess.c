@@ -5,16 +5,30 @@
 /* 임계값 처리된 112x112 (RTL 의 pixel_mem) */
 static uint8_t proc[PRE_IN_W * PRE_IN_H];
 
+/*
+ * ST_X/Y_STORE, ST_X/Y_ADV: start[i] = lo + floor(i * n / g)
+ * 줄이는 축 (n > g) 은 end[i] = lo + ceil((i + 1) * n / g) - 1, 아니면 end[i] = start[i]
+ */
+static void axis_map(int lo, int n, int g, int start[], int end[])
+{
+    int i;
+
+    for (i = 0; i < g; i++) {
+        start[i] = lo + (i * n) / g;
+        end[i]   = (n > g) ? lo + ((i + 1) * n + g - 1) / g - 1 : start[i];
+    }
+}
+
 void cpu_preprocess(const uint8_t *roi, int16_t out[PRE_OUT_W * PRE_OUT_H])
 {
-    int x, y, i;
+    int x, y;
     int min_x = PRE_IN_W - 1, max_x = 0;
     int min_y = PRE_IN_H - 1, max_y = 0;
     int found = 0;
     int bw, bh, wide, s_short, s_long, fit;
     int gw, gh, ox, oy;
-    int xm[PRE_GLYPH_LIMIT];
-    int ym[PRE_GLYPH_LIMIT];
+    int xs[PRE_GLYPH_LIMIT], xe[PRE_GLYPH_LIMIT];
+    int ys[PRE_GLYPH_LIMIT], ye[PRE_GLYPH_LIMIT];
 
     /* 입력단: luma -> 반전 -> threshold, 동시에 전경 bbox (ST_RECV) */
     for (y = 0; y < PRE_IN_H; y++) {
@@ -62,17 +76,24 @@ void cpu_preprocess(const uint8_t *roi, int16_t out[PRE_OUT_W * PRE_OUT_H])
         oy = (PRE_OUT_H - PRE_GLYPH_LIMIT) >> 1;
     }
 
-    /* ST_X/Y_STORE: map[i] = min + floor(i * bbox / glyph) */
-    for (i = 0; i < gw; i++) xm[i] = min_x + (i * bw) / gw;
-    for (i = 0; i < gh; i++) ym[i] = min_y + (i * bh) / gh;
+    axis_map(min_x, bw, gw, xs, xe);
+    axis_map(min_y, bh, gh, ys, ye);
 
-    /* ST_OUT_*: 배치 + cnn 입력 스케일 */
+    /* ST_OUT_*: 출력 한 픽셀 = [start, end] 구간 최댓값 (adaptive max downsampling) + cnn 입력 스케일 */
     for (y = 0; y < gh; y++) {
-        const uint8_t *row = proc + ym[y] * PRE_IN_W;
         int16_t *dst = out + (oy + y) * PRE_OUT_W + ox;
 
         for (x = 0; x < gw; x++) {
-            uint32_t p = row[xm[x]];
+            uint32_t p = 0;
+            int sx, sy;
+
+            for (sy = ys[y]; sy <= ye[y]; sy++) {
+                const uint8_t *row = proc + sy * PRE_IN_W;
+
+                for (sx = xs[x]; sx <= xe[x]; sx++) {
+                    if (row[sx] > p) p = row[sx];
+                }
+            }
             dst[x] = (int16_t)((p << 6) + (p >> 2));
         }
     }
