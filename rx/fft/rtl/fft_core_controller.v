@@ -60,6 +60,7 @@ module fft_core_controller (
             c_step       <= 0;
             out_sel_reg  <= 0;
             out_last_reg <= 1'b0;
+            // Pipeline 추가: Stage 저장 카운터 및 READ 지연 초기화
             written_reg  <= 0;
             read_issue_d <= 1'b0;
         end else begin
@@ -69,6 +70,7 @@ module fft_core_controller (
             c_step       <= n_step;
             out_sel_reg  <= out_sel_next;
             out_last_reg <= out_last_next;
+            // Pipeline 추가: 저장 완료 수와 직전 Read 요청 기록
             written_reg  <= written_next;
             read_issue_d <= (c_state == ST_READ);
         end
@@ -81,6 +83,7 @@ module fft_core_controller (
         n_step      = c_step;
         out_sel_next = out_sel_reg;
         out_last_next = out_last_reg;
+        // Pipeline 추가: 저장 카운터 기본 유지
         written_next = written_reg;
 
         o_frame_ready      = 1'b0;
@@ -88,12 +91,14 @@ module fft_core_controller (
 		o_buf_data_load_en = 1'b0;
 		o_bf_out_load_en   = 1'b0;
 		o_core_out_en      = 1'b0;
+		// Pipeline 변경: READ 요청 후 1클럭 뒤 Read Path에 데이터 전달
 		o_rdata_load_en    = read_issue_d;
 
 		o_buf_wb0_sel      = 1'b0;
 		o_bf_mem_sel       = 1'b0;
 		o_mem_pingpong_sel = 1'b0;
 
+        // Pipeline 변경: READ/CALC에서 이전 Butterfly 결과의 메모리 저장 완료 카운트
         if (((c_state == ST_READ) || (c_state == ST_CALC)) && stage_write_valid) begin
             written_next = written_reg + 6'd1;
         end
@@ -106,6 +111,7 @@ module fft_core_controller (
                 if (i_frame_valid && o_frame_ready) begin
                     bf_cnt_next = 0;
                     bf_stg_next = 0;
+                    // Pipeline 추가: 새 FFT 프레임에서 결과 저장 카운터 초기화
                     written_next = 0;
                     n_state = ST_LOAD;
                 end
@@ -127,6 +133,7 @@ module fft_core_controller (
                             end else begin
                                 bf_cnt_next = 0;
                                 n_step = 0;
+                                // Pipeline 추가: 새로운 FFT Stage 시작 전 저장 카운터 초기화
                                 written_next = 0;
                                 n_state = ST_READ;
                             end
@@ -138,14 +145,17 @@ module fft_core_controller (
                 o_buf_wb0_sel      = 1'b1;
                 o_bf_mem_sel       = o_bf_stage[0];
                 o_mem_pingpong_sel = ~o_bf_stage[0];
+                // Pipeline 추가: READ 중에도 이전 Butterfly 연산 결과 저장
                 o_bf_out_load_en = i_bf_out_valid;
                 case (c_step)
                     0: begin // read data of memory
                         o_rdata_load_en  = 0;
                         n_step = 1;
+                        // Pipeline 변경: 첫 Butterfly 주소를 발행하고 다음 주소 준비
                         bf_cnt_next = bf_cnt_reg + 6'd1;
                     end 
                     1: begin // give rdata to butterfly
+                        // Pipeline 변경: 직전 Memory Read 결과를 전달하며 다음 주소를 연속 발행
                         o_rdata_load_en = read_issue_d;
                         if (bf_cnt_reg < 63) begin
                             bf_cnt_next = bf_cnt_reg + 6'd1;
@@ -160,8 +170,11 @@ module fft_core_controller (
                 o_buf_wb0_sel      = 1'b1;
                 o_bf_mem_sel       = o_bf_stage[0];
                 o_mem_pingpong_sel = ~o_bf_stage[0];
+                
+                // Pipeline 변경: 마지막 Read 결과 전달 및 남은 Butterfly 결과 저장
                 o_rdata_load_en = read_issue_d;
-                o_bf_out_load_en = i_bf_out_valid;
+                o_bf_out_load_en = i_bf_out_valid; // load butterfly data
+                // Pipeline 변경: 64번째 Butterfly 결과 저장 완료 시 Stage 전환
                 if (stage_write_valid && written_reg == 6'd63) begin
                     n_step = 0;
                     if (bf_stg_reg < 6) begin
