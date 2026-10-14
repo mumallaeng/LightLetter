@@ -32,10 +32,10 @@ update_compile_order -fileset sources_1
 # them to sources_1 would define every module twice. Vivado copies the .mem files of the
 # simulation set into the xsim run directory, which is where tb_fc and fc_top read them.
 set sim_files [list [file join $root cnn tb tb_fc.v]]
-foreach m {fc_top fc_ctrl fc_mac fc_quant_out fc_feature_buf fc_weight_rom fc_bias_rom quantizer} {
+foreach m {fc_top fc_layer fc_ctrl fc_mac fc_staging fc_weight_rom output_buffer buffer_ctrl bias_rom partial_sum relu_quant lane_packer out_reorder quantizer quantizer_signed fc_quant_signed} {
     lappend sim_files [file join $root cnn rtl $m.v]
 }
-foreach m {fc_weight fc_bias} { lappend sim_files [file join $root cnn rtl mem $m.mem] }
+foreach m {fc1_weight fc1_bias fc2_weight fc2_bias fc3_weight fc3_bias} { lappend sim_files [file join $root cnn rtl mem $m.mem] }
 foreach m {fc_stim fc1_out fc2_out fc3_out} { lappend sim_files [file join $root cnn tb vectors $m.mem] }
 add_files -fileset sim_1 -norecurse $sim_files
 set_property top tb_fc [get_filesets sim_1]

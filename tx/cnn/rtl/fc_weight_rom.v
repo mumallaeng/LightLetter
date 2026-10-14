@@ -1,23 +1,29 @@
 `timescale 1ns / 1ps
-// Weight ROM: one row of P weights, synchronous read (BRAM); rows in processing order: layer, group, input.
+// Weight ROM: one row per (chunk, neuron), L weights per row, lane 0 in the low 16 bits.
+// Row index = chunk * N_OUT + neuron, which is what fc_ctrl drives on rom_addr.
+// The read is synchronous, so the address leads the mac_en it belongs to by one clock.
+// Contents come from export_fc_vectors.py (tx/cnn/rtl/mem/fcK_weight.mem).
+
 module fc_weight_rom #(
-    parameter P        = 20,
-    parameter ROWS     = 3168,
-    parameter ROM_FILE = "fc_weight.mem",
-    parameter AW       = $clog2(ROWS)
+    parameter L         = 25,               // FC1=25; FC2=10; FC3=5
+    parameter N_OUT     = 120,              // FC1=120; FC2=84; FC3=26
+    parameter NUM_CHUNK = 16,               // FC1=16; FC2=12; FC3=17
+    parameter ROM_FILE  = "fc1_weight.mem"  // tx/cnn/rtl/mem
 ) (
-    input  wire            clk,
-    input  wire            en,
-    input  wire [ AW-1:0]  addr,
-    output reg  [16*P-1:0] w_out
+    input  wire                               clk,
+    input  wire [$clog2(NUM_CHUNK*N_OUT)-1:0] addr,
+    output reg  [                   16*L-1:0] w_out      // lane i = w_out[16*i +: 16], signed
 );
 
+    localparam DEPTH = NUM_CHUNK * N_OUT;
+
     (* ram_style = "block" *)
-    reg [16*P-1:0] mem[0:ROWS-1];
+    reg [16*L-1:0] mem[0:DEPTH-1];
 
     initial $readmemh(ROM_FILE, mem);
 
-    // BRAM read register, no reset; w_out holds its row while en is low
-    always @(posedge clk) if (en) w_out <= mem[addr];
+    // BRAM read register: w_out holds the row addressed on the previous clock.
+    // No reset, like the conv-side BRAMs - the first row is valid one clock after the first address.
+    always @(posedge clk) w_out <= mem[addr];
 
 endmodule

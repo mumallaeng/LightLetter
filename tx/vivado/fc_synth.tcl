@@ -9,7 +9,7 @@ set rtl  [file join $root cnn rtl]
 set period 10.0
 file mkdir $out
 
-foreach m {fc_top fc_ctrl fc_mac fc_quant_out fc_feature_buf fc_weight_rom fc_bias_rom quantizer} {
+foreach m {fc_top fc_layer fc_ctrl fc_mac fc_staging fc_weight_rom output_buffer buffer_ctrl bias_rom partial_sum relu_quant lane_packer out_reorder quantizer quantizer_signed fc_quant_signed} {
     read_verilog [file join $rtl $m.v]
 }
 
