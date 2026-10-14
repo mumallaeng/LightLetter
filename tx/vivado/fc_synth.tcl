@@ -16,12 +16,19 @@ foreach m {fc_top fc_ctrl fc_mac fc_quant_out fc_feature_buf fc_weight_rom fc_bi
 # $readmemh in the ROMs resolves its file name against the working directory
 cd [file join $rtl mem]
 
+# with more threads synth_design fails on the lab PC (Vivado 2020.2, "couldn't read file ... realtime/fc_top.tcl")
+set_param general.maxThreads 1
+
 synth_design -top fc_top -part xc7z020clg400-1 -mode out_of_context
 create_clock -name clk -period $period [get_ports clk]
 
 opt_design
 place_design
 route_design
+
+# routed netlist and checkpoint for the SAIF power flow (cnn/tb/fc_saif.sh, vivado/fc_power.tcl)
+write_checkpoint -force [file join $out fc_routed.dcp]
+write_verilog -mode funcsim -force [file join $out fc_funcsim.v]
 
 report_utilization -hierarchical -hierarchical_depth 2 -file [file join $out utilization.rpt]
 report_timing_summary -max_paths 10 -file [file join $out timing_summary.rpt]
