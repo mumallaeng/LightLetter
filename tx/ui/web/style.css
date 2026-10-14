@@ -31,3 +31,29 @@
 .layout{grid-template-columns:1.5fr 1fr}.sticky{position:sticky;top:12px;align-self:start}
 .frame{margin-top:10px}
 .pred{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}.predcell{border:1px solid #ddd;border-radius:8px;padding:8px;text-align:center;background:#fafafa}.predcell small{display:block;color:#777;font-size:12px}.predcell b{display:block;font-family:cursive;font-size:44px;line-height:1.2;font-weight:400}.predcell span{display:block;color:#666;font-size:11px;font-variant-numeric:tabular-nums}
+#boardLog{max-height:220px;overflow:auto}
+/* stage image width is set by layoutStages() in app.js (3 rows per card height) */
+.stagerow img{max-height:none}
+[hidden]{display:none!important}
+/* top screen: image preprocessing | camera + board result. --top-h is set by layoutTop() in app.js */
+.top>.left,.top>.right{min-width:0}
+.bottom{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px;align-items:start}
+@media(min-width:851px){
+.layout.top{grid-template-columns:1fr 1.15fr;height:var(--top-h,auto)}
+.top>.left,.top>.right{min-height:0}
+.stagecard{flex:1;min-height:0;overflow-y:auto}
+/* right column: camera 3 : board result 2; the camera image keeps 16:9 (object-fit) */
+.camcard,.boardcard{min-height:0;display:flex;flex-direction:column}
+.camcard{flex:3 1 0}
+.boardcard{flex:2 1 0}
+.camcard .frame{flex:1;min-height:0;aspect-ratio:auto;background:transparent;position:relative}
+.camcard .frame img{position:absolute;inset:0}
+/* board letters scale with the card: cq units are relative to #board */
+.boardcard #board{flex:1;min-height:0;margin-top:10px;container-type:size}
+.boardcard .predcell{display:flex;flex-direction:column;justify-content:center;align-items:center;min-height:0}
+.boardcard .predcell b{font-size:min(62cqh,14cqw);line-height:1}
+.boardcard .predcell small{font-size:14px}
+}
+.boardcard .cardhead{gap:12px}
+.boardcard .cardhead button{flex-shrink:0}
+@media(max-width:850px){.bottom{grid-template-columns:1fr}}

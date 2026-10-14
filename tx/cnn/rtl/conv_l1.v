@@ -55,7 +55,8 @@ module conv_l1 #(
     // Weight ROM
     // ----------------------------------
     wire [143:0] weight_out;
-    wire         rom_en = cal_valid;
+    wire         win_zero;  // whole 3x3 window is zero
+    wire         rom_en = cal_valid & ~win_zero;  // zero window: ROM holds its row
 
     weight_rom_l1 U_WEIGHT_ROM_L1 (
         .clk       (clk),
@@ -81,6 +82,29 @@ module conv_l1 #(
         .win_valid  (win_valid)
     );
 
+    // Zero Gating Array
+    // ----------------------------------
+    // registers the window and the ROM row; cal_valid_rt (aligned with weight_out) -> cal_valid_zg
+    wire [143:0] zg_win, zg_weight;
+    wire [  8:0] is_zero;
+    wire         cal_valid_zg;
+
+    zero_gating_array #(
+        .N(9)
+    ) U_ZERO_GATING_L1 (
+        .clk         (clk),
+        .rst_n       (rst_n),
+        .win_next    (win_out),
+        .weight_next (weight_out),
+        .cal_valid   (cal_valid_rt),
+        .win_in      (zg_win),
+        .weight_in   (zg_weight),
+        .is_zero     (is_zero),
+        .cal_valid_rt(cal_valid_zg)
+    );
+
+    assign win_zero = &is_zero;
+
     // MAC Array
     // ----------------------------------
     wire [35:0] ch_result;
@@ -89,9 +113,10 @@ module conv_l1 #(
     mac_array_l1 U_MAC_ARRAY_L1 (
         .clk       (clk),
         .rst_n     (rst_n),
-        .win_in    (win_out),
-        .win_valid (cal_valid_rt),
-        .weight_in (weight_out),
+        .win_in    (zg_win),
+        .win_valid (cal_valid_zg),
+        .weight_in (zg_weight),
+        .mul_en    ({9{cal_valid_zg}} & ~is_zero),
         .ch_result0(ch_result),
         .mac_valid (mac_valid)
     );

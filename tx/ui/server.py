@@ -3,16 +3,22 @@
     python server.py                     # 브라우저가 캡처보드를 열어 영상을 보낸다, http://localhost:8766
     python server.py --device 1          # 서버가 직접 연다 (번호는 --list 로 확인)
     python server.py --image captures/synth_frame.png    # 보드 없이 저장한 프레임으로
-    python server.py --weights other.json                # 인식에 쓸 가중치 JSON (기본: tx/cnn/model 의 lenet5_3x3_schedule.json)
+    python server.py --uart COM5         # 보드 UART 를 읽어 보드(PL/CPU) 인식 결과를 보여 준다
+    python server.py --pc-infer          # PC 에서도 JSON 가중치로 인식해 보드 결과와 비교한다 (--weights 로 다른 JSON)
 
 수신 UI(rx/ui)와 같은 테마의 정적 페이지(web/)와 JSON/이미지 API 를 같이 낸다.
-전처리 계산은 capture_test.py 의 함수를 그대로 쓴다.
+전처리 계산은 capture_test.py 의 함수를 그대로 쓴다. CNN 인식은 보드 결과를 쓰고, --pc-infer 를 주면 PC 인식도 같이 보여 준다.
+보드는 캡처마다 {"type":"tx_capture", ...} 한 줄을 보낸다 (capture_ctrl.c).
 """
 import argparse
+import copy
 import json
+import re
 import sys
 import threading
 import time
+import traceback
+from collections import deque
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -33,15 +39,14 @@ ARUCO_STAGES = [
     ("homography", "homography 112×112", "보드가 만드는 칸 영상. 원본 프레임에서 112×112 를 바로 샘플한다."),
     ("threshold", "threshold + bbox", "luma → 반전 → threshold. 빨간 상자는 글자의 bbox."),
     ("cnn28", "CNN 입력 28×28", "bbox 를 22×22 에 맞추고(줄이는 축은 구간 최댓값) 28×28 가운데에 배치한 CNN 입력."),
-    ("predict", "CNN 인식", "위 CNN 입력을 JSON 가중치로 PC 에서 인식한 결과. 글자와 상위 3개 logit."),
 ]
 CENTER_STAGES = [
     ("roi", "ROI 112×112", "정중앙 224×224 를 112×112 로 nearest 다운스케일한 영상."),
     ("threshold", "threshold + bbox", "luma → 반전 → threshold. 빨간 상자는 글자의 bbox."),
     ("cnn28", "CNN 입력 28×28", "bbox 를 22×22 에 맞추고(줄이는 축은 구간 최댓값) 28×28 가운데에 배치한 CNN 입력."),
-    ("predict", "CNN 인식", "위 CNN 입력을 JSON 가중치로 PC 에서 인식한 결과. 글자와 상위 3개 logit."),
 ]
 STAGES = {"aruco": ARUCO_STAGES, "center": CENTER_STAGES}
+PREDICT_STAGE = ("predict", "PC CNN 인식", "위 CNN 입력을 JSON 가중치로 PC 에서 인식한 결과. 글자와 상위 3개 logit. (--pc-infer)")
 TILE_GAP = 6
 
 
@@ -59,6 +64,154 @@ def list_devices(n=5):
         w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         print(f"device {i}: {w}x{h}, read={'ok' if ok else 'fail'}")
         cap.release()
+    try:
+        from serial.tools import list_ports
+    except ImportError:
+        print("UART: pyserial 이 없어 COM 포트를 찾지 못했습니다 (pip install pyserial)")
+        return
+    for p in list_ports.comports():
+        print(f"UART {p.device}: {p.description}")
+
+
+def letter(cls):
+    return chr(ord("A") + cls) if isinstance(cls, int) and 0 <= cls < 26 else "?"
+
+
+BOARD_TYPES = ("tx_capture", "recognition")
+CELL_LINE = re.compile(r"^capture: cell (\d+)$")                   # cnn_ctrl_report 앞 줄
+ARUCO_FAIL_LINE = re.compile(r"^capture: ArUco crop failed \((-?\d+)\)")
+
+
+def parse_board_line(line):
+    """보드 UART 한 줄 -> tx_capture / recognition dict. 다른 줄(텍스트 로그 등)은 None."""
+    line = line.strip()
+    if not line.startswith("{"):
+        return None
+    try:
+        o = json.loads(line)
+    except ValueError:
+        return None
+    if not isinstance(o, dict) or o.get("type") not in BOARD_TYPES:
+        return None
+    return o
+
+
+class Board:
+    """보드 UART 를 읽어 마지막 캡처 결과 하나를 보관한다. 다음 캡처가 오면 바뀐다.
+
+    결과는 두 가지 줄로 만든다.
+      tx_capture  : 캡처 1회 요약 (capture_ctrl.c, 새 펌웨어). 실패, CPU 결과, 시간까지 있다.
+      recognition : 칸마다 "capture: cell k" 다음에 오는 줄 (cnn_ctrl_report, 이전 펌웨어도 보냄).
+    새 펌웨어는 tx_capture 를 먼저 보내고 recognition 을 칸마다 보내므로 둘을 같은 캡처로 묶는다.
+    """
+
+    KEYS = {"c"}        # 웹에서 보낼 수 있는 키. 'p' 는 카메라를 멈추므로 막는다.
+
+    def __init__(self, args, on_result):
+        import serial   # --uart 를 줄 때만 pyserial 이 필요하다
+        self.serial_mod, self.port, self.baud = serial, args.uart, args.baud
+        self.on_result, self.lock = on_result, threading.Lock()
+        self.ser, self.error = None, None
+        self.log = deque(maxlen=200)
+        self.last, self.count = None, 0
+        self.cell = None        # 바로 앞 "capture: cell k" 의 k
+        self.awaiting = False   # tx_capture 를 받았고 그 캡처의 recognition 줄을 기다리는 중
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        buf = b""
+        while True:
+            if self.ser is None:
+                try:
+                    # serial_for_url: COM5 같은 포트 이름과 시험용 loop:// 를 둘 다 연다
+                    self.ser = self.serial_mod.serial_for_url(self.port, self.baud, timeout=0.2)
+                    self.error = None
+                except (self.serial_mod.SerialException, OSError) as e:
+                    self.error = f"{self.port} 를 열 수 없습니다 (Vitis 터미널 등 다른 프로그램을 닫으세요): {e}"
+                    time.sleep(2)
+                    continue
+            try:
+                buf += self.ser.read(self.ser.in_waiting or 1)
+            except (self.serial_mod.SerialException, OSError) as e:
+                self.error = f"{self.port} 연결이 끊겼습니다: {e}"
+                self._close()
+                time.sleep(2)
+                continue
+            while b"\n" in buf:
+                raw, buf = buf.split(b"\n", 1)
+                self._line(raw.decode("utf-8", errors="replace").rstrip("\r"))
+            if len(buf) > 8192:         # 줄바꿈 없는 쓰레기 데이터
+                buf = b""
+
+    def _line(self, line):
+        with self.lock:
+            self.log.append(line)
+        try:
+            self._parse(line.strip())
+        except Exception:               # 한 줄이 잘못돼도 읽기 스레드가 죽지 않게 한다
+            traceback.print_exc()
+            with self.lock:
+                self.log.append(f"[server] 이 줄을 처리하지 못했습니다: {line[:80]}")
+
+    def _set(self, result):
+        with self.lock:
+            self.count += 1
+            result["id"] = self.count   # seq 는 보드 리셋 때 다시 1 부터라 화면 갱신 판단은 id 로
+            self.last = result
+
+    def _parse(self, line):
+        m = CELL_LINE.match(line)
+        if m:
+            self.cell = int(m.group(1))
+            return
+        m = ARUCO_FAIL_LINE.match(line)
+        if m:       # 이전 펌웨어는 이 텍스트 줄만 보낸다. 새 펌웨어는 바로 뒤 tx_capture 가 덮어쓴다.
+            self.awaiting = False
+            self._set(self.on_result(dict(type="tx_capture", ok=False, stage="aruco",
+                                          rc=int(m.group(1)), cell=-1)))
+            return
+        o = parse_board_line(line)
+        if o is None:
+            return
+        if o["type"] == "tx_capture":
+            self.awaiting = bool(o.get("cells"))
+            self._set(self.on_result(o))
+            return
+        # recognition: 칸 하나의 PL 결과
+        k, self.cell = self.cell, None
+        if k is None or (k == 0 and not self.awaiting):
+            # 새 캡처 (이전 펌웨어), 또는 칸 번호 없는 'd' 테스트 프레임
+            self._set(self.on_result(dict(type="tx_capture", ok=True, cells=[])))
+        self.awaiting = False
+        k = k or 0
+        with self.lock:
+            r = self.last
+            if not any(c["cell"] == k for c in r["cells"]):
+                r["cells"].append(make_cell(k, o.get("class_id"), None, None))
+                r["id"] = self.count = self.count + 1     # 칸이 늘어난 것도 화면 갱신
+
+    def _close(self):
+        try:
+            self.ser.close()
+        except Exception:
+            pass
+        self.ser = None
+
+    def send(self, key):
+        if key not in self.KEYS or self.ser is None:
+            return False
+        try:
+            self.ser.write(key.encode("ascii"))
+        except (self.serial_mod.SerialException, OSError):
+            return False
+        return True
+
+    def snapshot(self, n_log=40):
+        with self.lock:
+            last = copy.deepcopy(self.last)
+            log = list(self.log)[-n_log:]
+        return dict(enabled=True, port=self.port, connected=self.ser is not None, error=self.error,
+                    last=last, log=log)
 
 
 class Source:
@@ -139,9 +292,13 @@ class State:
     def __init__(self, args):
         self.src = Source(args)
         self.worker = ct.ArucoWorker()
-        self.infer = cnn_infer.Infer(args.weights)
         self.mode = "aruco"
         self.lock = threading.Lock()
+        self.board = Board(args, board_result) if args.uart else None
+        self.infer = cnn_infer.Infer(args.weights) if args.pc_infer else None
+
+    def stages(self, mode):
+        return STAGES[mode] + ([PREDICT_STAGE] if self.infer else [])
 
     def snapshot(self):
         """가장 최근 프레임과 그 프레임의 계산 결과. center 모드는 요청 때 계산한다."""
@@ -190,12 +347,13 @@ def predict_stage_image(state):
 
 def aruco_stage_image(ar, stage):
     """칸 5개의 같은 단계 타일을 가로로 이어 붙인다."""
-    if ar is None:
-        return message_tile("ArUco 계산 대기 중")
-    if ar["cnn"] is None:
-        return message_tile(f"crop 실패: {aruco_c.ERR_NAME[ar['rc']]}  (마커 {len(ar['markers'])}/6)")
-    idx = [s[0] for s in ARUCO_STAGES].index(stage)
     T = ct.TILE
+    row_w = aruco_c.NUM_CELLS * T + (aruco_c.NUM_CELLS - 1) * TILE_GAP   # 안내 문구도 칸 줄과 같은 크기로
+    if ar is None:
+        return message_tile("ArUco 계산 대기 중", row_w, T)
+    if ar["cnn"] is None:
+        return message_tile(f"crop 실패: {aruco_c.ERR_NAME[ar['rc']]}  (마커 {len(ar['markers'])}/6)", row_w, T)
+    idx = [s[0] for s in ARUCO_STAGES].index(stage)
     tiles = [ct.cell_tiles(ar, k)[idx] for k in range(aruco_c.NUM_CELLS)]
     gap = np.full((T, TILE_GAP, 3), 24, np.uint8)
     row = []
@@ -238,7 +396,9 @@ def cnn_text(state, cell):
 
 
 def predictions(state):
-    """칸별 CNN 인식 결과. 보드 ROM 과 같은 JSON 가중치로 소프트웨어에서 계산한다."""
+    """칸별 PC CNN 인식 결과 (--pc-infer). 보드 ROM 과 같은 JSON 가중치로 소프트웨어에서 계산한다."""
+    if state.infer is None:
+        return dict(msg="PC 인식 사용 안 함 (--pc-infer)", cells=[])
     raw, _, res = state.snapshot()
     if raw is None or res is None:
         return dict(msg="프레임 대기 중", cells=[])
@@ -250,6 +410,23 @@ def predictions(state):
         inputs = [(res[3], res[4])]
     # info 가 None 이면 전경이 없는 칸이라 글자가 없다
     return dict(msg=None, cells=[None if info is None else state.infer.predict(cnn) for cnn, info in inputs])
+
+
+def board_result(o):
+    """보드 tx_capture 한 줄 -> 화면에 보일 캡처 결과."""
+    cells = [make_cell(c.get("cell"), c.get("pl"), c.get("cpu"), c.get("pl_us"))
+             for c in o.get("cells", [])]
+    rc = o.get("rc")
+    return dict(seq=o.get("seq"), ok=bool(o.get("ok")), stage=o.get("stage"), rc=rc,
+                rc_name=aruco_c.ERR_NAME.get(rc) if o.get("stage") == "aruco" else None,
+                cell=o.get("cell"), cells=cells, e2e_us=o.get("e2e_us"),
+                at=time.strftime("%H:%M:%S"))
+
+
+def make_cell(k, pl, cpu, pl_us):
+    """칸 하나의 보드 결과. cpu/pl_us 는 recognition 줄만 있으면 None."""
+    return dict(cell=k, pl=pl, pl_char=letter(pl), cpu=cpu, cpu_char=None if cpu is None else letter(cpu),
+                pl_us=pl_us)
 
 
 def save_capture(state):
@@ -310,10 +487,10 @@ def make_handler(state):
                 return self.send_json(dict(
                     source=state.src.name, kind=state.src.kind, error=state.src.error, fps=round(fps, 1), mode=state.mode,
                     frame=None if raw is None else [raw.shape[1], raw.shape[0]], aruco=aruco,
-                    stages={m: [dict(id=i, label=l, desc=d) for i, l, d in s] for m, s in STAGES.items()},
+                    stages={m: [dict(id=i, label=l, desc=d) for i, l, d in state.stages(m)] for m in STAGES},
                     cells=aruco_c.NUM_CELLS,
-                    cnn=dict(weights=state.infer.path.name, sha=state.infer.sha,
-                             accuracy=state.infer.accuracy, classes=len(state.infer.names))))
+                    cnn=None if state.infer is None else dict(weights=state.infer.path.name, sha=state.infer.sha,
+                                                              accuracy=state.infer.accuracy, classes=len(state.infer.names))))
             if path == "/api/frame.jpg":
                 raw, fps, res = state.snapshot()
                 if raw is None:
@@ -326,7 +503,7 @@ def make_handler(state):
                 return self.send_bytes(encode(raw, ".jpg"), "image/jpeg")
             if path.startswith("/api/stage/") and path.endswith(".png"):
                 stage = path[len("/api/stage/"):-4]
-                if stage not in [s[0] for s in STAGES[state.mode]]:
+                if stage not in [s[0] for s in state.stages(state.mode)]:
                     return self.send_bytes(b"unknown stage", "text/plain", 404)
                 if stage == "predict":
                     return self.send_bytes(encode(predict_stage_image(state)), "image/png")
@@ -335,6 +512,8 @@ def make_handler(state):
                 return self.send_bytes(encode(img), "image/png")
             if path == "/api/predict":
                 return self.send_json(predictions(state))
+            if path == "/api/board":
+                return self.send_json(state.board.snapshot() if state.board else dict(enabled=False))
             if path == "/api/cnn.txt":
                 cell = min(max(int(q.get("cell", ["0"])[0]), 0), aruco_c.NUM_CELLS - 1)
                 return self.send_bytes(cnn_text(state, cell).encode("utf-8"), "text/plain; charset=utf-8")
@@ -357,6 +536,9 @@ def make_handler(state):
             if u.path == "/api/capture":
                 files = save_capture(state)
                 return self.send_json(dict(files=files, dir=str(ct.SAVE_DIR)), 200 if files else 503)
+            if u.path == "/api/board/key":
+                ok = state.board is not None and state.board.send(body.get("key", ""))
+                return self.send_json(dict(ok=ok), 200 if ok else 503)
             self.send_bytes(b"not found", "text/plain", 404)
 
     return Handler
@@ -370,17 +552,22 @@ def main():
     ap.add_argument("--fps", type=int, default=60)
     ap.add_argument("--no-mjpg", action="store_true", help="MJPG 요청을 끈다 (화면이 안 나오면 시도)")
     ap.add_argument("--image", help="캡처보드 대신 저장한 프레임(PNG 등)을 계속 보여 준다")
-    ap.add_argument("--weights", type=Path, default=cnn_infer.DEFAULT_WEIGHTS,
-                    help="인식에 쓸 가중치 JSON. 보드 ROM(.mem)을 만든 JSON 과 같아야 결과가 같다")
     ap.add_argument("--port", type=int, default=8766)
-    ap.add_argument("--list", action="store_true", help="0~4번 장치를 탐색해 번호를 보여 주고 종료")
+    ap.add_argument("--uart", help="보드 UART COM 포트 (예: COM5). 주면 보드 인식 결과를 읽는다 (pyserial 필요)")
+    ap.add_argument("--baud", type=int, default=115200)
+    ap.add_argument("--pc-infer", action="store_true", help="PC 에서도 JSON 가중치로 인식해 보드 결과와 비교한다")
+    ap.add_argument("--weights", type=Path, default=cnn_infer.DEFAULT_WEIGHTS,
+                    help="--pc-infer 에 쓸 가중치 JSON. 보드 ROM(.mem)을 만든 JSON 과 같아야 결과가 같다")
+    ap.add_argument("--list", action="store_true", help="0~4번 영상 장치와 COM 포트를 보여 주고 종료")
     args = ap.parse_args()
     if args.list:
         list_devices()
         return
     state = State(args)
     print(f"LightLetter 송신 UI: http://localhost:{args.port}  ({state.src.name})", flush=True)
-    print(f"CNN 가중치: {args.weights.name} (sha256 {state.infer.sha}), {len(state.infer.names)}클래스", flush=True)
+    print(f"보드 UART: {args.uart} {args.baud} 8N1" if args.uart else "보드 UART: 사용 안 함 (--uart COMx)", flush=True)
+    if state.infer:
+        print(f"PC CNN 가중치: {args.weights.name} (sha256 {state.infer.sha}), {len(state.infer.names)}클래스", flush=True)
     ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(state)).serve_forever()
 
 

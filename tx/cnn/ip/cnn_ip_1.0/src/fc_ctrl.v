@@ -3,6 +3,8 @@
 // IDLE waits for the first input, RUN issues MACs, FLUSH waits until the layer's results are written.
 // The weight and bias ROMs hold their rows in processing order (layer, group, input): a group's
 // weight rows start right after the previous group's, and the bias row counts groups.
+// Zero skipping: except FC1 group 0 (still streaming in), i jumps to the next non-zero input
+// (skip_nxt from fc_top's zero buffers) and the group ends at skip_last.
 module fc_ctrl #(
     parameter N_IN1   = 400,
     parameter N_IN2   = 120,
@@ -18,7 +20,10 @@ module fc_ctrl #(
     input  wire               rst_n,
     input  wire               fc_in_valid,
     input  wire               mac_busy,
+    input  wire               last_inflight,  // a group's last input is still inside fc_mac
     input  wire               hold_free,
+    input  wire [  IN_AW-1:0] skip_nxt,       // next non-zero input after i (current layer)
+    input  wire [  IN_AW-1:0] skip_last,      // last non-zero input, 0 if none (current layer)
     output wire               fc_in_ready,
     output wire               fc1_in_we,
     output wire [  IN_AW-1:0] fc1_in_waddr,
@@ -27,7 +32,7 @@ module fc_ctrl #(
     output wire [  IN_AW-1:0] feature_raddr,
     output wire [ ROM_AW-1:0] weight_addr,    // row of the current input; the row arrives one clock later
     output wire               weight_en,
-    output wire [BIAS_AW-1:0] bias_addr,      // row of the current group
+    output reg  [BIAS_AW-1:0] bias_addr,      // 1 clk late: row of the group fc_mac loads the bias for
     output wire               first,
     output wire               mac_en,
     output wire               last
@@ -70,14 +75,16 @@ module fc_ctrl #(
     end
 
     // ========== loop conditions ==========
-    wire [IN_AW-1:0] i_adv = i + 1'b1;  // next input of the group
-    wire [IN_AW-1:0] i_start = {IN_AW{1'b0}};  // first input of a group
-    wire             lastin = (i == n_in - 1'b1);
+    wire             jump = ~((layer_r == 2'd1) & (group_r == 3'd0));  // the zero buffer is complete
+    wire [IN_AW-1:0] i_adv = jump ? skip_nxt : i + 1'b1;  // next input of the group
+    wire [IN_AW-1:0] i_start = {IN_AW{1'b0}};  // first input of a group, visited even if 0 (bias)
+    wire             lastin = jump ? (i == skip_last) : (i == n_in - 1'b1);
     wire             lastgroup = ({1'b0, group_r} + 1'b1 >= n_groups);
     wire             avail = ~((layer_r == 2'd1) & (group_r == 3'd0)) | (i < fill_cnt);  // FC1 group 0 follows the input
 
     wire             start = (state == S_IDLE) & (fill_cnt != {IN_AW{1'b0}});
-    wire             step = (state == S_RUN) & avail & (~lastin | hold_free);  // one MAC this clock
+    // skipped groups can be a few clks long: also wait for the previous group's sum still in fc_mac
+    wire             step = (state == S_RUN) & avail & (~lastin | (hold_free & ~last_inflight));  // one MAC this clock
     wire             group_end = step & lastin;
     wire             layer_end = group_end & lastgroup;
     wire             frame_end = layer_end & (layer_r == 2'd3);
@@ -147,6 +154,11 @@ module fc_ctrl #(
     assign last          = group_end;
     assign weight_addr   = group_row + {{RPAD{1'b0}}, i};
     assign weight_en     = step;
-    assign bias_addr     = b_addr;
+
+    // fc_mac loads the bias 1 clk after `first`; b_addr may already count the next group by then
+    always @(posedge clk) begin
+        if (!rst_n) bias_addr <= {BIAS_AW{1'b0}};
+        else        bias_addr <= b_addr;
+    end
 
 endmodule

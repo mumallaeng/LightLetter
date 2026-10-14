@@ -1,13 +1,15 @@
 `timescale 1ns / 1ps
 // P multipliers and P accumulators, 3-cycle latency; the group's first input starts from the bias (DSP opmode C + M, then P + M).
+// Stage 1 is outside: the weight ROM read register and fc_zero_gating's feature / zero registers.
 module fc_mac #(
     parameter P     = 20,
     parameter ACC_W = 40
 ) (
     input  wire               clk,
     input  wire               rst_n,
-    input  wire [       15:0] feature,
+    input  wire [       15:0] feature,    // one clock after mac_en (fc_zero_gating feature_q)
     input  wire [   16*P-1:0] weight,     // one clock after mac_en (weight ROM read register)
+    input  wire               zero,       // one clock after mac_en (fc_zero_gating zero_q): operands held, product = 0
     input  wire [   32*P-1:0] bias,
     input  wire               first,
     input  wire               mac_en,
@@ -18,7 +20,8 @@ module fc_mac #(
     output wire [ACC_W*P-1:0] sum,        // lane l = sum[ACC_W*l +: ACC_W], signed
     output wire [        1:0] sum_layer,
     output wire [        2:0] sum_group,
-    output wire               busy
+    output wire               busy,
+    output wire               last_inflight  // a group's last input is still in the pipeline
 );
 
     // ========== tag pipeline ==========
@@ -63,12 +66,6 @@ module fc_mac #(
         end
     end
 
-    // ========== stage 1: operands ==========
-    // the weight ROM read register is the weight half of this stage
-    reg [15:0] s1_feature;
-
-    always @(posedge clk) if (mac_en) s1_feature <= feature;
-
     // ========== stage 2: products, and the bias row once per group ==========
     reg signed [    31:0] s2_prod [0:P-1];
     reg        [32*P-1:0] s2_bias;
@@ -82,7 +79,7 @@ module fc_mac #(
     generate
         for (l = 0; l < P; l = l + 1) begin : GEN_LANE
             always @(posedge clk) begin
-                if (s1_valid) s2_prod[l] <= $signed({1'b0, s1_feature}) * $signed(weight[16*l+:16]);
+                if (s1_valid) s2_prod[l] <= zero ? 32'sd0 : $signed({1'b0, feature}) * $signed(weight[16*l+:16]);
             end
 
             wire signed [ACC_W-1:0] bias_ext = $signed({{(ACC_W - 32) {s2_bias[32*l+31]}}, s2_bias[32*l+:32]});
@@ -103,5 +100,7 @@ module fc_mac #(
     assign sum_layer = sum_layer_r;
     assign sum_group = sum_group_r;
     assign busy      = s1_valid | s2_valid | sum_valid_r;
+    // fc_quant_out's hold takes over the clk after sum_valid, so there is no gap
+    assign last_inflight = (s1_valid & s1_last) | (s2_valid & s2_last) | sum_valid_r;
 
 endmodule

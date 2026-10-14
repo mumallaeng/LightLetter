@@ -36,7 +36,6 @@ function buildPanel() {
   const panel = $('panel'), on = selected(), list = status.stages[mode].filter(s => on.includes(s.id));
   panel.innerHTML = '';
   $('panelEmpty').hidden = list.length > 0;
-  panel.style.setProperty('--n', Math.max(list.length, 1));
   for (const s of list) {
     const row = document.createElement('div');
     row.className = 'stagerow';
@@ -44,9 +43,43 @@ function buildPanel() {
     row.innerHTML = `<h3></h3><div class="stagebox">${head}<img></div>`;
     row.querySelector('h3').textContent = s.label;
     row.dataset.id = s.id;
+    row.querySelector('img').onload = layoutStages;
     panel.append(row);
   }
 }
+
+/*
+ * 첫 화면: 왼쪽 이미지 전처리 | 오른쪽 촬영 화면 + 보드 CNN 인식. 두 열을 창 아래 끝까지 맞춘다.
+ * 단계 이미지는 비율을 지키며 키운다. 왼쪽 카드 높이에 3줄이 들어가게 하고, 폭은 카드를 넘지 않는다.
+ * 4줄 이상이면 왼쪽 카드 안에서 스크롤한다.
+ */
+const ROWS_PER_SCREEN = 3, ROW_GAP = 8, CARD_PAD = 16, TOP_MIN = 480, TOP_MARGIN = 14, NARROW = 850;
+
+function layoutTop() {
+  const top = $('top'), y = top.getBoundingClientRect().top + window.scrollY;
+  top.style.setProperty('--top-h', `${Math.max(TOP_MIN, window.innerHeight - y - TOP_MARGIN)}px`);
+  layoutStages();
+}
+
+function layoutStages() {
+  const panel = $('panel'), rows = [...panel.children];
+  if (!rows.length) return;
+  const card = panel.closest('.card');
+  const fit = Math.min(rows.length, ROWS_PER_SCREEN);
+  // 좁은 화면(한 열)은 카드 높이가 고정되지 않으므로 창 높이를 쓴다
+  const box = window.innerWidth > NARROW ? card.clientHeight : window.innerHeight - 2 * TOP_MARGIN;
+  const head = panel.getBoundingClientRect().top - card.getBoundingClientRect().top + card.scrollTop;  // 카드 제목 부분
+  const perRow = (box - head - CARD_PAD - (fit - 1) * ROW_GAP) / fit;
+  for (const row of rows) {
+    const img = row.querySelector('img');
+    if (!img.naturalWidth) continue;
+    const label = row.offsetHeight - img.offsetHeight;                                  // 단계 이름 + cell 이름
+    const s = Math.min(panel.clientWidth / img.naturalWidth, (perRow - label) / img.naturalHeight);
+    img.style.width = `${Math.max(1, Math.floor(img.naturalWidth * s))}px`;
+  }
+}
+window.addEventListener('resize', layoutTop);
+layoutTop();
 
 function setSelection(ids) {
   chosen[mode] = ids;
@@ -163,10 +196,13 @@ async function poll() {
   $('fit').textContent = a ? `${a.fit_px}px / ${a.ms}ms` : '—';
   $('health').textContent = status.error ?? '';
   const c = status.cnn;
-  $('cnnSrc').textContent = `${c.weights} · ${c.sha} · ${c.classes}클래스` + (c.accuracy ? ` · test ${(c.accuracy * 100).toFixed(1)}%` : '');
+  $('pcCard').hidden = !c;
+  if (c) $('cnnSrc').textContent = `${c.weights} · ${c.sha} · ${c.classes}클래스` + (c.accuracy ? ` · test ${(c.accuracy * 100).toFixed(1)}%` : '');
 }
 
+// PC 인식 (server.py --pc-infer). 보드 결과와 비교용
 async function showPredict() {
+  if (!status || !status.cnn) return;
   const p = await (await fetch('/api/predict')).json();
   const box = $('pred');
   if (p.msg || !p.cells.length) { box.innerHTML = ''; box.textContent = p.msg ?? '인식할 칸이 없습니다.'; return; }
@@ -183,6 +219,66 @@ async function showPredict() {
   });
 }
 
+// 보드 결과 (server.py --uart). 마지막 캡처 하나만 보이고 다음 캡처가 오면 바뀐다.
+// 인식 카드는 글자만, 자세한 값은 보드 로그 카드에 둔다.
+function failText(r) {
+  if (r.stage === 'aruco') return `crop 실패: ${r.rc_name ?? r.rc}`;
+  if (r.stage === 'timeout') return `cell ${r.cell} 응답 없음 (timeout)`;
+  return `cell ${r.cell} DMA 시작 실패`;
+}
+
+function boardDetail(r) {
+  const lines = [`캡처${r.seq != null ? ' #' + r.seq : ''} · ${r.at} · ${r.ok ? '성공' : failText(r)}`];
+  if (r.e2e_us != null) lines.push(`end-to-end ${(r.e2e_us / 1000).toFixed(1)} ms (요청 -> 마지막 칸 결과)`);
+  if (r.cells.length) {
+    lines.push('', 'cell  PL  CPU  PL time    PL=CPU');     // 둘 다 보드에서 계산한 결과
+    for (const c of r.cells) {
+      const us = c.pl_us == null ? '     -   ' : `${String(c.pl_us).padStart(6)} us`;
+      const same = c.cpu == null ? '-' : c.cpu === c.pl ? 'O' : 'X';
+      lines.push(`${String(c.cell).padEnd(4)}  ${c.pl_char}   ${c.cpu_char ?? '-'}    ${us}   ${same}`);
+    }
+    if (r.cells.some(c => c.cpu == null)) lines.push('', 'CPU · 시간은 tx_capture 줄을 보내는 새 펌웨어에서만 나옵니다.');
+  }
+  return lines.join('\n');
+}
+
+function showBoardLog(b) {
+  $('boardDetail').textContent = b.last ? boardDetail(b.last) : '아직 캡처 결과가 없습니다.';
+  const log = $('boardLog'), atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
+  log.textContent = b.log.join('\n') || '아직 받은 줄이 없습니다.';
+  if (atEnd) log.scrollTop = log.scrollHeight;  // 위로 올려 읽는 중이면 그대로 둔다
+}
+
+async function showBoard() {
+  const b = await (await fetch('/api/board')).json();
+  const box = $('board');
+  $('boardCapture').disabled = !b.enabled || !b.connected;
+  if (!b.enabled) {
+    $('boardSrc').textContent = '사용 안 함';
+    box.textContent = '서버를 --uart COMx 로 실행하면 보드 결과를 읽습니다.';
+    return;
+  }
+  $('boardSrc').textContent = `${b.port} · ${b.connected ? '연결됨' : '연결 안 됨'}`;
+  showBoardLog(b);
+  const r = b.last;
+  box.innerHTML = '';
+  if (!r || !r.cells.length) {
+    box.textContent = b.error ?? (r ? failText(r) : '보드 버튼 또는 위 버튼으로 캡처하세요.');
+    return;
+  }
+  box.style.gridTemplateColumns = `repeat(${r.cells.length}, minmax(0, 1fr))`;  // 칸 수만큼 한 줄
+  for (const c of r.cells) {                     // 칸 번호 + 글자만
+    const d = document.createElement('div');
+    d.className = 'predcell';
+    d.innerHTML = '<small></small><b></b>';
+    d.querySelector('small').textContent = `cell ${c.cell}`;
+    d.querySelector('b').textContent = c.pl_char;
+    box.append(d);
+  }
+}
+
+$('boardCapture').onclick = () => fetch('/api/board/key', { method: 'POST', body: JSON.stringify({ key: 'c' }) });
+
 function tick() {
   if (!status) return;
   const frame = $('frame').parentElement;
@@ -191,4 +287,4 @@ function tick() {
   for (const row of $('panel').children) refresh(row.querySelector('img'), `/api/stage/${row.dataset.id}.png`);
 }
 
-poll().then(() => { setInterval(poll, 700); setInterval(tick, 250); setInterval(showPredict, 500); });
+poll().then(() => { setInterval(poll, 700); setInterval(tick, 250); setInterval(showBoard, 500); setInterval(showPredict, 500); });

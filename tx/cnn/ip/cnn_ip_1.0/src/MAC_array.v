@@ -10,6 +10,8 @@ module MAC_array #(
     input  wire [431:0] win_in,
     input  wire [2:0]   win_valid,
     input  wire [431:0] weight_in,
+    // 곱셈기별 enable: mul_en[k] <-> win_in[k*16 +: 16]
+    input  wire [26:0]  mul_en,
 
     output wire [35:0] ch_result0,
     output wire [35:0] ch_result1,
@@ -22,7 +24,7 @@ module MAC_array #(
 // common_valid
 //
 // 세 채널의 win_valid가 동일한 타이밍으로 동작하는 구조
-// 9개 MAC_unit에 하나의 공통 valid를 전달
+// 출력 valid 파이프라인에만 사용 (곱셈 결과 마스킹은 mul_en이 담당)
 // ---------------------------------------------------------------
 
 wire common_valid = win_valid[0];
@@ -41,7 +43,7 @@ MAC_unit U_MAC_C0_R0 (
     .rst_n     (rst_n),
     .win_row   (win_in[47:0]),
     .weight_row(weight_in[47:0]),
-    .row_valid (common_valid),
+    .mul_en    (mul_en[2:0]),
     .psum_out  (c0_row0_sum)
 );
 
@@ -50,7 +52,7 @@ MAC_unit U_MAC_C0_R1 (
     .rst_n     (rst_n),
     .win_row   (win_in[95:48]),
     .weight_row(weight_in[95:48]),
-    .row_valid (common_valid),
+    .mul_en    (mul_en[5:3]),
     .psum_out  (c0_row1_sum)
 );
 
@@ -59,7 +61,7 @@ MAC_unit U_MAC_C0_R2 (
     .rst_n     (rst_n),
     .win_row   (win_in[143:96]),
     .weight_row(weight_in[143:96]),
-    .row_valid (common_valid),
+    .mul_en    (mul_en[8:6]),
     .psum_out  (c0_row2_sum)
 );
 
@@ -77,7 +79,7 @@ MAC_unit U_MAC_C1_R0 (
     .rst_n     (rst_n),
     .win_row   (win_in[191:144]),
     .weight_row(weight_in[191:144]),
-    .row_valid (common_valid),
+    .mul_en    (mul_en[11:9]),
     .psum_out  (c1_row0_sum)
 );
 
@@ -86,7 +88,7 @@ MAC_unit U_MAC_C1_R1 (
     .rst_n     (rst_n),
     .win_row   (win_in[239:192]),
     .weight_row(weight_in[239:192]),
-    .row_valid (common_valid),
+    .mul_en    (mul_en[14:12]),
     .psum_out  (c1_row1_sum)
 );
 
@@ -95,7 +97,7 @@ MAC_unit U_MAC_C1_R2 (
     .rst_n     (rst_n),
     .win_row   (win_in[287:240]),
     .weight_row(weight_in[287:240]),
-    .row_valid (common_valid),
+    .mul_en    (mul_en[17:15]),
     .psum_out  (c1_row2_sum)
 );
 
@@ -113,7 +115,7 @@ MAC_unit U_MAC_C2_R0 (
     .rst_n     (rst_n),
     .win_row   (win_in[335:288]),
     .weight_row(weight_in[335:288]),
-    .row_valid (common_valid),
+    .mul_en    (mul_en[20:18]),
     .psum_out  (c2_row0_sum)
 );
 
@@ -122,7 +124,7 @@ MAC_unit U_MAC_C2_R1 (
     .rst_n     (rst_n),
     .win_row   (win_in[383:336]),
     .weight_row(weight_in[383:336]),
-    .row_valid (common_valid),
+    .mul_en    (mul_en[23:21]),
     .psum_out  (c2_row1_sum)
 );
 
@@ -131,7 +133,7 @@ MAC_unit U_MAC_C2_R2 (
     .rst_n     (rst_n),
     .win_row   (win_in[431:384]),
     .weight_row(weight_in[431:384]),
-    .row_valid (common_valid),
+    .mul_en    (mul_en[26:24]),
     .psum_out  (c2_row2_sum)
 );
 

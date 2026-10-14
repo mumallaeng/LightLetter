@@ -45,6 +45,7 @@ static volatile XTime cell_irq[ARUCO_CELL_COUNT];   /* cnn_done of each cell  */
 static volatile XTime cell_sent_at;
 static XTime          seq_request;   /* button / 'c'                            */
 static XTime          seq_flush;     /* ArUco done, cache flush of the 5 cells  */
+static u32            seq_count;     /* capture number, sent in the tx_capture JSON line */
 
 /*
  * Pick the most recently completed S2MM frame store.
@@ -97,6 +98,42 @@ static int capture_on_cnn_done(u8 cls, XTime done_at)
         seq_done = 1;
     }
     return 1;
+}
+
+static u32 ticks_to_us(XTime t)
+{
+    return (u32)(((u64)t * 1000000ULL) / COUNTS_PER_SECOND);
+}
+
+/*
+ * One JSON line per capture for tx/ui/server.py (UART). Printed before the
+ * blocking BFSK TX so the UI gets it at once. pl/cpu are class ids (0 = 'A').
+ */
+static void print_capture_json(u32 n, const u8 *cls, const Cpu_bench_result *cpu,
+                               const XTime *kick, const XTime *irq, int failed)
+{
+    u32 i;
+
+    xil_printf("{\"type\":\"tx_capture\",\"seq\":%u,\"ok\":%s,",
+               (unsigned)seq_count, failed ? "false" : "true");
+    if (failed) {
+        xil_printf("\"stage\":\"dma\",\"cell\":%d,", (int)n);
+    }
+    xil_printf("\"cells\":[");
+    for (i = 0; i < n; i++) {
+        xil_printf("%s{\"cell\":%d,\"pl\":%d,\"cpu\":%d,\"pl_us\":%u}",
+                   (i == 0u) ? "" : ",", (int)i, (int)cls[i], cpu[i].cls,
+                   (unsigned)ticks_to_us(irq[i] - kick[i]));
+    }
+    xil_printf("],\"e2e_us\":%u}\r\n", (unsigned)ticks_to_us(irq[n - 1u] - seq_request));
+}
+
+/* Failure before any cell result: stage = "aruco" (with rc), "dma" or "timeout". */
+static void print_capture_fail(const char *stage, int rc, int cell)
+{
+    xil_printf("{\"type\":\"tx_capture\",\"seq\":%u,\"ok\":false,\"stage\":\"%s\","
+               "\"rc\":%d,\"cell\":%d}\r\n",
+               (unsigned)seq_count, stage, rc, cell);
 }
 
 static void print_ratio(const char *label, XTime num, XTime den)
@@ -153,6 +190,8 @@ static void capture_finish_seq(void)
         cpu_sum += cpu[i].pre_ticks + cpu[i].cnn_ticks;
     }
 
+    print_capture_json(n, cls, cpu, kick, irq, failed);
+
     for (i = 0; i < n; i++) {
         XTime cpu_total = cpu[i].pre_ticks + cpu[i].cnn_ticks;
 
@@ -203,6 +242,7 @@ void capture_ctrl_trigger(void)
         return;
     }
     XTime_GetTime(&seq_request);
+    seq_count++;
 
     /* VDMA wrote the frame store, so drop stale cache lines before the CPU reads it all. */
     frame = capture_last_frame();
@@ -215,6 +255,7 @@ void capture_ctrl_trigger(void)
     rc = aruco_crop_run(&f, &aruco_cells, &aruco_res);
     if (rc != ARUCO_OK) {
         xil_printf("capture: ArUco crop failed (%d)\r\n", rc);
+        print_capture_fail("aruco", rc, -1);
         return;
     }
 
@@ -232,6 +273,7 @@ void capture_ctrl_trigger(void)
 
     if (roi_dma_start_image(&aruco_cells.pix[0][0][0][0]) != XST_SUCCESS) {
         xil_printf("capture: ROI DMA start failed\r\n");
+        print_capture_fail("dma", 0, 0);
         seq_active = 0;
     }
 }
@@ -260,6 +302,7 @@ int capture_ctrl_init(XAxiVdma *vdma, UINTPTR base, u32 width, u32 height)
     XGpio_SetDataDirection(&capture_gpio, START_BTN_CHANNEL, GPIO_BIT_0);
 
     cnn_ctrl_set_isr_hook(capture_on_cnn_done);
+    seq_count = 0;
 
     capture_vdma   = vdma;
     fb_base        = base;
@@ -303,6 +346,7 @@ void capture_ctrl_poll(void)
 
         if (timed_out) {
             xil_printf("capture: cell %d: no cnn_done\r\n", (int)cell_done);
+            print_capture_fail("timeout", 0, (int)cell_done);
         } else if (seq_done) {
             capture_finish_seq();
         }
