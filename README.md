@@ -42,8 +42,6 @@ FPGA-based optical communication project using BFSK modulation and 128-point FFT
 - CRC: CRC-8, polynomial 0x07
 - RTL language: Verilog
 
-The project status and interface decisions are tracked in `docs/progress.md` as the Single Source of Truth.
-
 ## Directory structure
 
 The two Zybo Z7-20 boards each have their own tree. Inside a board tree, each
@@ -63,7 +61,6 @@ tx/                 transmitter board: camera -> ArUco -> preprocess -> CNN -> B
 rx/                 receiver board: XADC -> FFT -> BFSK RX -> UART -> PC UI
   fft/  bfsk_rx/  snapshot/  ui/
   vivado/  vitis/  prebuilt/  tools/  docs/
-docs/               project-wide notes (progress.md)
 legacy/             unused or superseded sources, kept under their old paths
 ```
 
@@ -75,7 +72,6 @@ project from scripts with paths relative to the script, so a fresh clone works o
 - RTL is written in Verilog.
 - Do not delete previously PASSed code without a recorded reason.
 - Keep PASSed testbenches for regression.
-- Update `docs/progress.md` first when hardware values or shared communication parameters change.
 ## RX UART to PC UI
 
 The September 2026 RX build sends decoded packets to the PC through PS7 UART1 as CRLF-terminated CSV at 115200 baud. See `rx/docs/rx_uart_protocol.md` for the wire format and `rx/vitis/src/` for the Vitis application source.
