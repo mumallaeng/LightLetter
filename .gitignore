@@ -114,6 +114,7 @@ tx/cnn/model/results/
 # tracked under tx/cnn/model/cnn_golden/results/ stay tracked; this only affects new untracked ones)
 *.json
 *.png
+!assets/readme/*.png
 # C golden model build output
 tx/cnn/golden/build/
 tx/cnn/golden/logs/
