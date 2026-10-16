@@ -6,13 +6,13 @@ RTL 은 이 값과 **bit-exact** 여야 한다.
 재생성 (2026-09-27부터, 26클래스 재학습본 `tx/cnn/model/cnn_golden/results/layer_outputs/lenet5_3x3_schedule.json` 기준):
 
 ```
-python tx/cnn/golden/export_conv_roms.py                       # conv ROM: conv{1,2}_weight.mem, conv{1,2}_bias_ce.mem, tx/cnn/rtl/mem/l2_weight_ch*.mem, conv1_weight_rom_l1.txt
+python tx/cnn/golden/export_conv_roms.py                       # conv ROM: conv{1,2}_weight.mem, conv{1,2}_bias_ce.mem, tx/cnn/rtl/mem/l1_weight.mem, l2_weight_ch*.mem
 python tx/cnn/tb/cnn_top/gen_chain_vectors.py --conv1-scale 15 --conv2-scale 16   # 단계 경계 스트림 + tx/cnn/tb/cnn_top/vectors
 ```
 
-`gen_chain_vectors.py --check`는 디스크의 파일과 대조만 한다(생성기 자체 검사). `weight_rom_l1.v`는 `.mem`이 아니라
-case 상수라 이 폴더의 `conv1_weight_rom_l1.txt`에 새 상수를 적어 둔다 — `weight_rom_l1.v`와 `conv_l1.v`의 `SCALE_EXP`(16 → **15**)는
-그 파일 담당자가 반영한다. 반영 전까지 RTL conv_l1은 이 스트림과 맞지 않는다.
+`gen_chain_vectors.py --check`는 디스크의 파일과 대조만 한다(생성기 자체 검사). `weight_rom_l1.v`도 `$readmemh`로
+`tx/cnn/rtl/mem/l1_weight.mem`(출력 채널당 144 bit 한 줄, 6줄)을 읽으므로 JSON을 바꾸면 `export_conv_roms.py`만 다시 돌리면 된다.
+`conv_l1.v`, `conv_l2.v`, `fc_top.v`의 `SCALE_EXP`는 RTL 파라미터라 export가 출력하는 값(conv1 15, conv2 16, FC 16/14/14)과 직접 맞춘다.
 
 ---
 
@@ -39,7 +39,7 @@ lane 안에서 bit 15..0 = tap0, 31..16 = tap1, ... 143..128 = tap8   (tap k = k
 
 conv1 은 `C_IN = 1` 이라 grp0 의 lane0 만 값이 있고 나머지는 전부 0 (홀수 줄이 전부 0 인 이유).
 
-검산 — `conv1_weight.mem` 1번째 줄 하위 36 hex = `conv1_weight_rom_l1.txt`의 0번 상수 = 덤프 `conv1.weight_raw[0]`을 `2^-14`로 나눠 반올림한 tap0..tap8
+검산 — `conv1_weight.mem` 1번째 줄 하위 36 hex = `tx/cnn/rtl/mem/l1_weight.mem`의 0번 줄 = 덤프 `conv1.weight_raw[0]`을 `2^-14`로 나눠 반올림한 tap0..tap8
 
 ### 양자화 파라미터
 

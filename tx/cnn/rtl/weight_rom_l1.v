@@ -8,12 +8,12 @@ module weight_rom_l1 #(
 );
     always @(*) begin
         case (out_ch_sel)
-            0: weight_out = 144'h04ecf8e5b7c62f8dee67f0f2098c27b32b90;
-            1: weight_out = 144'hc4ddc3c3c82cf0910647e6cc22aa1f2e14c2;
-            2: weight_out = 144'hbf78e9e8fd88e533fc3536820ceb1e69173d;
-            3: weight_out = 144'h1ff5185d21cde0ac001f1f34c2b8e3b70029;
-            4: weight_out = 144'hfc941a97fd9618cb12840ebf12ef0d69f090;
-            5: weight_out = 144'h1149fafaeda41d54e76ef5a821220c37d75f;
+            0: weight_out = 144'hfa20ee44bfab2c79f116eeb00e0925ed23ca;
+            1: weight_out = 144'hecafccb6d80ed3d00fa00c8a13ea1c6c13ce;
+            2: weight_out = 144'h00380ec9114d017bf8a30c9d1eae08a006e6;
+            3: weight_out = 144'h196310651885ff4e01270aade5b2e29beda4;
+            4: weight_out = 144'he0062ad3f8b80d1017fdfcf4010efcdded09;
+            5: weight_out = 144'h1a540906f76d1d0aee7ce9c61de7fd9ed95e;
             default: weight_out = 0;
         endcase
     end
