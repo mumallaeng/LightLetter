@@ -14,6 +14,7 @@ static XAxiDma roi_dma;
 static u8 roi_frame[ROI_DMA_FRAME_BYTES] __attribute__((aligned(64)));
 static int roi_dma_ready;
 static Roi_dma_times roi_times;
+static const u8 *roi_last_src = roi_frame;
 
 /* Source column/row sampled for each ROI pixel (pixel-centre mapping). */
 static u16 roi_x_map[ROI_DMA_WIDTH];
@@ -91,6 +92,7 @@ static int roi_dma_send_frame(void)
         xil_printf("ROI DMA: transfer start failed (%d)\r\n", status);
         return XST_FAILURE;
     }
+    roi_last_src = roi_frame;
 
     timeout = ROI_DMA_TIMEOUT;
     while (XAxiDma_Busy(&roi_dma, XAXIDMA_DMA_TO_DEVICE) && timeout != 0U)
@@ -117,7 +119,7 @@ void roi_dma_mark_request(void)
 
 const u8 *roi_dma_frame(void)
 {
-    return roi_frame;
+    return roi_last_src;
 }
 
 int roi_dma_init(void)
@@ -185,6 +187,26 @@ int roi_dma_send_image(const u8 *img112)
 
     memcpy(roi_frame, img112, ROI_DMA_FRAME_BYTES);
     return roi_dma_send_frame();
+}
+
+/*
+ * Only the register writes of a simple-mode transfer. XAxiDma_SimpleTransfer
+ * itself refuses (XST_FAILURE) if the channel is still running, so a busy
+ * MM2S is reported rather than waited on.
+ */
+int roi_dma_start_image(const u8 *img112)
+{
+    if (!roi_dma_ready || (((UINTPTR)img112 & 0x3U) != 0U)) {
+        return XST_FAILURE;
+    }
+
+    XTime_GetTime(&roi_times.kick);
+    if (XAxiDma_SimpleTransfer(&roi_dma, (UINTPTR)img112, ROI_DMA_FRAME_BYTES,
+                               XAXIDMA_DMA_TO_DEVICE) != XST_SUCCESS) {
+        return XST_FAILURE;
+    }
+    roi_last_src = img112;
+    return XST_SUCCESS;
 }
 
 /*

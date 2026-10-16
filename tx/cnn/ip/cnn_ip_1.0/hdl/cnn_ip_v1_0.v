@@ -57,6 +57,7 @@ module cnn_ip_v1_0 #(
     ) cnn_ip_v1_0_S00_AXI_inst (
         .cnn_result   (cnn_result),
         .cnn_done     (cnn_done),
+        .intr         (intr),
         .S_AXI_ACLK   (s00_axi_aclk),
         .S_AXI_ARESETN(s00_axi_aresetn),
         .S_AXI_AWADDR (s00_axi_awaddr),
@@ -95,8 +96,6 @@ module cnn_ip_v1_0 #(
         .cnn_done     (cnn_done)
     );
 
-    // Interrupt signal that means cnn operation done
-    assign intr = cnn_done;
 
     // User logic ends
 

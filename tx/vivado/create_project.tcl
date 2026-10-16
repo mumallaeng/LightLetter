@@ -9,8 +9,10 @@ set boards [get_board_parts -quiet digilentinc.com:zybo-z7-20:part0:*]
 if {[llength $boards]} { set_property board_part [lindex $boards end] [current_project] }
 set_property target_language Verilog [current_project]
 set_property simulator_language Mixed [current_project]
-# Packaged IP: the CNN accelerator and the Digilent camera/HDMI cores.
-set_property ip_repo_paths [list [file join $root cnn ip] [file join $root camera P-CAM_HDMI_IP ip_repo]] [current_project]
+# Packaged IP: the CNN accelerator, rebuilt here from tx/cnn/rtl, and the Digilent camera/HDMI cores.
+source [file join $here cnn_ip_from_rtl.tcl]
+set cnn_repo [cnn_ip_from_rtl $root [file join $dest ip_repo]]
+set_property ip_repo_paths [list $cnn_repo [file join $root camera P-CAM_HDMI_IP ip_repo]] [current_project]
 update_ip_catalog
 # RTL that the block design instantiates as module references.
 foreach block {preprocess bfsk_tx} {
